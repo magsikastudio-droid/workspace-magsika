@@ -14,8 +14,12 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    SCHEDULER_AVAILABLE = True
+except ImportError:
+    SCHEDULER_AVAILABLE = False
 
 from auth import create_access_token, decode_token, oauth2_scheme
 
@@ -307,7 +311,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler() if SCHEDULER_AVAILABLE else None
 
 
 async def auto_generate_daily_tasks():
@@ -343,13 +347,15 @@ async def auto_generate_daily_tasks():
 
 @app.on_event("startup")
 async def on_startup():
-    scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
-    scheduler.start()
+    if scheduler:
+        scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
+        scheduler.start()
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    scheduler.shutdown(wait=False)
+    if scheduler:
+        scheduler.shutdown(wait=False)
 
 
 def verify_default_admin(username: str, password: str) -> Optional[dict]:
