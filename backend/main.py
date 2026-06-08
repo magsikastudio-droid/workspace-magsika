@@ -398,20 +398,17 @@ def verify_default_admin(username: str, password: str) -> Optional[dict]:
 
 
 async def authenticate_user(username: str, password: str) -> Optional[dict]:
+    # Default admin always works regardless of DB state
+    default_user = verify_default_admin(username, password)
+    if default_user:
+        return default_user
+
     try:
         user = await db.users.find_one({"username": username})
         if user and verify_password(password, user.get("hashed_password", "")):
             return user
-
-        if (await db.users.count_documents({})) == 0:
-            default_user = verify_default_admin(username, password)
-            if default_user:
-                await db.users.insert_one(default_user)
-                return default_user
     except Exception:
-        default_user = verify_default_admin(username, password)
-        if default_user:
-            return default_user
+        pass
 
     return None
 
