@@ -1,122 +1,88 @@
 import React, { useMemo, useState } from "react";
-import { Plus, Search, ArrowRight, Calendar, ClipboardList, Upload, Download, Edit3, Trash2 } from "lucide-react";
+import { Plus, Search, Edit3, Trash2, Upload, Download } from "lucide-react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
-
-const statusStyles = {
-  done: "bg-emerald-100 text-emerald-700",
-  "in progress": "bg-sky-100 text-sky-700",
-  pending: "bg-amber-100 text-amber-700",
-};
-
-const paymentStyles = {
-  Lunas: "bg-emerald-100 text-emerald-700",
-  "Belum Lunas": "bg-rose-100 text-rose-700",
-};
+import {
+  STATUS_OPTIONS, STATUS_COLORS,
+  PLATFORM_OPTIONS, PAYMENT_OPTIONS, PAYMENT_COLORS,
+  WORK_TYPE_OPTIONS, MARKET_OPTIONS, MARKETER_OPTIONS,
+  generateFolderCode,
+} from "../lib/constants";
 
 const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-const statusOptions = ["pending", "in progress", "done"];
-const paymentOptions = ["Belum Lunas", "Lunas"];
-const platformOptions = ["Direct", "Fiverr", "Upwork"];
+const emptyOrder = () => ({
+  project: "", client: "", total: "", deadline: todayStr(),
+  status: "Pending", artists: "", platform: "Fiverr Magsika",
+  market: "Magsika", order_id: "", work_type: "Modeling",
+  payment_status: "Belum Lunas", folder_code: "", marketer: "Ivo", notes: "",
+});
 
 export default function OrdersPage() {
-  const { orders, loading, createOrder, updateOrder } = useOrders();
+  const { orders, loading, createOrder, updateOrder, deleteOrder } = useOrders();
   const { formatMoney } = useCurrency();
   const [search, setSearch] = useState("");
-  const [platformFilter, setPlatformFilter] = useState("Semua Platform");
-  const [statusFilter, setStatusFilter] = useState("Semua Status");
-  const [paymentFilter, setPaymentFilter] = useState("Semua Bayar");
+  const [platformFilter, setPlatformFilter] = useState("Semua");
+  const [statusFilter, setStatusFilter] = useState("Semua");
+  const [paymentFilter, setPaymentFilter] = useState("Semua");
   const [showCreate, setShowCreate] = useState(false);
   const [activeOrder, setActiveOrder] = useState(null);
-  const [newOrder, setNewOrder] = useState({
-    project: "",
-    client: "",
-    total: "",
-    deadline: todayStr(),
-    status: "pending",
-    artists: "",
-    platform: "Direct",
-    market: "Magsika",
-    order_id: "",
-    work_type: "Modeling",
-    payment_status: "Belum Lunas",
-    folder_code: "",
-  });
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [newOrder, setNewOrder] = useState(emptyOrder());
 
-  const visibleOrders = useMemo(
-    () =>
-      orders
-        .filter((order) => {
-          if (search && ![order.project, order.client, order.status, order.platform, order.order_id].some((value) => value?.toLowerCase().includes(search.toLowerCase()))) {
-            return false;
-          }
-          if (platformFilter !== "Semua Platform" && order.platform !== platformFilter) return false;
-          if (statusFilter !== "Semua Status" && order.status !== statusFilter) return false;
-          if (paymentFilter !== "Semua Bayar" && order.payment_status !== paymentFilter) return false;
-          return true;
-        })
-        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)),
+  const visibleOrders = useMemo(() =>
+    orders
+      .filter((o) => {
+        if (search && ![o.project, o.client, o.status, o.platform, o.order_id].some((v) => v?.toLowerCase().includes(search.toLowerCase()))) return false;
+        if (platformFilter !== "Semua" && o.platform !== platformFilter) return false;
+        if (statusFilter !== "Semua" && o.status !== statusFilter) return false;
+        if (paymentFilter !== "Semua" && o.payment_status !== paymentFilter) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)),
     [orders, search, platformFilter, statusFilter, paymentFilter]
   );
 
-  const handleCreateSubmit = async (event) => {
-    event.preventDefault();
+  const handleCreateSubmit = async (e) => {
+    e.preventDefault();
+    const folderCode = newOrder.folder_code || generateFolderCode(
+      newOrder.platform, newOrder.market,
+      newOrder.artists.split(",")[0]?.trim(), newOrder.work_type, new Date()
+    );
     await createOrder({
-      project: newOrder.project,
-      client: newOrder.client,
+      ...newOrder,
       total: Number(newOrder.total),
-      deadline: newOrder.deadline,
-      status: newOrder.status,
-      artists: newOrder.artists.split(",").map((artist) => artist.trim()).filter(Boolean),
-      platform: newOrder.platform,
-      market: newOrder.market,
-      order_id: newOrder.order_id,
-      work_type: newOrder.work_type,
-      payment_status: newOrder.payment_status,
-      folder_code: newOrder.folder_code,
+      artists: newOrder.artists.split(",").map((a) => a.trim()).filter(Boolean),
+      folder_code: folderCode,
     });
     setShowCreate(false);
-    setNewOrder({
-      project: "",
-      client: "",
-      total: "",
-      deadline: todayStr(),
-      status: "pending",
-      artists: "",
-      platform: "Direct",
-      market: "Magsika",
-      order_id: "",
-      work_type: "Modeling",
-      payment_status: "Belum Lunas",
-      folder_code: "",
-    });
+    setNewOrder(emptyOrder());
   };
 
   const handleSaveOrder = async (updated) => {
     await updateOrder(activeOrder.id, {
-      project: updated.project,
-      client: updated.client,
+      ...updated,
       total: Number(updated.total),
-      deadline: updated.deadline,
-      status: updated.status,
-      artists: updated.artists.split(",").map((artist) => artist.trim()).filter(Boolean),
-      platform: updated.platform,
-      market: updated.market,
-      order_id: updated.order_id,
-      work_type: updated.work_type,
-      payment_status: updated.payment_status,
-      folder_code: updated.folder_code,
+      artists: updated.artists.split(",").map((a) => a.trim()).filter(Boolean),
     });
     setActiveOrder(null);
   };
 
-  const uniquePlatforms = ["Semua Platform", ...new Set(orders.map((order) => order.platform || "Direct"))];
-  const uniqueStatuses = ["Semua Status", ...new Set(orders.map((order) => order.status || "pending"))];
-  const uniquePayments = ["Semua Bayar", ...new Set(orders.map((order) => order.payment_status || "Belum Lunas"))];
+  const handleDelete = async (id) => {
+    await deleteOrder(id);
+    setConfirmDelete(null);
+  };
+
+  const deadlineClass = (deadline) => {
+    if (!deadline) return "";
+    const diff = Math.ceil((new Date(deadline) - new Date()) / 86400000);
+    if (diff < 0) return "text-rose-600 font-semibold";
+    if (diff <= 3) return "text-amber-600 font-semibold";
+    return "";
+  };
 
   return (
     <div className="space-y-6">
@@ -146,19 +112,16 @@ export default function OrdersPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)} className="rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400">
-              {uniquePlatforms.map((platform) => (
-                <option key={platform} value={platform}>{platform}</option>
-              ))}
+              <option value="Semua">Semua Platform</option>
+              {PLATFORM_OPTIONS.map((p) => <option key={p}>{p}</option>)}
             </select>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400">
-              {uniqueStatuses.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
+              <option value="Semua">Semua Status</option>
+              {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
             </select>
             <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400">
-              {uniquePayments.map((payment) => (
-                <option key={payment} value={payment}>{payment}</option>
-              ))}
+              <option value="Semua">Semua Bayar</option>
+              {PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}
             </select>
           </div>
         </div>
@@ -170,7 +133,9 @@ export default function OrdersPage() {
             <p className="text-sm font-semibold text-slate-900">Daftar Order</p>
             <p className="text-sm text-slate-500">Tabel order dengan detail folder, tipe, dan status pembayaran.</p>
           </div>
-          <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">{loading ? "Memuat..." : `${visibleOrders.length} order tampil`}</span>
+          <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">
+            {loading ? "Memuat..." : `${visibleOrders.length} order`}
+          </span>
         </div>
         <div className="overflow-x-auto p-6">
           <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
@@ -192,41 +157,46 @@ export default function OrdersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {visibleOrders.map((order) => (
-                <tr key={order.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-4">{order.created_at || "-"}</td>
-                  <td className="px-4 py-4">{order.platform || "Direct"}</td>
-                  <td className="px-4 py-4">{order.market || "Magsika"}</td>
-                  <td className="px-4 py-4">{order.order_id || "-"}</td>
-                  <td className="px-4 py-4">{order.client}</td>
-                  <td className="px-4 py-4 font-semibold text-slate-900">{order.project}</td>
-                  <td className="px-4 py-4">{order.work_type || "Modeling"}</td>
-                  <td className="px-4 py-4">{order.artists?.[0] || "Unassigned"}</td>
-                  <td className="px-4 py-4">{order.deadline || "-"}</td>
-                  <td className="px-4 py-4">{formatMoney(order.total)}</td>
-                  <td className="px-4 py-4">
-                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[order.status] || "bg-slate-100 text-slate-700"}`}>
-                      {order.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${paymentStyles[order.payment_status] || "bg-slate-100 text-slate-700"}`}>
-                      {order.payment_status || "Belum Lunas"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <button onClick={() => setActiveOrder(order)} className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">
-                      <Edit3 size={14} /> Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {visibleOrders.map((order) => {
+                const sc = STATUS_COLORS[order.status] || { bg: "#f1f5f9", text: "#64748b" };
+                const pc = PAYMENT_COLORS[order.payment_status] || { bg: "#f1f5f9", text: "#64748b" };
+                return (
+                  <tr key={order.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-4 text-slate-500">{order.created_at?.slice(0, 10) || "-"}</td>
+                    <td className="px-4 py-4">{order.platform || "Direct"}</td>
+                    <td className="px-4 py-4">{order.market || "-"}</td>
+                    <td className="px-4 py-4 font-mono text-xs">{order.order_id || "-"}</td>
+                    <td className="px-4 py-4">{order.client}</td>
+                    <td className="px-4 py-4 font-semibold text-slate-900">{order.project}</td>
+                    <td className="px-4 py-4">{order.work_type || "-"}</td>
+                    <td className="px-4 py-4">{order.artists?.[0] || "-"}</td>
+                    <td className={`px-4 py-4 ${deadlineClass(order.deadline)}`}>{order.deadline || "-"}</td>
+                    <td className="px-4 py-4 font-semibold">{formatMoney(order.total)}</td>
+                    <td className="px-4 py-4">
+                      <span className="inline-flex rounded-full px-3 py-1 text-xs font-semibold" style={{ background: sc.bg, color: sc.text }}>
+                        {order.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="inline-flex rounded-full px-3 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
+                        {order.payment_status || "Belum Lunas"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setActiveOrder({ ...order, artists: (order.artists || []).join(", ") })} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">
+                          <Edit3 size={13} /> Edit
+                        </button>
+                        <button onClick={() => setConfirmDelete(order)} className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-100">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {visibleOrders.length === 0 && (
-                <tr>
-                  <td colSpan="13" className="py-8 text-center text-sm text-slate-500">
-                    Tidak ada order yang cocok.
-                  </td>
-                </tr>
+                <tr><td colSpan="13" className="py-10 text-center text-sm text-slate-500">Tidak ada order yang cocok.</td></tr>
               )}
             </tbody>
           </table>
@@ -234,197 +204,129 @@ export default function OrdersPage() {
       </div>
 
       {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
-          <div className="w-full max-w-3xl rounded-[2rem] bg-white p-8 shadow-xl">
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-semibold text-slate-900">Tambah Order Baru</h2>
-                <p className="text-sm text-slate-500">Masukkan detail project, platform, dan status pembayaran.</p>
-              </div>
-              <button onClick={() => setShowCreate(false)} className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm text-slate-700">Batal</button>
+        <OrderFormModal
+          title="Tambah Order Baru"
+          subtitle="Masukkan detail project, platform, dan status pembayaran."
+          initial={newOrder}
+          onClose={() => { setShowCreate(false); setNewOrder(emptyOrder()); }}
+          onSubmit={handleCreateSubmit}
+          isCreate
+        />
+      )}
+
+      {activeOrder && (
+        <OrderFormModal
+          title="Edit Order"
+          subtitle="Perbarui informasi order untuk tim produksi."
+          initial={activeOrder}
+          onClose={() => setActiveOrder(null)}
+          onSubmit={async (e) => { e.preventDefault(); await handleSaveOrder(activeOrder); }}
+          onChange={(field, value) => setActiveOrder((prev) => ({ ...prev, [field]: value }))}
+          isEdit
+          onSave={handleSaveOrder}
+        />
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+          <div className="w-full max-w-md rounded-[2rem] bg-white p-8 shadow-xl">
+            <h2 className="text-xl font-semibold text-slate-900">Hapus Order?</h2>
+            <p className="mt-2 text-sm text-slate-500">Order <span className="font-semibold">{confirmDelete.project}</span> akan dihapus permanen.</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setConfirmDelete(null)} className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
+              <button onClick={() => handleDelete(confirmDelete.id)} className="rounded-full bg-rose-600 px-5 py-2 text-sm font-semibold text-white hover:bg-rose-700">Hapus</button>
             </div>
-            <form className="grid gap-4" onSubmit={handleCreateSubmit}>
-              <div className="grid gap-4 lg:grid-cols-2">
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Project / Karakter</span>
-                  <input value={newOrder.project} onChange={(e) => setNewOrder((prev) => ({ ...prev, project: e.target.value }))} required className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Nama klien / Studio</span>
-                  <input value={newOrder.client} onChange={(e) => setNewOrder((prev) => ({ ...prev, client: e.target.value }))} required className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-3">
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Order ID</span>
-                  <input value={newOrder.order_id} onChange={(e) => setNewOrder((prev) => ({ ...prev, order_id: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Platform / Akun</span>
-                  <select value={newOrder.platform} onChange={(e) => setNewOrder((prev) => ({ ...prev, platform: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400">
-                    {platformOptions.map((platform) => (
-                      <option key={platform} value={platform}>{platform}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Market</span>
-                  <input value={newOrder.market} onChange={(e) => setNewOrder((prev) => ({ ...prev, market: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-3">
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Deadline</span>
-                  <input value={newOrder.deadline} onChange={(e) => setNewOrder((prev) => ({ ...prev, deadline: e.target.value }))} type="date" required className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Jenis pekerjaan</span>
-                  <input value={newOrder.work_type} onChange={(e) => setNewOrder((prev) => ({ ...prev, work_type: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Status pembayaran</span>
-                  <select value={newOrder.payment_status} onChange={(e) => setNewOrder((prev) => ({ ...prev, payment_status: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400">
-                    {paymentOptions.map((payment) => (
-                      <option key={payment} value={payment}>{payment}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Folder code</span>
-                  <input value={newOrder.folder_code} onChange={(e) => setNewOrder((prev) => ({ ...prev, folder_code: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Artists / Tim</span>
-                  <input value={newOrder.artists} onChange={(e) => setNewOrder((prev) => ({ ...prev, artists: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-              </div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Nilai order (USD)</span>
-                  <input value={newOrder.total} onChange={(e) => setNewOrder((prev) => ({ ...prev, total: e.target.value }))} type="number" min="0" className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-                <label className="space-y-2 text-sm text-slate-700">
-                  <span>Project notes</span>
-                  <textarea value={newOrder.folder_code} onChange={(e) => setNewOrder((prev) => ({ ...prev, folder_code: e.target.value }))} rows={3} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-                </label>
-              </div>
-              <div className="flex flex-wrap justify-end gap-3 pt-4">
-                <button type="button" onClick={() => setShowCreate(false)} className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
-                <button type="submit" className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">Simpan Order</button>
-              </div>
-            </form>
           </div>
         </div>
       )}
-
-      {activeOrder && <OrderDetailModal order={activeOrder} onClose={() => setActiveOrder(null)} onSave={handleSaveOrder} />}
     </div>
   );
 }
 
-function OrderDetailModal({ order, onClose, onSave }) {
-  const [formState, setFormState] = useState({
-    project: order.project,
-    client: order.client,
-    total: order.total,
-    deadline: order.deadline || todayStr(),
-    status: order.status,
-    artists: (order.artists || []).join(", "),
-    platform: order.platform || "Direct",
-    market: order.market || "Magsika",
-    order_id: order.order_id || "",
-    work_type: order.work_type || "Modeling",
-    payment_status: order.payment_status || "Belum Lunas",
-    folder_code: order.folder_code || "",
-  });
+function OrderFormModal({ title, subtitle, initial, onClose, onSubmit, isCreate, isEdit, onSave }) {
+  const [form, setForm] = useState({ ...initial });
+
+  const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (isCreate) {
+      await onSubmit(e);
+    } else {
+      await onSave(form);
+    }
+  };
+
+  const inputCls = "w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400";
+  const labelCls = "space-y-2 text-sm text-slate-700";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/40 px-4 py-8">
       <div className="w-full max-w-3xl rounded-[2rem] bg-white p-8 shadow-xl">
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-900">Detail Order</h2>
-            <p className="text-sm text-slate-500">Perbarui informasi order untuk tim produksi.</p>
+            <h2 className="text-2xl font-semibold text-slate-900">{title}</h2>
+            <p className="text-sm text-slate-500">{subtitle}</p>
           </div>
           <button onClick={onClose} className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm text-slate-700">Tutup</button>
         </div>
-        <div className="space-y-4">
+        <form className="grid gap-4" onSubmit={handleSubmit}>
           <div className="grid gap-4 lg:grid-cols-2">
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Project</span>
-              <input value={formState.project} onChange={(e) => setFormState((prev) => ({ ...prev, project: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-            </label>
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Klien</span>
-              <input value={formState.client} onChange={(e) => setFormState((prev) => ({ ...prev, client: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-            </label>
+            <label className={labelCls}><span>Project / Karakter</span>
+              <input value={form.project} onChange={set("project")} required className={inputCls} /></label>
+            <label className={labelCls}><span>Nama Klien / Studio</span>
+              <input value={form.client} onChange={set("client")} required className={inputCls} /></label>
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Total</span>
-              <input value={formState.total} onChange={(e) => setFormState((prev) => ({ ...prev, total: e.target.value }))} type="number" min="0" className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-            </label>
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Deadline</span>
-              <input value={formState.deadline} onChange={(e) => setFormState((prev) => ({ ...prev, deadline: e.target.value }))} type="date" className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-            </label>
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Status</span>
-              <select value={formState.status} onChange={(e) => setFormState((prev) => ({ ...prev, status: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400">
-                {statusOptions.map((status) => (
-                  <option key={status} value={status}>{status}</option>
-                ))}
-              </select>
-            </label>
+            <label className={labelCls}><span>Order ID</span>
+              <input value={form.order_id} onChange={set("order_id")} className={inputCls} /></label>
+            <label className={labelCls}><span>Platform</span>
+              <select value={form.platform} onChange={set("platform")} className={inputCls}>
+                {PLATFORM_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+              </select></label>
+            <label className={labelCls}><span>Market</span>
+              <select value={form.market} onChange={set("market")} className={inputCls}>
+                {MARKET_OPTIONS.map((m) => <option key={m}>{m}</option>)}
+              </select></label>
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Order ID</span>
-              <input value={formState.order_id} onChange={(e) => setFormState((prev) => ({ ...prev, order_id: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-            </label>
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Platform</span>
-              <select value={formState.platform} onChange={(e) => setFormState((prev) => ({ ...prev, platform: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400">
-                {platformOptions.map((platform) => (
-                  <option key={platform} value={platform}>{platform}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Market</span>
-              <input value={formState.market} onChange={(e) => setFormState((prev) => ({ ...prev, market: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-            </label>
+            <label className={labelCls}><span>Jenis Pekerjaan</span>
+              <select value={form.work_type} onChange={set("work_type")} className={inputCls}>
+                {WORK_TYPE_OPTIONS.map((w) => <option key={w}>{w}</option>)}
+              </select></label>
+            <label className={labelCls}><span>Status Produksi</span>
+              <select value={form.status} onChange={set("status")} className={inputCls}>
+                {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+              </select></label>
+            <label className={labelCls}><span>Status Pembayaran</span>
+              <select value={form.payment_status} onChange={set("payment_status")} className={inputCls}>
+                {PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+              </select></label>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <label className={labelCls}><span>Deadline</span>
+              <input value={form.deadline} onChange={set("deadline")} type="date" required className={inputCls} /></label>
+            <label className={labelCls}><span>Nilai Order (USD)</span>
+              <input value={form.total} onChange={set("total")} type="number" min="0" className={inputCls} /></label>
+            <label className={labelCls}><span>Marketer</span>
+              <select value={form.marketer || ""} onChange={set("marketer")} className={inputCls}>
+                <option value="">-</option>
+                {MARKETER_OPTIONS.map((m) => <option key={m}>{m}</option>)}
+              </select></label>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Jenis pekerjaan</span>
-              <input value={formState.work_type} onChange={(e) => setFormState((prev) => ({ ...prev, work_type: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-            </label>
-            <label className="space-y-2 text-sm text-slate-700">
-              <span>Payment status</span>
-              <select value={formState.payment_status} onChange={(e) => setFormState((prev) => ({ ...prev, payment_status: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400">
-                {paymentOptions.map((payment) => (
-                  <option key={payment} value={payment}>{payment}</option>
-                ))}
-              </select>
-            </label>
+            <label className={labelCls}><span>Artists / Tim (pisahkan koma)</span>
+              <input value={form.artists} onChange={set("artists")} placeholder="Andre, Budi" className={inputCls} /></label>
+            <label className={labelCls}><span>Folder Code</span>
+              <input value={form.folder_code} onChange={set("folder_code")} placeholder="Auto-generate jika kosong" className={inputCls} /></label>
           </div>
-          <label className="space-y-2 text-sm text-slate-700">
-            <span>Folder code</span>
-            <input value={formState.folder_code} onChange={(e) => setFormState((prev) => ({ ...prev, folder_code: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-          </label>
-          <label className="space-y-2 text-sm text-slate-700">
-            <span>Artists / Tim</span>
-            <input value={formState.artists} onChange={(e) => setFormState((prev) => ({ ...prev, artists: e.target.value }))} className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-          </label>
-          <div className="flex flex-wrap justify-end gap-3 pt-4">
-            <button onClick={() => onSave(formState)} className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">
-              <ArrowRight size={16} /> Simpan Perubahan
-            </button>
+          <label className={labelCls}><span>Notes</span>
+            <textarea value={form.notes || ""} onChange={set("notes")} rows={3} className={inputCls} /></label>
+          <div className="flex flex-wrap justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
+            <button type="submit" className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">Simpan</button>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );

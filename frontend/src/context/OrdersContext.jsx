@@ -22,33 +22,37 @@ export function OrdersProvider({ children }) {
     }
   }, []);
 
-  const createOrder = useCallback(
-    async (payload) => {
-      try {
-        const res = await api.post("/orders", payload);
-        setOrders((current) => [res.data.order, ...current]);
-        return res.data.order;
-      } catch (error) {
-        console.error("Create order failed", error);
-        throw error;
-      }
-    },
-    []
-  );
+  const createOrder = useCallback(async (payload) => {
+    try {
+      const res = await api.post("/orders", payload);
+      setOrders((curr) => [res.data.order, ...curr]);
+      return res.data.order;
+    } catch (error) {
+      console.error("Create order failed", error);
+      throw error;
+    }
+  }, []);
 
-  const updateOrder = useCallback(
-    async (orderId, payload) => {
-      try {
-        const res = await api.patch(`/orders/${orderId}`, payload);
-        setOrders((current) => current.map((order) => (order.id === orderId ? res.data.order : order)));
-        return res.data.order;
-      } catch (error) {
-        console.error("Update order failed", error);
-        throw error;
-      }
-    },
-    []
-  );
+  const updateOrder = useCallback(async (orderId, payload) => {
+    try {
+      const res = await api.patch(`/orders/${orderId}`, payload);
+      setOrders((curr) => curr.map((o) => (o.id === orderId ? res.data.order : o)));
+      return res.data.order;
+    } catch (error) {
+      console.error("Update order failed", error);
+      throw error;
+    }
+  }, []);
+
+  const deleteOrder = useCallback(async (orderId) => {
+    try {
+      await api.delete(`/orders/${orderId}`);
+      setOrders((curr) => curr.filter((o) => o.id !== orderId));
+    } catch (error) {
+      console.error("Delete order failed", error);
+      throw error;
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -56,7 +60,7 @@ export function OrdersProvider({ children }) {
   }, [user, fetchOrders]);
 
   return (
-    <OrdersContext.Provider value={{ orders, loading, fetchOrders, createOrder, updateOrder }}>
+    <OrdersContext.Provider value={{ orders, loading, fetchOrders, createOrder, updateOrder, deleteOrder }}>
       {children}
     </OrdersContext.Provider>
   );

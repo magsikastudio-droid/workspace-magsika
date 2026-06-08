@@ -157,17 +157,45 @@ def format_order(record: dict) -> dict:
         "id": str(record.get("_id")) if record.get("_id") else record.get("id"),
         "project": record.get("project", "Untitled"),
         "client": record.get("client", "Unknown"),
-        "status": record.get("status", "pending"),
+        "status": record.get("status", "Pending"),
         "total": record.get("total", 0),
         "deadline": record.get("deadline"),
         "artists": record.get("artists", []),
         "platform": record.get("platform", "Direct"),
         "market": record.get("market", "Magsika"),
-        "order_id": record.get("order_id", "") ,
+        "order_id": record.get("order_id", ""),
         "work_type": record.get("work_type", "Modeling"),
         "payment_status": record.get("payment_status", "Belum Lunas"),
         "folder_code": record.get("folder_code", ""),
+        "marketer": record.get("marketer", ""),
+        "notes": record.get("notes", ""),
         "created_at": record.get("created_at"),
+    }
+
+
+def format_freelance_artist(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")) if record.get("_id") else record.get("id"),
+        "name": record.get("name", ""),
+        "bank": record.get("bank", ""),
+        "rekening": record.get("rekening", ""),
+        "phone": record.get("phone", ""),
+        "notes": record.get("notes", ""),
+    }
+
+
+def format_freelance_project(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")) if record.get("_id") else record.get("id"),
+        "artist_id": record.get("artist_id", ""),
+        "project_name": record.get("project_name", ""),
+        "order_id": record.get("order_id", ""),
+        "fee": record.get("fee", 0),
+        "dp_amount": record.get("dp_amount"),
+        "dp_date": record.get("dp_date"),
+        "pelunasan_date": record.get("pelunasan_date"),
+        "status_bayar": record.get("status_bayar", "Belum Lunas"),
+        "notes": record.get("notes", ""),
     }
 
 
@@ -208,7 +236,7 @@ class OrderCreate(BaseModel):
     project: str
     client: str
     total: float
-    status: str = Field(default="pending")
+    status: str = Field(default="Pending")
     deadline: Optional[str] = None
     artists: Optional[List[str]] = []
     platform: Optional[str] = None
@@ -217,6 +245,8 @@ class OrderCreate(BaseModel):
     work_type: Optional[str] = None
     payment_status: Optional[str] = Field(default="Belum Lunas")
     folder_code: Optional[str] = None
+    marketer: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class OrderUpdate(BaseModel):
@@ -232,6 +262,46 @@ class OrderUpdate(BaseModel):
     work_type: Optional[str] = None
     payment_status: Optional[str] = None
     folder_code: Optional[str] = None
+    marketer: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FreelanceArtistCreate(BaseModel):
+    name: str
+    bank: Optional[str] = None
+    rekening: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FreelanceArtistUpdate(BaseModel):
+    name: Optional[str] = None
+    bank: Optional[str] = None
+    rekening: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FreelanceProjectCreate(BaseModel):
+    artist_id: str
+    project_name: str
+    order_id: Optional[str] = None
+    fee: float = 0
+    dp_amount: Optional[float] = None
+    dp_date: Optional[str] = None
+    pelunasan_date: Optional[str] = None
+    status_bayar: str = Field(default="Belum Lunas")
+    notes: Optional[str] = None
+
+
+class FreelanceProjectUpdate(BaseModel):
+    project_name: Optional[str] = None
+    fee: Optional[float] = None
+    dp_amount: Optional[float] = None
+    dp_date: Optional[str] = None
+    pelunasan_date: Optional[str] = None
+    status_bayar: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class TaskBase(BaseModel):
@@ -376,6 +446,105 @@ async def update_order(order_id: str, order: OrderUpdate, current_user: dict = D
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     return {"order": format_order(updated)}
+
+
+@app.delete("/orders/{order_id}")
+async def delete_order(order_id: str, current_user: dict = Depends(get_current_user)):
+    object_id = to_object_id(order_id)
+    try:
+        result = await db.orders.delete_one({"_id": object_id})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete order")
+    return {"deleted": True}
+
+
+@app.get("/freelance/artists")
+async def list_freelance_artists(current_user: dict = Depends(get_current_user)):
+    try:
+        records = await db.freelance_artists.find().to_list(100)
+        return {"artists": [format_freelance_artist(r) for r in records]}
+    except Exception:
+        return {"artists": []}
+
+
+@app.post("/freelance/artists")
+async def create_freelance_artist(artist: FreelanceArtistCreate, current_user: dict = Depends(get_current_user)):
+    payload = artist.dict()
+    try:
+        result = await db.freelance_artists.insert_one(payload)
+        return {"artist": format_freelance_artist({**payload, "_id": result.inserted_id})}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/freelance/artists/{artist_id}")
+async def update_freelance_artist(artist_id: str, artist: FreelanceArtistUpdate, current_user: dict = Depends(get_current_user)):
+    payload = {k: v for k, v in artist.dict().items() if v is not None}
+    object_id = to_object_id(artist_id)
+    try:
+        await db.freelance_artists.update_one({"_id": object_id}, {"$set": payload})
+        updated = await db.freelance_artists.find_one({"_id": object_id})
+        return {"artist": format_freelance_artist(updated)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/freelance/artists/{artist_id}")
+async def delete_freelance_artist(artist_id: str, current_user: dict = Depends(get_current_user)):
+    object_id = to_object_id(artist_id)
+    try:
+        await db.freelance_artists.delete_one({"_id": object_id})
+        await db.freelance_projects.delete_many({"artist_id": artist_id})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"deleted": True}
+
+
+@app.get("/freelance/projects")
+async def list_freelance_projects(artist_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    try:
+        query = {"artist_id": artist_id} if artist_id else {}
+        records = await db.freelance_projects.find(query).to_list(200)
+        return {"projects": [format_freelance_project(r) for r in records]}
+    except Exception:
+        return {"projects": []}
+
+
+@app.post("/freelance/projects")
+async def create_freelance_project(project: FreelanceProjectCreate, current_user: dict = Depends(get_current_user)):
+    payload = project.dict()
+    payload["created_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        result = await db.freelance_projects.insert_one(payload)
+        return {"project": format_freelance_project({**payload, "_id": result.inserted_id})}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/freelance/projects/{project_id}")
+async def update_freelance_project(project_id: str, project: FreelanceProjectUpdate, current_user: dict = Depends(get_current_user)):
+    payload = {k: v for k, v in project.dict().items() if v is not None}
+    object_id = to_object_id(project_id)
+    try:
+        await db.freelance_projects.update_one({"_id": object_id}, {"$set": payload})
+        updated = await db.freelance_projects.find_one({"_id": object_id})
+        return {"project": format_freelance_project(updated)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/freelance/projects/{project_id}")
+async def delete_freelance_project(project_id: str, current_user: dict = Depends(get_current_user)):
+    object_id = to_object_id(project_id)
+    try:
+        await db.freelance_projects.delete_one({"_id": object_id})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"deleted": True}
 
 
 @app.get("/tasks")

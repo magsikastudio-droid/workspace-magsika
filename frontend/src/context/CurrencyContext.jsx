@@ -4,20 +4,21 @@ const CurrencyContext = createContext(null);
 
 export function CurrencyProvider({ children }) {
   const [currency, setCurrency] = useState("IDR");
+  const [exchangeRate, setExchangeRate] = useState(16000);
 
   const formatMoney = useMemo(() => {
     return (value) => {
-      const formatter = new Intl.NumberFormat("id-ID", {
+      const amount = currency === "IDR" ? (value || 0) * exchangeRate : (value || 0);
+      return new Intl.NumberFormat("id-ID", {
         style: "currency",
         currency,
         minimumFractionDigits: 0,
-      });
-      return formatter.format(value);
+      }).format(amount);
     };
-  }, [currency]);
+  }, [currency, exchangeRate]);
 
   return (
-    <CurrencyContext.Provider value={{ currency, setCurrency, formatMoney }}>
+    <CurrencyContext.Provider value={{ currency, setCurrency, exchangeRate, setExchangeRate, formatMoney }}>
       {children}
     </CurrencyContext.Provider>
   );
