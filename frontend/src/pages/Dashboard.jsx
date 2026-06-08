@@ -1,22 +1,24 @@
 import React, { useMemo } from "react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
-import { TrendingUp, CheckCircle2, Clock3, Layers, Users, AlertTriangle } from "lucide-react";
-import { MetricCard } from "../components/MetricCard";
+import { TrendingUp, CheckCircle2, Clock3, Layers, Users, AlertTriangle, ArrowUpRight, Plus } from "lucide-react";
 import { PLATFORM_COLORS, normalizeStatus } from "../lib/constants";
+import { useNavigate } from "react-router-dom";
 
 export default function DashboardPage() {
   const { orders, loading } = useOrders();
   const { formatMoney } = useCurrency();
+  const navigate = useNavigate();
 
   const totalOrders = orders.length;
   const completedOrders = orders.filter((o) => normalizeStatus(o.status) === "Done").length;
-  const activeOrders = orders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
+  const activeOrders = orders.filter((o) => {
+    const s = normalizeStatus(o.status);
+    return s !== "Done" && s !== "Cancel";
+  }).length;
+  const cancelOrders = orders.filter((o) => normalizeStatus(o.status) === "Cancel").length;
   const revenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
-  const freelanceFee = Math.round(revenue * 0.12);
-  const unpaid = orders
-    .filter((o) => o.payment_status !== "Lunas")
-    .reduce((sum, o) => sum + (o.total || 0), 0);
+  const unpaid = orders.filter((o) => o.payment_status !== "Lunas").reduce((sum, o) => sum + (o.total || 0), 0);
 
   const deadlineAlerts = orders.filter((o) => {
     if (!o.deadline || normalizeStatus(o.status) === "Done" || normalizeStatus(o.status) === "Cancel") return false;
@@ -35,193 +37,263 @@ export default function DashboardPage() {
       if (!o.client) return;
       map[o.client] = (map[o.client] || 0) + (o.total || 0);
     });
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5)
       .map(([client, total]) => ({ client, total, count: orders.filter((o) => o.client === client).length }));
   }, [orders]);
 
   const platformSummary = useMemo(() => {
     const map = {};
-    orders.forEach((o) => {
-      const p = o.platform || "Direct";
-      map[p] = (map[p] || 0) + 1;
-    });
+    orders.forEach((o) => { const p = o.platform || "Direct"; map[p] = (map[p] || 0) + 1; });
     const total = Object.values(map).reduce((s, c) => s + c, 0);
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([platform, count]) => ({
-        platform, count,
-        share: total ? Math.round((count / total) * 100) : 0,
-        color: PLATFORM_COLORS[platform] || "#94a3b8",
-      }));
+    return Object.entries(map).sort((a, b) => b[1] - a[1])
+      .map(([platform, count]) => ({ platform, count, share: total ? Math.round((count / total) * 100) : 0, color: PLATFORM_COLORS[platform] || "#94a3b8" }));
   }, [orders]);
 
-  const statusSummary = useMemo(() => {
-    const map = {};
-    orders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").forEach((o) => {
-      map[o.status] = (map[o.status] || 0) + 1;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  }, [orders]);
+  const recentOrders = useMemo(() =>
+    [...orders].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, 5),
+    [orders]
+  );
+
+  const STATUS_BADGE = {
+    "Done":     "bg-emerald-50 text-emerald-700",
+    "Cancel":   "bg-slate-100 text-slate-500",
+    "Pending":  "bg-amber-50 text-amber-700",
+  };
+  const getBadge = (status) => STATUS_BADGE[normalizeStatus(status)] || "bg-violet-50 text-violet-700";
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      {/* Page header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-2 text-sm text-slate-500">Ringkasan order dan pengingat deadline untuk tim Magsika Studio.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          <p className="mt-0.5 text-sm text-slate-500">Selamat datang kembali — ringkasan produksi Magsika Studio.</p>
         </div>
-        <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700">
-          {new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" })}
-        </div>
+        <button onClick={() => navigate("/orders")} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-700 transition">
+          <Plus size={15} /> Tambah Order
+        </button>
       </div>
 
+      {/* Alerts */}
       {overdueOrders.length > 0 && (
-        <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-          <div className="flex items-center gap-3 font-semibold">
-            <AlertTriangle size={18} />
-            {overdueOrders.length} order melewati deadline: {overdueOrders.map((o) => o.project).join(", ")}
+        <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-rose-500" />
+          <div>
+            <span className="font-semibold">{overdueOrders.length} order melewati deadline: </span>
+            {overdueOrders.map((o) => o.project).join(", ")}
           </div>
         </div>
       )}
-
       {deadlineAlerts.length > 0 && (
-        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <div className="flex items-center gap-3 font-semibold">
-            <AlertTriangle size={18} />
-            {deadlineAlerts.length} project deadline ≤ 3 hari: {deadlineAlerts.map((o) => o.project).join(", ")}
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-500" />
+          <div>
+            <span className="font-semibold">{deadlineAlerts.length} deadline ≤ 3 hari: </span>
+            {deadlineAlerts.map((o) => o.project).join(", ")}
           </div>
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <MetricCard icon={Layers} title="Total Project" value={totalOrders} subtitle={`${completedOrders} selesai · ${activeOrders} aktif`} accent="from-indigo-500 to-violet-600" />
-        <MetricCard icon={TrendingUp} title="Total Equity" value={formatMoney(revenue)} subtitle="Akumulasi semua order" accent="from-sky-500 to-cyan-600" />
-        <MetricCard icon={CheckCircle2} title="Done / Selesai" value={completedOrders} subtitle={`${Math.round((completedOrders / Math.max(totalOrders, 1)) * 100)}% completion`} accent="from-emerald-500 to-teal-600" />
-        <MetricCard icon={Users} title="Fee Freelance" value={formatMoney(freelanceFee)} subtitle="Est. 12% dari revenue" accent="from-amber-500 to-orange-600" />
-        <MetricCard icon={Clock3} title="Pending Payment" value={formatMoney(unpaid)} subtitle="Belum lunas" accent="from-rose-500 to-pink-600" />
+      {/* Metric cards */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Total Orders"
+          value={totalOrders}
+          sub={`Last 365 days`}
+          accent="border-l-violet-500"
+          icon={Layers}
+          iconBg="bg-violet-50 text-violet-600"
+          trend={`${activeOrders} aktif`}
+        />
+        <MetricCard
+          label="New / Active Orders"
+          value={activeOrders}
+          sub="Sedang diproduksi"
+          accent="border-l-sky-500"
+          icon={TrendingUp}
+          iconBg="bg-sky-50 text-sky-600"
+          trend={`${Math.round((activeOrders / Math.max(totalOrders, 1)) * 100)}% dari total`}
+        />
+        <MetricCard
+          label="Completed Orders"
+          value={completedOrders}
+          sub={`${Math.round((completedOrders / Math.max(totalOrders, 1)) * 100)}% completion rate`}
+          accent="border-l-emerald-500"
+          icon={CheckCircle2}
+          iconBg="bg-emerald-50 text-emerald-600"
+          trend="selesai"
+          positive
+        />
+        <MetricCard
+          label="Cancelled Orders"
+          value={cancelOrders}
+          sub="Order dibatalkan"
+          accent="border-l-rose-400"
+          icon={Clock3}
+          iconBg="bg-rose-50 text-rose-600"
+          trend={`${Math.round((cancelOrders / Math.max(totalOrders, 1)) * 100)}% cancel rate`}
+          negative
+        />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.6fr)_minmax(0,0.4fr)]">
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-4">
-            <div>
-              <h2 className="text-xl font-semibold">Top Klien</h2>
-              <p className="text-sm text-slate-500">Pendapatan per klien.</p>
-            </div>
-            <span className="text-sm text-slate-500">{clientTotals.length} klien</span>
-          </div>
-          <div className="mt-5 space-y-3">
-            {clientTotals.map((item) => {
-              const maxTotal = clientTotals[0]?.total || 1;
-              const pct = Math.round((item.total / maxTotal) * 100);
-              return (
-                <div key={item.client}>
-                  <div className="mb-1 flex items-center justify-between text-sm">
-                    <span className="font-semibold text-slate-900">{item.client}</span>
-                    <span className="text-slate-500">{item.count} order · <span className="font-semibold text-slate-900">{formatMoney(item.total)}</span></span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-slate-100">
-                    <div className="h-2 rounded-full bg-gradient-to-r from-sky-500 to-violet-500" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-            {clientTotals.length === 0 && <p className="text-sm text-slate-500">Belum ada order.</p>}
-          </div>
-        </section>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-600 to-indigo-600 p-5 text-white shadow-sm">
+          <p className="text-sm font-medium text-violet-200">Total Revenue</p>
+          <p className="mt-2 text-3xl font-bold">{formatMoney(revenue)}</p>
+          <p className="mt-1 text-sm text-violet-200">Akumulasi semua order</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm font-medium text-slate-500">Pending Payment</p>
+          <p className="mt-2 text-3xl font-bold text-rose-600">{formatMoney(unpaid)}</p>
+          <p className="mt-1 text-sm text-slate-400">Belum lunas dari klien</p>
+        </div>
+      </div>
 
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-4">
+      {/* Table + Platform */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+        {/* Recent orders table */}
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <div>
-              <h2 className="text-xl font-semibold">Per Platform</h2>
-              <p className="text-sm text-slate-500">Distribusi order.</p>
+              <p className="font-semibold text-slate-900">Order Terbaru</p>
+              <p className="text-xs text-slate-400">5 order terakhir masuk</p>
             </div>
-            <span className="text-sm text-slate-500">{orders.length} total</span>
+            <button onClick={() => navigate("/orders")} className="flex items-center gap-1 text-xs font-semibold text-violet-600 hover:text-violet-700">
+              Lihat semua <ArrowUpRight size={13} />
+            </button>
           </div>
-          <div className="mt-5">
+          <div className="divide-y divide-slate-50">
+            {recentOrders.map((order) => (
+              <div key={order.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50 transition">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-sm font-bold text-violet-600">
+                  {order.client?.charAt(0)?.toUpperCase() || "?"}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-900">{order.project}</p>
+                  <p className="truncate text-xs text-slate-400">{order.client} · {order.platform || "Direct"}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-slate-900">{formatMoney(order.total)}</p>
+                  <span className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBadge(order.status)}`}>
+                    {normalizeStatus(order.status)}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {recentOrders.length === 0 && (
+              <div className="px-5 py-10 text-center text-sm text-slate-400">Belum ada order.</div>
+            )}
+          </div>
+        </div>
+
+        {/* Platform distribution */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-5 py-4">
+            <p className="font-semibold text-slate-900">Per Platform</p>
+            <p className="text-xs text-slate-400">Distribusi {totalOrders} order</p>
+          </div>
+          <div className="p-5">
             <PieChart data={platformSummary} />
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 space-y-2.5">
               {platformSummary.map((item) => (
-                <div key={item.platform} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                <div key={item.platform} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full" style={{ background: item.color }} />
-                    <span className="text-sm font-medium text-slate-700">{item.platform}</span>
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+                    <span className="text-xs text-slate-600">{item.platform}</span>
                   </div>
-                  <span className="text-sm font-semibold text-slate-900">{item.count} ({item.share}%)</span>
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full" style={{ width: `${item.share}%`, background: item.color }} />
+                    </div>
+                    <span className="w-8 text-right text-xs font-semibold text-slate-700">{item.share}%</span>
+                  </div>
                 </div>
               ))}
+              {platformSummary.length === 0 && <p className="text-xs text-slate-400">Belum ada data.</p>}
             </div>
           </div>
-        </section>
+        </div>
       </div>
 
-      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-5 border-b border-slate-200 pb-4">
-          <h2 className="text-xl font-semibold">Status Produksi Aktif</h2>
-          <p className="text-sm text-slate-500">Distribusi order berdasarkan tahap produksi saat ini.</p>
+      {/* Top clients */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <p className="font-semibold text-slate-900">Top Klien</p>
+          <p className="text-xs text-slate-400">Berdasarkan total nilai order</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {statusSummary.map(([status, count]) => (
-            <div key={status} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <span className="text-sm font-medium text-slate-700">{status}</span>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-900 shadow-sm">{count}</span>
-            </div>
-          ))}
-          {statusSummary.length === 0 && <p className="text-sm text-slate-500 col-span-3">Tidak ada order aktif.</p>}
+        <div className="divide-y divide-slate-50">
+          {clientTotals.map((item, idx) => {
+            const maxTotal = clientTotals[0]?.total || 1;
+            const pct = Math.round((item.total / maxTotal) * 100);
+            return (
+              <div key={item.client} className="flex items-center gap-4 px-5 py-3.5">
+                <span className="w-5 text-center text-xs font-bold text-slate-400">#{idx + 1}</span>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
+                  {item.client.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-semibold text-slate-900">{item.client}</p>
+                    <p className="shrink-0 text-sm font-bold text-slate-900">{formatMoney(item.total)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-[10px] text-slate-400">{item.count} order</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {clientTotals.length === 0 && <div className="px-5 py-8 text-center text-sm text-slate-400">Belum ada data klien.</div>}
         </div>
-      </section>
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, sub, accent, icon: Icon, iconBg, trend, positive, negative }) {
+  return (
+    <div className={`rounded-2xl border-l-4 border border-slate-200 bg-white p-5 shadow-sm ${accent}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">{label}</p>
+          <p className="mt-2 text-3xl font-bold text-slate-900">{value}</p>
+          <p className="mt-1 text-xs text-slate-400">{sub}</p>
+        </div>
+        <div className={`rounded-xl p-2.5 ${iconBg}`}>
+          <Icon size={18} />
+        </div>
+      </div>
+      {trend && (
+        <div className={`mt-3 flex items-center gap-1 text-xs font-semibold ${positive ? "text-emerald-600" : negative ? "text-rose-500" : "text-slate-500"}`}>
+          {positive && "▲ "}{negative && "▼ "}{trend}
+        </div>
+      )}
     </div>
   );
 }
 
 function PieChart({ data }) {
-  if (!data || data.length === 0) {
-    return <div className="flex h-36 items-center justify-center text-sm text-slate-400">Belum ada data</div>;
-  }
-  const size = 140;
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = 50;
-  const inner = 28;
+  if (!data || data.length === 0) return <div className="flex h-28 items-center justify-center text-xs text-slate-400">Belum ada data</div>;
+  const size = 120; const cx = 60; const cy = 60; const r = 48; const inner = 28;
   let cumulative = 0;
   const total = data.reduce((s, d) => s + d.count, 0);
-
-  const slices = data.map((d) => {
-    const start = cumulative;
-    const slice = (d.count / total) * 360;
-    cumulative += slice;
-    return { ...d, startAngle: start, endAngle: cumulative };
-  });
-
-  const polarToCartesian = (angle, radius) => {
-    const rad = ((angle - 90) * Math.PI) / 180;
-    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
-  };
-
-  const describeArc = (start, end, outerR, innerR) => {
+  const slices = data.map((d) => { const start = cumulative; const slice = (d.count / total) * 360; cumulative += slice; return { ...d, startAngle: start, endAngle: cumulative }; });
+  const polar = (angle, radius) => { const rad = ((angle - 90) * Math.PI) / 180; return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) }; };
+  const arc = (start, end, outerR, innerR) => {
     if (end - start >= 360) end = 359.99;
-    const p1 = polarToCartesian(start, outerR);
-    const p2 = polarToCartesian(end, outerR);
-    const p3 = polarToCartesian(end, innerR);
-    const p4 = polarToCartesian(start, innerR);
+    const p1 = polar(start, outerR); const p2 = polar(end, outerR); const p3 = polar(end, innerR); const p4 = polar(start, innerR);
     const large = end - start > 180 ? 1 : 0;
     return `M ${p1.x} ${p1.y} A ${outerR} ${outerR} 0 ${large} 1 ${p2.x} ${p2.y} L ${p3.x} ${p3.y} A ${innerR} ${innerR} 0 ${large} 0 ${p4.x} ${p4.y} Z`;
   };
-
   return (
     <div className="flex justify-center">
       <svg width={size} height={size}>
-        {slices.map((slice) => (
-          <path
-            key={slice.platform}
-            d={describeArc(slice.startAngle, slice.endAngle, r, inner)}
-            fill={slice.color}
-          />
-        ))}
-        <text x={cx} y={cy - 6} textAnchor="middle" fontSize="11" fill="#64748b">{total}</text>
-        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="9" fill="#94a3b8">order</text>
+        {slices.map((s) => <path key={s.platform} d={arc(s.startAngle, s.endAngle, r, inner)} fill={s.color} />)}
+        <text x={cx} y={cy - 5} textAnchor="middle" fontSize="14" fontWeight="700" fill="#0f172a">{total}</text>
+        <text x={cx} y={cy + 10} textAnchor="middle" fontSize="9" fill="#94a3b8">order</text>
       </svg>
     </div>
   );
