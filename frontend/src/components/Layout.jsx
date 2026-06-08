@@ -41,8 +41,8 @@ export default function Layout({ children }) {
             </div>
           </button>
 
-          <nav className="hidden items-center gap-1 lg:flex flex-wrap">
-            {navItems.map((item) => (
+          <nav className="hidden items-center gap-1 xl:flex">
+            {navItems.slice(0, 6).map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
