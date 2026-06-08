@@ -36,8 +36,6 @@ client_kwargs = {
     "serverSelectionTimeoutMS": 15000,
     "connectTimeoutMS": 15000,
     "socketTimeoutMS": 30000,
-    "maxPoolSize": 10,
-    "retryWrites": True,
 }
 if MONGO_URI.startswith("mongodb+"):
     if certifi is not None:
