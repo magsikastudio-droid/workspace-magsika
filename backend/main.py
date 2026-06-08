@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     import certifi
@@ -13,6 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from auth import create_access_token, decode_token, oauth2_scheme
 
@@ -71,6 +74,7 @@ def format_order(record: dict) -> dict:
         "total": record.get("total", 0),
         "deadline": record.get("deadline"),
         "artists": record.get("artists", []),
+        "artist_contributions": record.get("artist_contributions", []),
         "platform": record.get("platform", "Direct"),
         "market": record.get("market", "Magsika"),
         "order_id": record.get("order_id", ""),
@@ -79,7 +83,25 @@ def format_order(record: dict) -> dict:
         "folder_code": record.get("folder_code", ""),
         "marketer": record.get("marketer", ""),
         "notes": record.get("notes", ""),
+        "fee_freelance": record.get("fee_freelance", 0),
+        "order_date": record.get("order_date", record.get("created_at", "")[:10] if record.get("created_at") else ""),
         "created_at": record.get("created_at"),
+    }
+
+
+def format_chat_entry(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")) if record.get("_id") else record.get("id"),
+        "date": record.get("date", ""),
+        "tipe": record.get("tipe", "New Client"),
+        "username": record.get("username", ""),
+        "estimasi": record.get("estimasi"),
+        "budget": record.get("budget"),
+        "agreed": record.get("agreed"),
+        "real": record.get("real"),
+        "status": record.get("status", "Discussing"),
+        "akun": record.get("akun", "Magsika"),
+        "catatan": record.get("catatan", ""),
     }
 
 
@@ -142,13 +164,21 @@ class UserOut(BaseModel):
     status: str
 
 
+class ArtistContribution(BaseModel):
+    name: str
+    type: str = "Tim"
+    percent: int = 100
+
+
 class OrderCreate(BaseModel):
     project: str
     client: str
     total: float
     status: str = Field(default="Pending")
     deadline: Optional[str] = None
+    order_date: Optional[str] = None
     artists: Optional[List[str]] = []
+    artist_contributions: Optional[List[ArtistContribution]] = []
     platform: Optional[str] = None
     market: Optional[str] = None
     order_id: Optional[str] = None
@@ -157,6 +187,7 @@ class OrderCreate(BaseModel):
     folder_code: Optional[str] = None
     marketer: Optional[str] = None
     notes: Optional[str] = None
+    fee_freelance: Optional[float] = 0
 
 
 class OrderUpdate(BaseModel):
@@ -165,7 +196,9 @@ class OrderUpdate(BaseModel):
     total: Optional[float] = None
     status: Optional[str] = None
     deadline: Optional[str] = None
+    order_date: Optional[str] = None
     artists: Optional[List[str]] = None
+    artist_contributions: Optional[List[Dict[str, Any]]] = None
     platform: Optional[str] = None
     market: Optional[str] = None
     order_id: Optional[str] = None
@@ -174,6 +207,33 @@ class OrderUpdate(BaseModel):
     folder_code: Optional[str] = None
     marketer: Optional[str] = None
     notes: Optional[str] = None
+    fee_freelance: Optional[float] = None
+
+
+class ChatEntryCreate(BaseModel):
+    date: str
+    tipe: str = "New Client"
+    username: str = ""
+    estimasi: Optional[float] = None
+    budget: Optional[float] = None
+    agreed: Optional[float] = None
+    real: Optional[float] = None
+    status: str = "Discussing"
+    akun: str = "Magsika"
+    catatan: Optional[str] = None
+
+
+class ChatEntryUpdate(BaseModel):
+    date: Optional[str] = None
+    tipe: Optional[str] = None
+    username: Optional[str] = None
+    estimasi: Optional[float] = None
+    budget: Optional[float] = None
+    agreed: Optional[float] = None
+    real: Optional[float] = None
+    status: Optional[str] = None
+    akun: Optional[str] = None
+    catatan: Optional[str] = None
 
 
 class FreelanceArtistCreate(BaseModel):
@@ -246,6 +306,50 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+scheduler = AsyncIOScheduler()
+
+
+async def auto_generate_daily_tasks():
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        orders = await db.orders.find().to_list(500)
+    except Exception:
+        return
+    for order in orders:
+        st = order.get("status", "")
+        if st.lower() in ["done", "cancel"]:
+            continue
+        contributions = order.get("artist_contributions", [])
+        if not contributions:
+            contributions = [{"name": a, "type": "Tim", "percent": 100} for a in order.get("artists", []) if a]
+        order_id_str = str(order.get("_id", order.get("id", "")))
+        for contrib in contributions:
+            artist_name = contrib.get("name", "")
+            if not artist_name:
+                continue
+            existing = await db.tasks.find_one({"order_id": order_id_str, "assignee": artist_name, "date": today})
+            if not existing:
+                await db.tasks.insert_one({
+                    "title": f"{order.get('project', '')} — {artist_name}",
+                    "assignee": artist_name,
+                    "assignee_type": "freelance" if contrib.get("type") == "Freelance" else "tim",
+                    "status": "pending",
+                    "date": today,
+                    "notes": order.get("folder_code", ""),
+                    "order_id": order_id_str,
+                })
+
+
+@app.on_event("startup")
+async def on_startup():
+    scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
+    scheduler.start()
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    scheduler.shutdown(wait=False)
 
 
 def verify_default_admin(username: str, password: str) -> Optional[dict]:
@@ -504,6 +608,56 @@ async def delete_task(task_id: str, current_user: dict = Depends(get_current_use
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete task")
+    return {"deleted": True}
+
+
+@app.post("/tasks/auto-generate")
+async def manual_auto_generate(current_user: dict = Depends(get_current_user)):
+    await auto_generate_daily_tasks()
+    return {"generated": True}
+
+
+@app.get("/chat-entries")
+async def list_chat_entries(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    try:
+        query = {"date": {"$regex": f"^{month}"}} if month else {}
+        records = await db.chat_entries.find(query).sort("date", 1).to_list(1000)
+        return {"entries": [format_chat_entry(r) for r in records]}
+    except Exception:
+        return {"entries": []}
+
+
+@app.post("/chat-entries")
+async def create_chat_entry(entry: ChatEntryCreate, current_user: dict = Depends(get_current_user)):
+    payload = entry.dict()
+    try:
+        result = await db.chat_entries.insert_one(payload)
+        return {"entry": format_chat_entry({**payload, "_id": result.inserted_id})}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/chat-entries/{entry_id}")
+async def update_chat_entry(entry_id: str, entry: ChatEntryUpdate, current_user: dict = Depends(get_current_user)):
+    payload = {k: v for k, v in entry.dict().items() if v is not None}
+    if not payload:
+        raise HTTPException(status_code=400, detail="No update data")
+    object_id = to_object_id(entry_id)
+    try:
+        await db.chat_entries.update_one({"_id": object_id}, {"$set": payload})
+        updated = await db.chat_entries.find_one({"_id": object_id})
+        return {"entry": format_chat_entry(updated)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/chat-entries/{entry_id}")
+async def delete_chat_entry(entry_id: str, current_user: dict = Depends(get_current_user)):
+    object_id = to_object_id(entry_id)
+    try:
+        await db.chat_entries.delete_one({"_id": object_id})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     return {"deleted": True}
 
 
