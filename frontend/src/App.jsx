@@ -5,6 +5,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { OrdersProvider } from "./context/OrdersContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
 import { TasksProvider } from "./context/TasksContext";
+import { ChatProvider } from "./context/ChatContext";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
@@ -33,6 +34,7 @@ function App() {
                 <CurrencyProvider>
                   <OrdersProvider>
                     <TasksProvider>
+                    <ChatProvider>
                       <Layout>
                         <Routes>
                           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -49,6 +51,7 @@ function App() {
                           <Route path="*" element={<NotFound />} />
                         </Routes>
                       </Layout>
+                    </ChatProvider>
                     </TasksProvider>
                   </OrdersProvider>
                 </CurrencyProvider>

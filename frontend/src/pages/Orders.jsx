@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Plus, Search, Edit3, Trash2, Upload, Download, Columns } from "lucide-react";
+import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X } from "lucide-react";
+import { toast } from "sonner";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
 import {
@@ -16,9 +17,12 @@ const todayStr = () => {
 
 const emptyOrder = () => ({
   project: "", client: "", total: "", deadline: todayStr(),
+  order_date: todayStr(),
   status: "Pending", artists: "", platform: "Fiverr Magsika",
   market: "Magsika", order_id: "", work_type: "Modeling",
   payment_status: "Belum Lunas", folder_code: "", marketer: "Ivo", notes: "",
+  fee_freelance: 0,
+  artist_contributions: [{ name: "", type: "Tim", percent: 100 }],
 });
 
 export default function OrdersPage() {
@@ -47,27 +51,34 @@ export default function OrdersPage() {
     [orders, search, platformFilter, statusFilter, paymentFilter]
   );
 
-  const handleCreateSubmit = async (e) => {
-    e.preventDefault();
-    const folderCode = newOrder.folder_code || generateFolderCode(
-      newOrder.platform, newOrder.market,
-      newOrder.artists.split(",")[0]?.trim(), newOrder.work_type, new Date()
+  const handleCreateSubmit = async (form) => {
+    const contributions = (form.artist_contributions || []).filter((c) => c.name.trim());
+    const artistNames = contributions.map((c) => c.name.trim());
+    const folderCode = form.folder_code || generateFolderCode(
+      form.platform, form.market,
+      artistNames[0] || form.artists?.split(",")[0]?.trim(), form.work_type, new Date()
     );
     await createOrder({
-      ...newOrder,
-      total: Number(newOrder.total),
-      artists: newOrder.artists.split(",").map((a) => a.trim()).filter(Boolean),
+      ...form,
+      total: Number(form.total),
+      artists: artistNames.length ? artistNames : form.artists.split(",").map((a) => a.trim()).filter(Boolean),
       folder_code: folderCode,
+      artist_contributions: contributions,
+      fee_freelance: Number(form.fee_freelance) || 0,
     });
     setShowCreate(false);
     setNewOrder(emptyOrder());
   };
 
   const handleSaveOrder = async (updated) => {
+    const contributions = (updated.artist_contributions || []).filter((c) => c.name.trim());
+    const artistNames = contributions.map((c) => c.name.trim());
     await updateOrder(activeOrder.id, {
       ...updated,
       total: Number(updated.total),
-      artists: updated.artists.split(",").map((a) => a.trim()).filter(Boolean),
+      artists: artistNames.length ? artistNames : (updated.artists || "").split(",").map((a) => a.trim()).filter(Boolean),
+      artist_contributions: contributions,
+      fee_freelance: Number(updated.fee_freelance) || 0,
     });
     setActiveOrder(null);
   };
@@ -227,23 +238,23 @@ export default function OrdersPage() {
       {showCreate && (
         <OrderFormModal
           title="Tambah Order Baru"
-          subtitle="Masukkan detail project, platform, dan status pembayaran."
           initial={newOrder}
           onClose={() => { setShowCreate(false); setNewOrder(emptyOrder()); }}
-          onSubmit={handleCreateSubmit}
-          isCreate
+          onSave={handleCreateSubmit}
         />
       )}
 
       {activeOrder && (
         <OrderFormModal
           title="Edit Order"
-          subtitle="Perbarui informasi order untuk tim produksi."
-          initial={activeOrder}
+          initial={{
+            ...activeOrder,
+            artists: (activeOrder.artists || []).join(", "),
+            artist_contributions: activeOrder.artist_contributions?.length
+              ? activeOrder.artist_contributions
+              : [{ name: (activeOrder.artists || [])[0] || "", type: "Tim", percent: 100 }],
+          }}
           onClose={() => setActiveOrder(null)}
-          onSubmit={async (e) => { e.preventDefault(); await handleSaveOrder(activeOrder); }}
-          onChange={(field, value) => setActiveOrder((prev) => ({ ...prev, [field]: value }))}
-          isEdit
           onSave={handleSaveOrder}
         />
       )}
@@ -264,88 +275,301 @@ export default function OrdersPage() {
   );
 }
 
-function OrderFormModal({ title, subtitle, initial, onClose, onSubmit, isCreate, isEdit, onSave }) {
-  const [form, setForm] = useState({ ...initial });
+function OrderFormModal({ title, initial, onClose, onSave }) {
+  const { exchangeRate } = useCurrency();
+  const [form, setForm] = useState({
+    ...initial,
+    artist_contributions: initial.artist_contributions?.length
+      ? initial.artist_contributions
+      : [{ name: "", type: "Tim", percent: 100 }],
+  });
+  const [manualFolder, setManualFolder] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const set = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
+
+  const autoFolderCode = generateFolderCode(
+    form.platform, form.market,
+    form.artist_contributions?.[0]?.name || form.artists?.split(",")[0]?.trim(),
+    form.work_type, form.order_date || new Date()
+  );
+
+  const completionFields = [form.project, form.client, form.platform, form.deadline, form.work_type, form.status, form.artist_contributions?.[0]?.name];
+  const filledCount = completionFields.filter(Boolean).length;
+  const completion = Math.round((filledCount / completionFields.length) * 100);
+
+  const totalIdr = (Number(form.total) || 0) * exchangeRate;
+  const feeIdr = Number(form.fee_freelance) || 0;
+  const netUsd = (Number(form.total) || 0) - feeIdr / exchangeRate;
+  const netIdr = totalIdr - feeIdr;
+  const hasFreelance = form.artist_contributions?.some((c) => c.type === "Freelance");
+
+  const totalPct = (form.artist_contributions || []).reduce((s, c) => s + (Number(c.percent) || 0), 0);
+
+  const setContrib = (idx, field, value) => {
+    setForm((p) => {
+      const next = [...(p.artist_contributions || [])];
+      next[idx] = { ...next[idx], [field]: value };
+      return { ...p, artist_contributions: next };
+    });
+  };
+
+  const addContrib = () => setForm((p) => ({
+    ...p,
+    artist_contributions: [...(p.artist_contributions || []), { name: "", type: "Tim", percent: 0 }],
+  }));
+
+  const removeContrib = (idx) => setForm((p) => ({
+    ...p,
+    artist_contributions: (p.artist_contributions || []).filter((_, i) => i !== idx),
+  }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isCreate) {
-      await onSubmit(e);
-    } else {
-      await onSave(form);
+    setSaving(true);
+    try {
+      await onSave({ ...form, folder_code: manualFolder ? form.folder_code : autoFolderCode });
+    } catch {
+      toast.error("Gagal menyimpan order");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const inputCls = "w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400";
-  const labelCls = "space-y-2 text-sm text-slate-700";
+  const inp = "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:bg-white transition";
+  const SectionHeader = ({ icon: Icon, label, color }) => (
+    <div className={`mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] ${color}`}>
+      <Icon size={14} /> {label}
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/40 px-4 py-8">
-      <div className="w-full max-w-3xl rounded-[2rem] bg-white p-8 shadow-xl">
-        <div className="mb-6 flex items-center justify-between gap-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 backdrop-blur-sm px-4 py-6">
+      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 px-7 py-5">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-900">{title}</h2>
-            <p className="text-sm text-slate-500">{subtitle}</p>
+            <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+            <div className="mt-2 flex items-center gap-3">
+              <div className="h-1.5 flex-1 rounded-full bg-slate-100">
+                <div className="h-1.5 rounded-full bg-indigo-500 transition-all" style={{ width: `${completion}%` }} />
+              </div>
+              <span className="text-xs font-semibold text-indigo-600">{completion}%</span>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-400">Kelengkapan</p>
           </div>
-          <button onClick={onClose} className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm text-slate-700">Tutup</button>
+          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
+            <X size={18} />
+          </button>
         </div>
-        <form className="grid gap-4" onSubmit={handleSubmit}>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <label className={labelCls}><span>Project / Karakter</span>
-              <input value={form.project} onChange={set("project")} required className={inputCls} /></label>
-            <label className={labelCls}><span>Nama Klien / Studio</span>
-              <input value={form.client} onChange={set("client")} required className={inputCls} /></label>
+
+        <form onSubmit={handleSubmit} className="space-y-0 divide-y divide-slate-100">
+          {/* INFO DASAR */}
+          <div className="px-7 py-5">
+            <SectionHeader icon={Info} label="Info Dasar" color="text-blue-600" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Tanggal order
+                <input type="date" value={form.order_date || ""} onChange={set("order_date")} className={inp} />
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Deadline
+                <input type="date" value={form.deadline || ""} onChange={set("deadline")} required className={inp} />
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Platform / Akun
+                <select value={form.platform} onChange={set("platform")} className={inp}>
+                  {PLATFORM_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Marketer / PIC
+                <select value={form.marketer || ""} onChange={set("marketer")} className={inp}>
+                  <option value="">-</option>
+                  {MARKETER_OPTIONS.map((m) => <option key={m}>{m}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Order ID (manual)
+                <input value={form.order_id || ""} onChange={set("order_id")} placeholder="#FO..." className={inp} />
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Nama klien / Studio
+                <input value={form.client} onChange={set("client")} required className={inp} />
+              </label>
+            </div>
           </div>
-          <div className="grid gap-4 lg:grid-cols-3">
-            <label className={labelCls}><span>Order ID</span>
-              <input value={form.order_id} onChange={set("order_id")} className={inputCls} /></label>
-            <label className={labelCls}><span>Platform</span>
-              <select value={form.platform} onChange={set("platform")} className={inputCls}>
-                {PLATFORM_OPTIONS.map((p) => <option key={p}>{p}</option>)}
-              </select></label>
-            <label className={labelCls}><span>Market</span>
-              <select value={form.market} onChange={set("market")} className={inputCls}>
-                {MARKET_OPTIONS.map((m) => <option key={m}>{m}</option>)}
-              </select></label>
+
+          {/* DETAIL PROJECT */}
+          <div className="px-7 py-5">
+            <SectionHeader icon={FolderOpen} label="Detail Project" color="text-violet-600" />
+            <label className="mb-4 block space-y-1.5 text-xs font-medium text-slate-600">
+              Nama project / Karakter
+              <input value={form.project} onChange={set("project")} required className={inp} />
+            </label>
+            <div className="mb-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700"><FolderOpen size={12} /> Kode folder (otomatis)</span>
+                <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                  <input type="checkbox" checked={manualFolder} onChange={(e) => setManualFolder(e.target.checked)} className="rounded" />
+                  Edit manual
+                </label>
+              </div>
+              {manualFolder
+                ? <input value={form.folder_code || ""} onChange={set("folder_code")} className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2 font-mono text-sm text-indigo-800 outline-none focus:border-indigo-400" />
+                : <p className="font-mono text-sm font-semibold text-indigo-800">{autoFolderCode}</p>
+              }
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Jenis pekerjaan
+                <select value={form.work_type} onChange={set("work_type")} className={inp}>
+                  {WORK_TYPE_OPTIONS.map((w) => <option key={w}>{w}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Status pekerjaan
+                <select value={form.status} onChange={set("status")} className={inp}>
+                  {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+                </select>
+              </label>
+            </div>
           </div>
-          <div className="grid gap-4 lg:grid-cols-3">
-            <label className={labelCls}><span>Jenis Pekerjaan</span>
-              <select value={form.work_type} onChange={set("work_type")} className={inputCls}>
-                {WORK_TYPE_OPTIONS.map((w) => <option key={w}>{w}</option>)}
-              </select></label>
-            <label className={labelCls}><span>Status Produksi</span>
-              <select value={form.status} onChange={set("status")} className={inputCls}>
-                {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
-              </select></label>
-            <label className={labelCls}><span>Status Pembayaran</span>
-              <select value={form.payment_status} onChange={set("payment_status")} className={inputCls}>
-                {PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}
-              </select></label>
+
+          {/* TIM ARTIST */}
+          <div className="px-7 py-5">
+            <SectionHeader icon={User} label="Tim Artist" color="text-emerald-600" />
+            <div className="space-y-3">
+              {(form.artist_contributions || []).map((contrib, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="inline-flex h-7 min-w-[56px] items-center justify-center rounded-full bg-indigo-100 px-2 text-xs font-semibold text-indigo-700">
+                    Artist {idx + 1}
+                  </span>
+                  <input
+                    value={contrib.name}
+                    onChange={(e) => setContrib(idx, "name", e.target.value)}
+                    placeholder="Nama artist"
+                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:bg-white"
+                  />
+                  <select
+                    value={contrib.type}
+                    onChange={(e) => setContrib(idx, "type", e.target.value)}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-300"
+                  >
+                    <option>Tim</option>
+                    <option>Solo</option>
+                    <option>Freelance</option>
+                  </select>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number" min="0" max="100"
+                      value={contrib.percent}
+                      onChange={(e) => setContrib(idx, "percent", Number(e.target.value))}
+                      className="w-16 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-center text-sm outline-none focus:border-indigo-300"
+                    />
+                    <span className="text-sm text-slate-400">%</span>
+                  </div>
+                  {(form.artist_contributions || []).length > 1 && (
+                    <button type="button" onClick={() => removeContrib(idx)} className="rounded-full p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <div className="flex-1">
+                <div className="h-1.5 w-full rounded-full bg-slate-100">
+                  <div className={`h-1.5 rounded-full transition-all ${totalPct === 100 ? "bg-emerald-500" : totalPct > 100 ? "bg-rose-500" : "bg-amber-400"}`} style={{ width: `${Math.min(totalPct, 100)}%` }} />
+                </div>
+                <p className="mt-1 text-xs text-slate-400">Total kontribusi: <span className={totalPct === 100 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>{totalPct}%</span></p>
+              </div>
+              <button type="button" onClick={addContrib} className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-slate-300 px-4 py-2 text-xs font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600">
+                <UserPlus size={13} /> Tambah artist
+              </button>
+            </div>
           </div>
-          <div className="grid gap-4 lg:grid-cols-3">
-            <label className={labelCls}><span>Deadline</span>
-              <input value={form.deadline} onChange={set("deadline")} type="date" required className={inputCls} /></label>
-            <label className={labelCls}><span>Nilai Order (USD)</span>
-              <input value={form.total} onChange={set("total")} type="number" min="0" className={inputCls} /></label>
-            <label className={labelCls}><span>Marketer</span>
-              <select value={form.marketer || ""} onChange={set("marketer")} className={inputCls}>
-                <option value="">-</option>
-                {MARKETER_OPTIONS.map((m) => <option key={m}>{m}</option>)}
-              </select></label>
+
+          {/* KEUANGAN */}
+          <div className="px-7 py-5">
+            <SectionHeader icon={Flame} label="Keuangan" color="text-orange-600" />
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-slate-600">Nilai order (USD)</p>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">$</span>
+                  <input type="number" min="0" value={form.total} onChange={set("total")} className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-7 pr-4 text-sm outline-none focus:border-indigo-300 focus:bg-white" />
+                </div>
+                <p className="text-xs text-slate-400">= Rp{totalIdr.toLocaleString("id-ID")}</p>
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-slate-600">
+                  Fee Freelance (Rp)
+                  {!hasFreelance && <span className="ml-1 text-slate-400">— tidak perlu untuk Tim</span>}
+                </p>
+                <input
+                  type="number" min="0"
+                  value={form.fee_freelance || ""}
+                  onChange={set("fee_freelance")}
+                  disabled={!hasFreelance}
+                  placeholder="0"
+                  className={`w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none ${hasFreelance ? "focus:border-indigo-300 focus:bg-white" : "opacity-50 cursor-not-allowed"}`}
+                />
+                {hasFreelance && <p className="text-xs text-slate-400">= ${(feeIdr / exchangeRate).toFixed(2)}</p>}
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-slate-600">Net (otomatis)</p>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700">
+                  ${netUsd.toFixed(2)}
+                </div>
+                <p className="text-xs text-slate-400">= Rp{netIdr.toLocaleString("id-ID")}</p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-1">
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Sudah Dibayar?
+                <select value={form.payment_status} onChange={set("payment_status")} className={inp}>
+                  {PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="mt-4 block space-y-1.5 text-xs font-medium text-slate-600">
+              Catatan
+              <textarea value={form.notes || ""} onChange={set("notes")} rows={3} placeholder="Catatan..." className={inp} />
+            </label>
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <label className={labelCls}><span>Artists / Tim (pisahkan koma)</span>
-              <input value={form.artists} onChange={set("artists")} placeholder="Andre, Budi" className={inputCls} /></label>
-            <label className={labelCls}><span>Folder Code</span>
-              <input value={form.folder_code} onChange={set("folder_code")} placeholder="Auto-generate jika kosong" className={inputCls} /></label>
+
+          {/* TELEGRAM (UI only) */}
+          <div className="px-7 py-5">
+            <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-cyan-600">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.01 9.461c-.143.643-.527.8-.864.498l-2.37-1.756-1.144 1.1c-.126.127-.232.233-.476.233l.17-2.403 4.367-3.941c.19-.168-.041-.261-.294-.093L7.168 15.447l-2.335-.729c-.507-.158-.52-.507.106-.75l9.136-3.519c.424-.154.797.103.487 1.799z"/></svg>
+              Kirim Notif Telegram
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "Order Baru", color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: "🎉" },
+                { label: "Reminder", color: "bg-amber-50 text-amber-700 border-amber-200", icon: "⏰" },
+                { label: "Warning H-1", color: "bg-rose-50 text-rose-700 border-rose-200", icon: "⚠️" },
+                { label: "Sisa hari", color: "bg-slate-50 text-slate-700 border-slate-200", icon: "🔔" },
+              ].map((btn) => (
+                <button
+                  key={btn.label}
+                  type="button"
+                  onClick={() => toast.info("Telegram bot belum dikonfigurasi di Settings.")}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition hover:opacity-80 ${btn.color}`}
+                >
+                  {btn.icon} {btn.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <label className={labelCls}><span>Notes</span>
-            <textarea value={form.notes || ""} onChange={set("notes")} rows={3} className={inputCls} /></label>
-          <div className="flex flex-wrap justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
-            <button type="submit" className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">Simpan</button>
+
+          {/* Footer */}
+          <div className="flex justify-end gap-3 border-t border-slate-100 px-7 py-5">
+            <button type="button" onClick={onClose} className="rounded-full border border-slate-200 px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
+            <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
+              {saving ? "Menyimpan..." : "Simpan perubahan"}
+            </button>
           </div>
         </form>
       </div>
