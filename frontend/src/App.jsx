@@ -16,6 +16,8 @@ import Performance from "./pages/Performance";
 import Orders from "./pages/Orders";
 import Settings from "./pages/Settings";
 import Todo from "./pages/Todo";
+import Freelance from "./pages/Freelance";
+import Earnings from "./pages/Earnings";
 import NotFound from "./pages/NotFound";
 
 function App() {
@@ -32,18 +34,20 @@ function App() {
                   <OrdersProvider>
                     <TasksProvider>
                       <Layout>
-                      <Routes>
-                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                        <Route path="/dashboard" element={<Dashboard />} />
-                        <Route path="/board" element={<Board />} />
-                        <Route path="/orders" element={<Orders />} />
-                        <Route path="/daily-chat" element={<DailyChat />} />
-                        <Route path="/invoice" element={<Invoice />} />
-                        <Route path="/todo" element={<Todo />} />
-                        <Route path="/performance" element={<Performance />} />
-                        <Route path="/settings" element={<Settings />} />
-                        <Route path="*" element={<NotFound />} />
-                      </Routes>
+                        <Routes>
+                          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                          <Route path="/dashboard" element={<Dashboard />} />
+                          <Route path="/board" element={<Board />} />
+                          <Route path="/orders" element={<Orders />} />
+                          <Route path="/todo" element={<Todo />} />
+                          <Route path="/daily-chat" element={<DailyChat />} />
+                          <Route path="/invoice" element={<Invoice />} />
+                          <Route path="/performance" element={<Performance />} />
+                          <Route path="/earnings" element={<Earnings />} />
+                          <Route path="/freelance" element={<Freelance />} />
+                          <Route path="/settings" element={<Settings />} />
+                          <Route path="*" element={<NotFound />} />
+                        </Routes>
                       </Layout>
                     </TasksProvider>
                   </OrdersProvider>
