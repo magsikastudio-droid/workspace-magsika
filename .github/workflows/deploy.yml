@@ -1,0 +1,46 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install rsync
+        run: sudo apt-get update && sudo apt-get install -y rsync
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Add VPS host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Sync repository to VPS
+        run: |
+          rsync -avz --delete --exclude='.git' --exclude='node_modules' --exclude='.venv' --exclude='dist' ./ root@${{ secrets.VPS_HOST }}:${{ secrets.VPS_REMOTE_DIR }}
+
+      - name: Run deploy commands on VPS
+        run: |
+          ssh root@${{ secrets.VPS_HOST }} 'bash -s' <<'EOF'
+          set -e
+          cd ${{ secrets.VPS_REMOTE_DIR }}
+          cd frontend
+          npm install
+          npm run build
+          cd ../backend
+          python3 -m venv .venv || true
+          . .venv/bin/activate
+          pip install -r requirements.txt
+          systemctl restart admin-dashboard
+          EOF
