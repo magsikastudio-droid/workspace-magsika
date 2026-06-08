@@ -96,131 +96,140 @@ export default function OrdersPage() {
     return "";
   };
 
+  const totalOrders = orders.length;
+  const activeCount = orders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
+  const doneCount = orders.filter((o) => normalizeStatus(o.status) === "Done").length;
+  const cancelCount = orders.filter((o) => normalizeStatus(o.status) === "Cancel").length;
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="space-y-5">
+      {/* Page header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Semua Order 3D</h1>
-          <p className="mt-2 text-sm text-slate-500">Kelola semua order aktif dengan filter dan detail lengkap.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Orders List</h1>
+          <p className="mt-0.5 text-sm text-slate-500">Kelola semua order produksi 3D studio.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <button className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            <Upload size={16} /> Import CSV
+        <div className="flex items-center gap-2">
+          <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
+            <Download size={15} /> Export CSV
           </button>
-          <button className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            <Download size={16} /> Export CSV
-          </button>
-          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
-            <Plus size={16} /> Tambah Order
+          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-700">
+            <Plus size={15} /> Add Order
           </button>
         </div>
       </div>
 
-      <div className="grid gap-4 rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative max-w-md flex-1">
-            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari project, klien, order ID..." className="w-full rounded-full border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-slate-400" />
+      {/* Metric cards */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: "Total Orders",    value: totalOrders,  sub: "Total semua order",     accent: "border-l-violet-500" },
+          { label: "Active Orders",   value: activeCount,  sub: "Sedang diproduksi",     accent: "border-l-sky-500"    },
+          { label: "Completed",       value: doneCount,    sub: "Order selesai",          accent: "border-l-emerald-500"},
+          { label: "Cancelled",       value: cancelCount,  sub: "Order dibatalkan",       accent: "border-l-rose-400"  },
+        ].map((c) => (
+          <div key={c.label} className={`rounded-2xl border-l-4 border border-slate-200 bg-white px-5 py-4 shadow-sm ${c.accent}`}>
+            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">{c.label}</p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">{c.value}</p>
+            <p className="mt-0.5 text-xs text-slate-400">{c.sub}</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)} className="rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400">
-              <option value="Semua">Semua Platform</option>
-              {PLATFORM_OPTIONS.map((p) => <option key={p}>{p}</option>)}
-            </select>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400">
-              <option value="Semua">Semua Status</option>
-              {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
-            </select>
-            <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400">
-              <option value="Semua">Semua Bayar</option>
-              {PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}
-            </select>
-          </div>
-        </div>
+        ))}
       </div>
 
-      <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-5">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Daftar Order</p>
-            <p className="text-sm text-slate-500">{compactMode ? "Mode ringkas: klik Kolom untuk lihat semua detail." : "Mode lengkap: semua kolom ditampilkan."}</p>
+      {/* Table card */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari project, klien, order ID..." className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-sm text-slate-900 outline-none transition focus:border-violet-300 focus:bg-white" />
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setCompactMode((v) => !v)}
-              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition ${
-                compactMode
-                  ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  : "border-slate-900 bg-slate-900 text-white"
-              }`}
-            >
-              <Columns size={13} /> {compactMode ? "Kolom Lengkap" : "Ringkas"}
-            </button>
-            <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">
-              {loading ? "Memuat..." : `${visibleOrders.length} order`}
-            </span>
-          </div>
+          <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-violet-300">
+            <option value="Semua">All Platform</option>
+            {PLATFORM_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-violet-300">
+            <option value="Semua">All Status</option>
+            {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+          </select>
+          <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-violet-300">
+            <option value="Semua">All Payment</option>
+            {PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <button
+            onClick={() => setCompactMode((v) => !v)}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <Columns size={13} /> {compactMode ? "Full" : "Compact"}
+          </button>
+          <span className="text-xs font-semibold text-slate-400">{loading ? "..." : `${visibleOrders.length} order`}</span>
         </div>
-        <div className="overflow-x-auto p-6">
-          <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
             <thead>
-              <tr className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                <th className="px-4 py-3">Tanggal</th>
-                <th className="px-4 py-3">Platform</th>
-                {!compactMode && <th className="px-4 py-3">Market</th>}
-                {!compactMode && <th className="px-4 py-3">Order ID</th>}
-                <th className="px-4 py-3">Klien</th>
-                <th className="px-4 py-3">Project</th>
-                {!compactMode && <th className="px-4 py-3">Jenis</th>}
-                <th className="px-4 py-3">Artist</th>
-                <th className="px-4 py-3">Deadline</th>
-                <th className="px-4 py-3">Value</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Bayar</th>
-                <th className="px-4 py-3">Aksi</th>
+              <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-[0.13em] text-slate-500">
+                <th className="px-5 py-3">Project</th>
+                <th className="px-5 py-3">Klien</th>
+                <th className="px-5 py-3">Order ID</th>
+                <th className="px-5 py-3">Value</th>
+                <th className="px-5 py-3">Deadline</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Payment</th>
+                <th className="px-5 py-3">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-slate-50">
               {visibleOrders.map((order) => {
                 const sc = STATUS_COLORS[normalizeStatus(order.status)] || { bg: "#f1f5f9", text: "#64748b" };
                 const pc = PAYMENT_COLORS[order.payment_status] || { bg: "#f1f5f9", text: "#64748b" };
-                const colSpan = compactMode ? 10 : 13;
                 return (
-                  <tr key={order.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{order.created_at?.slice(0, 10) || "-"}</td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="text-sm">{order.platform || "Direct"}</span>
+                  <tr key={order.id} className="hover:bg-slate-50 transition">
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-sm font-bold text-violet-600">
+                          {order.project?.charAt(0)?.toUpperCase() || "?"}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="max-w-[180px] truncate font-semibold text-slate-900">{order.project}</p>
+                          <p className="text-xs text-slate-400">{order.work_type || order.platform || "Direct"}</p>
+                        </div>
+                      </div>
                     </td>
-                    {!compactMode && <td className="px-4 py-4">{order.market || "-"}</td>}
-                    {!compactMode && <td className="px-4 py-4 font-mono text-xs">{order.order_id || "-"}</td>}
-                    <td className="px-4 py-4 max-w-[140px] truncate">{order.client}</td>
-                    <td className="px-4 py-4 font-semibold text-slate-900 max-w-[180px]">
-                      <p className="truncate">{order.project}</p>
-                      {compactMode && order.work_type && (
-                        <p className="text-xs font-normal text-slate-400">{order.work_type}</p>
-                      )}
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
+                          {order.client?.charAt(0)?.toUpperCase() || "?"}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{order.client}</p>
+                          <p className="text-xs text-slate-400">{order.platform || "Direct"}</p>
+                        </div>
+                      </div>
                     </td>
-                    {!compactMode && <td className="px-4 py-4">{order.work_type || "-"}</td>}
-                    <td className="px-4 py-4">{order.artists?.[0] || "-"}</td>
-                    <td className={`px-4 py-4 whitespace-nowrap ${deadlineClass(order.deadline)}`}>{order.deadline || "-"}</td>
-                    <td className="px-4 py-4 font-semibold whitespace-nowrap">{formatMoney(order.total)}</td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="inline-flex rounded-full px-3 py-1 text-xs font-semibold" style={{ background: sc.bg, color: sc.text }}>
+                    <td className="px-5 py-3.5 font-mono text-xs text-slate-500">{order.order_id || "—"}</td>
+                    <td className="px-5 py-3.5">
+                      <p className="font-semibold text-slate-900">{formatMoney(order.total)}</p>
+                      {order.artists?.[0] && <p className="text-xs text-slate-400">{order.artists[0]}</p>}
+                    </td>
+                    <td className={`px-5 py-3.5 text-sm whitespace-nowrap ${deadlineClass(order.deadline)}`}>{order.deadline || "—"}</td>
+                    <td className="px-5 py-3.5">
+                      <span className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: sc.bg, color: sc.text }}>
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: sc.text }} />
                         {normalizeStatus(order.status)}
                       </span>
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span className="inline-flex rounded-full px-3 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
+                    <td className="px-5 py-3.5">
+                      <span className="inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
                         {order.payment_status || "Belum Lunas"}
                       </span>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
-                        <button onClick={() => setActiveOrder({ ...order, artists: (order.artists || []).join(", ") })} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">
-                          <Edit3 size={13} /> Edit
+                        <button onClick={() => setActiveOrder({ ...order, artists: (order.artists || []).join(", ") })} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
+                          Details
                         </button>
-                        <button onClick={() => setConfirmDelete(order)} className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-100">
-                          <Trash2 size={13} />
+                        <button onClick={() => setConfirmDelete(order)} className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>
@@ -228,7 +237,7 @@ export default function OrdersPage() {
                 );
               })}
               {visibleOrders.length === 0 && (
-                <tr><td colSpan={compactMode ? 10 : 13} className="py-10 text-center text-sm text-slate-500">Tidak ada order yang cocok.</td></tr>
+                <tr><td colSpan={8} className="py-12 text-center text-sm text-slate-400">Tidak ada order yang cocok.</td></tr>
               )}
             </tbody>
           </table>
@@ -260,13 +269,13 @@ export default function OrdersPage() {
       )}
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-          <div className="w-full max-w-md rounded-[2rem] bg-white p-8 shadow-xl">
-            <h2 className="text-xl font-semibold text-slate-900">Hapus Order?</h2>
-            <p className="mt-2 text-sm text-slate-500">Order <span className="font-semibold">{confirmDelete.project}</span> akan dihapus permanen.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-7 shadow-2xl">
+            <h2 className="text-lg font-bold text-slate-900">Hapus Order?</h2>
+            <p className="mt-2 text-sm text-slate-500">Order <span className="font-semibold text-slate-800">{confirmDelete.project}</span> akan dihapus permanen dan tidak bisa dikembalikan.</p>
             <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setConfirmDelete(null)} className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
-              <button onClick={() => handleDelete(confirmDelete.id)} className="rounded-full bg-rose-600 px-5 py-2 text-sm font-semibold text-white hover:bg-rose-700">Hapus</button>
+              <button onClick={() => setConfirmDelete(null)} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
+              <button onClick={() => handleDelete(confirmDelete.id)} className="rounded-xl bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-700">Hapus</button>
             </div>
           </div>
         </div>
