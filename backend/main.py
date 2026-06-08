@@ -18,7 +18,7 @@ from auth import create_access_token, decode_token, oauth2_scheme
 
 load_dotenv()
 
-BACKEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
