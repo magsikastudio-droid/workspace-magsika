@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ClipboardList, Kanban, MessageSquare,
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Bell, ChevronDown,
-  Menu, X, Dice5,
+  Menu, X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -58,14 +58,8 @@ export default function Layout({ children }) {
   const SidebarContent = () => (
     <div className="flex h-full flex-col">
       {/* Logo */}
-      <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-sm">
-          <Dice5 size={18} />
-        </div>
-        <div>
-          <p className="text-sm font-bold text-slate-900 leading-tight">Magsika Studio</p>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Admin Panel</p>
-        </div>
+      <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+        <img src="/logo.png" alt="Magsika Studio" className="h-8 w-auto object-contain" />
       </div>
 
       {/* Search */}
