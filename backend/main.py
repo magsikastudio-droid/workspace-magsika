@@ -152,6 +152,9 @@ def format_task(record: dict) -> dict:
         "date": record.get("date"),
         "notes": record.get("notes", ""),
         "order_id": record.get("order_id"),
+        "time_elapsed": record.get("time_elapsed", 0),
+        "timer_started": record.get("timer_started"),
+        "order_num": record.get("order_num", 999),
     }
 
 
@@ -286,6 +289,9 @@ class TaskBase(BaseModel):
     date: Optional[str] = None
     notes: Optional[str] = None
     order_id: Optional[str] = None
+    time_elapsed: int = 0
+    timer_started: Optional[str] = None
+    order_num: Optional[int] = None
 
 
 class TaskCreate(TaskBase):
@@ -299,6 +305,9 @@ class TaskUpdate(BaseModel):
     status: Optional[str] = None
     date: Optional[str] = None
     notes: Optional[str] = None
+    time_elapsed: Optional[int] = None
+    timer_started: Optional[str] = None
+    order_num: Optional[int] = None
 
 
 app = FastAPI(title="Admin Dashboard API")
@@ -314,12 +323,14 @@ app.add_middleware(
 scheduler = AsyncIOScheduler() if SCHEDULER_AVAILABLE else None
 
 
-async def auto_generate_daily_tasks():
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
+    today = target_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    created = 0
+    skipped = 0
     try:
         orders = await db.orders.find().to_list(500)
-    except Exception:
-        return
+    except Exception as e:
+        return {"created": 0, "skipped": 0, "error": str(e)}
     for order in orders:
         st = order.get("status", "")
         if st.lower() in ["done", "cancel"]:
@@ -327,22 +338,33 @@ async def auto_generate_daily_tasks():
         contributions = order.get("artist_contributions", [])
         if not contributions:
             contributions = [{"name": a, "type": "Tim", "percent": 100} for a in order.get("artists", []) if a]
+        if not contributions:
+            continue
         order_id_str = str(order.get("_id", order.get("id", "")))
         for contrib in contributions:
-            artist_name = contrib.get("name", "")
+            artist_name = contrib.get("name", "").strip()
             if not artist_name:
                 continue
             existing = await db.tasks.find_one({"order_id": order_id_str, "assignee": artist_name, "date": today})
-            if not existing:
-                await db.tasks.insert_one({
-                    "title": f"{order.get('project', '')} — {artist_name}",
-                    "assignee": artist_name,
-                    "assignee_type": "freelance" if contrib.get("type") == "Freelance" else "tim",
-                    "status": "pending",
-                    "date": today,
-                    "notes": order.get("folder_code", ""),
-                    "order_id": order_id_str,
-                })
+            if existing:
+                skipped += 1
+                continue
+            # Count existing tasks for this assignee today to set order_num
+            count = await db.tasks.count_documents({"assignee": artist_name, "date": today})
+            await db.tasks.insert_one({
+                "title": f"{order.get('project', '')} — {artist_name}",
+                "assignee": artist_name,
+                "assignee_type": "freelance" if contrib.get("type") == "Freelance" else "tim",
+                "status": "pending",
+                "date": today,
+                "notes": order.get("folder_code", ""),
+                "order_id": order_id_str,
+                "time_elapsed": 0,
+                "timer_started": None,
+                "order_num": count,
+            })
+            created += 1
+    return {"created": created, "skipped": skipped}
 
 
 @app.on_event("startup")
@@ -591,7 +613,7 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
 
 @app.patch("/tasks/{task_id}")
 async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depends(get_current_user)):
-    payload = {k: v for k, v in task.dict().items() if v is not None}
+    payload = task.dict(exclude_unset=True)
     if not payload:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
     object_id = to_object_id(task_id)
@@ -619,8 +641,8 @@ async def delete_task(task_id: str, current_user: dict = Depends(get_current_use
 
 @app.post("/tasks/auto-generate")
 async def manual_auto_generate(current_user: dict = Depends(get_current_user)):
-    await auto_generate_daily_tasks()
-    return {"generated": True}
+    result = await auto_generate_daily_tasks()
+    return result
 
 
 @app.get("/chat-entries")
