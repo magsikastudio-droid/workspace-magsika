@@ -33,11 +33,17 @@ ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
 client_kwargs = {
-    "serverSelectionTimeoutMS": 2000,
-    "connectTimeoutMS": 2000,
+    "serverSelectionTimeoutMS": 15000,
+    "connectTimeoutMS": 15000,
+    "socketTimeoutMS": 30000,
+    "maxPoolSize": 10,
+    "retryWrites": True,
 }
-if MONGO_URI.startswith("mongodb+") and certifi is not None:
-    client_kwargs["tlsCAFile"] = certifi.where()
+if MONGO_URI.startswith("mongodb+"):
+    if certifi is not None:
+        client_kwargs["tlsCAFile"] = certifi.where()
+    else:
+        client_kwargs["tlsAllowInvalidCertificates"] = True
 
 client = AsyncIOMotorClient(MONGO_URI, **client_kwargs)
 db = client[DB_NAME]

@@ -27,6 +27,7 @@ const emptyOrder = () => ({
 
 export default function OrdersPage() {
   const { orders, loading, createOrder, updateOrder, deleteOrder } = useOrders();
+  const ordersOnDay = (date) => orders.filter((o) => (o.order_date || o.created_at?.slice(0, 10)) === date).length;
   const { formatMoney } = useCurrency();
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState("Semua");
@@ -114,7 +115,7 @@ export default function OrdersPage() {
             <Download size={15} /> Export CSV
           </button>
           <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-700">
-            <Plus size={15} /> Add Order
+            <Plus size={15} /> Tambah Order
           </button>
         </div>
       </div>
@@ -248,6 +249,7 @@ export default function OrdersPage() {
         <OrderFormModal
           title="Tambah Order Baru"
           initial={newOrder}
+          ordersOnDay={ordersOnDay}
           onClose={() => { setShowCreate(false); setNewOrder(emptyOrder()); }}
           onSave={handleCreateSubmit}
         />
@@ -263,6 +265,7 @@ export default function OrdersPage() {
               ? activeOrder.artist_contributions
               : [{ name: (activeOrder.artists || [])[0] || "", type: "Tim", percent: 100 }],
           }}
+          ordersOnDay={ordersOnDay}
           onClose={() => setActiveOrder(null)}
           onSave={handleSaveOrder}
         />
@@ -284,7 +287,7 @@ export default function OrdersPage() {
   );
 }
 
-function OrderFormModal({ title, initial, onClose, onSave }) {
+function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
   const { exchangeRate } = useCurrency();
   const [form, setForm] = useState({
     ...initial,
@@ -297,10 +300,11 @@ function OrderFormModal({ title, initial, onClose, onSave }) {
 
   const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
 
+  const orderDate = form.order_date || new Date().toISOString().slice(0, 10);
+  const orderNumToday = (ordersOnDay ? ordersOnDay(orderDate) : 0) + 1;
   const autoFolderCode = generateFolderCode(
-    form.platform, form.market,
-    form.artist_contributions?.[0]?.name || form.artists?.split(",")[0]?.trim(),
-    form.work_type, form.order_date || new Date()
+    form.platform, form.client, form.project,
+    orderDate, orderNumToday
   );
 
   const completionFields = [form.project, form.client, form.platform, form.deadline, form.work_type, form.status, form.artist_contributions?.[0]?.name];
@@ -512,19 +516,25 @@ function OrderFormModal({ title, initial, onClose, onSave }) {
                 <p className="text-xs text-slate-400">= Rp{totalIdr.toLocaleString("id-ID")}</p>
               </div>
               <div className="space-y-1.5">
-                <p className="text-xs font-medium text-slate-600">
-                  Fee Freelance (Rp)
-                  {!hasFreelance && <span className="ml-1 text-slate-400">— tidak perlu untuk Tim</span>}
-                </p>
+                <p className="text-xs font-medium text-slate-600">Fee Freelance (Rp)</p>
                 <input
                   type="number" min="0"
                   value={form.fee_freelance || ""}
                   onChange={set("fee_freelance")}
                   disabled={!hasFreelance}
                   placeholder="0"
-                  className={`w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none ${hasFreelance ? "focus:border-indigo-300 focus:bg-white" : "opacity-50 cursor-not-allowed"}`}
+                  className={`w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none ${hasFreelance ? "focus:border-indigo-300 focus:bg-white" : "opacity-40 cursor-not-allowed"}`}
                 />
-                {hasFreelance && <p className="text-xs text-slate-400">= ${(feeIdr / exchangeRate).toFixed(2)}</p>}
+                {hasFreelance && feeIdr > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-slate-400">≈ ${(feeIdr / exchangeRate).toFixed(2)}</p>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                      {Number(form.total) > 0 ? Math.round((feeIdr / exchangeRate / Number(form.total)) * 100) : 0}% dari order
+                    </span>
+                  </div>
+                ) : !hasFreelance ? (
+                  <p className="text-xs text-slate-300">Tambah artist Freelance di Tim Artist</p>
+                ) : null}
               </div>
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-slate-600">Net (otomatis)</p>

@@ -51,11 +51,11 @@ export const PLATFORM_OPTIONS = [
 ];
 
 export const PLATFORM_CODES = {
-  "Fiverr Magsika":  "FVR-MGSK",
-  "Fiverr Eirene":   "FVR-EIRE",
-  "Etsy Lolicharm":  "ETY-LOLI",
+  "Fiverr Magsika":  "MGSIKA",
+  "Fiverr Eirene":   "EIRENE",
+  "Etsy Lolicharm":  "LOLI",
   "Direct":          "DIR",
-  "Komunitas":       "KOM",
+  "Komunitas":       "KOMU",
 };
 
 export const PLATFORM_COLORS = {
@@ -120,35 +120,18 @@ export function getArtistColor(name) {
   return palette[Math.abs(hash) % palette.length];
 }
 
-export function generateFolderCode(platform, market, artist, workType, date) {
-  const d = date ? new Date(date) : new Date();
+export function generateFolderCode(platform, client, project, date, orderNumToday = 1) {
+  const d = date ? new Date(String(date).includes("T") ? date : date + "T00:00:00") : new Date();
   const yy = String(d.getFullYear()).slice(2);
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   const dateStr = `${yy}${mm}${dd}`;
 
-  const marketMap = {
-    "Magsika": "MGSK",
-    "Eirene":  "EIRE",
-    "Lolicharm": "LOLI",
-  };
-  const marketCode = marketMap[market] || market?.slice(0, 4).toUpperCase() || "MGSK";
+  const platformCode = PLATFORM_CODES[platform] || platform?.replace(/\s+/g, "").slice(0, 6).toUpperCase() || "MGSIKA";
+  const num = String(orderNumToday).padStart(2, "0");
 
-  const artistCode = artist ? artist.slice(0, 4).toUpperCase() : "TEAM";
+  const clientCode = (client || "CLIENT").replace(/\s+/g, "").toUpperCase();
+  const projectCode = (project || "PROJECT").toUpperCase();
 
-  const workMap = {
-    "Modeling": "MDL",
-    "Print": "PRT",
-    "Roblox": "RBX",
-    "Game Asset": "GME",
-    "Vroid": "VRD",
-    "Mask": "MSK",
-    "Rigging": "RIG",
-    "Animation": "ANM",
-    "AR Vtuber": "ARV",
-    "Paid Consultation": "CON",
-  };
-  const workCode = workMap[workType] || workType?.slice(0, 3).toUpperCase() || "MDL";
-
-  return `${dateStr}-${marketCode}01-${artistCode}-${workCode}`;
+  return `${dateStr}-${platformCode}${num}-${clientCode}-${projectCode}`;
 }

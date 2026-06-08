@@ -1,57 +1,83 @@
 import React, { useMemo, useRef, useState } from "react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
-import { FileText, Printer, CreditCard } from "lucide-react";
+import { FileText, Printer, Search, X } from "lucide-react";
 
-const BANK_INFO = {
-  nama: "Ivo Febrian Pratama",
-  bank: "BCA",
-  rekening: "8030651287",
-};
+const BANK_INFO = { nama: "Ivo Febrian Pratama", bank: "BCA", rekening: "8030651287" };
 
-function invoiceNumber(order, idx) {
-  const d = order.created_at ? new Date(order.created_at) : new Date();
+function buildInvoiceNumber(orders, selectedIds) {
+  if (!selectedIds.length) return "";
+  const first = orders.find((o) => o.id === selectedIds[0]);
+  if (!first) return "";
+  const d = first.order_date ? new Date(first.order_date + "T00:00:00") : new Date();
   const yy = String(d.getFullYear()).slice(2);
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  const client = (order.client || "CLT").replace(/\s+/g, "").slice(0, 4).toUpperCase();
-  return `INV-${yy}${mm}${dd}-${client}-${String(idx + 1).padStart(2, "0")}`;
+  const client = (first.client || "CLT").replace(/\s+/g, "").slice(0, 6).toUpperCase();
+  return `${yy}${mm}${dd}-${client}-INV-${String(selectedIds.length).padStart(1, "0")}`;
+}
+
+function fmtDate(d) {
+  if (!d) return "-";
+  const dt = new Date(d + "T00:00:00");
+  return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getFullYear()).slice(2)}`;
 }
 
 export default function Invoice() {
   const { orders } = useOrders();
-  const { formatMoney, currency } = useCurrency();
-  const [selectedId, setSelectedId] = useState(null);
+  const { formatMoney, currency, exchangeRate } = useCurrency();
   const printRef = useRef(null);
+  const [selected, setSelected] = useState([]);
+  const [search, setSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState("Semua Klien");
+  const [monthFilter, setMonthFilter] = useState("Semua Bulan");
 
-  const totalRevenue = orders.reduce((s, o) => s + (o.total || 0), 0);
-  const unpaidOrders = orders.filter((o) => o.payment_status !== "Lunas");
+  /* ─── filter list ─── */
+  const allClients = useMemo(() => [...new Set(orders.map((o) => o.client).filter(Boolean))].sort(), [orders]);
+  const allMonths = useMemo(() => {
+    const months = [...new Set(orders.map((o) => (o.order_date || o.created_at || "")?.slice(0, 7)).filter(Boolean))].sort().reverse();
+    return months;
+  }, [orders]);
 
-  const selectedOrder = useMemo(
-    () => orders.find((o) => o.id === selectedId),
-    [orders, selectedId]
-  );
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      if (search) {
+        const q = search.toLowerCase();
+        if (![o.project, o.client, o.folder_code, o.order_id].some((v) => v?.toLowerCase().includes(q))) return false;
+      }
+      if (clientFilter !== "Semua Klien" && o.client !== clientFilter) return false;
+      if (monthFilter !== "Semua Bulan") {
+        const orderMonth = (o.order_date || o.created_at || "")?.slice(0, 7);
+        if (orderMonth !== monthFilter) return false;
+      }
+      return true;
+    }).sort((a, b) => new Date(b.order_date || b.created_at || 0) - new Date(a.order_date || a.created_at || 0));
+  }, [orders, search, clientFilter, monthFilter]);
 
+  const selectedOrders = useMemo(() => orders.filter((o) => selected.includes(o.id)), [orders, selected]);
+
+  const toggle = (id) => setSelected((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const selectAll = () => setSelected(filteredOrders.map((o) => o.id));
+  const clearAll = () => setSelected([]);
+
+  const invoiceNum = buildInvoiceNumber(orders, selected);
+  const totalTagihan = selectedOrders.reduce((s, o) => s + (o.total || 0), 0);
+  const sudahDibayar = selectedOrders.filter((o) => o.payment_status === "Lunas").reduce((s, o) => s + (o.total || 0), 0);
+  const sisaTagihan = totalTagihan - sudahDibayar;
+  const invoiceDate = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit" });
+
+  /* ─── print ─── */
   const handlePrint = () => {
     const content = printRef.current;
     if (!content) return;
-    const win = window.open("", "_blank", "width=800,height=600");
+    const win = window.open("", "_blank", "width=1100,height=700");
     win.document.write(`
-      <html><head><title>Invoice</title>
+      <html><head><title>Invoice ${invoiceNum}</title>
       <style>
-        body { font-family: 'Segoe UI', sans-serif; padding: 40px; color: #0f172a; }
-        .header { display: flex; justify-content: space-between; margin-bottom: 40px; }
-        .title { font-size: 28px; font-weight: 700; }
-        .subtitle { color: #64748b; font-size: 14px; }
-        table { width: 100%; border-collapse: collapse; margin: 24px 0; }
-        th { background: #f8fafc; text-align: left; padding: 10px 16px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; }
-        td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
-        .total-row { font-weight: 700; font-size: 16px; }
-        .bank-box { background: #f8fafc; border-radius: 12px; padding: 20px; margin-top: 32px; }
-        .bank-box h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
-        .bank-box p { font-size: 13px; color: #475569; margin: 4px 0; }
-        .footer { margin-top: 40px; font-size: 12px; color: #94a3b8; text-align: center; }
-        @media print { body { padding: 20px; } }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: white; color: #0f172a; padding: 40px 48px; }
+        @page { size: A4 landscape; margin: 20mm 20mm 20mm 20mm; }
+        @media print { body { padding: 0; } }
       </style>
       </head><body>${content.innerHTML}</body></html>
     `);
@@ -61,150 +87,197 @@ export default function Invoice() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Invoice</h1>
-          <p className="mt-2 text-sm text-slate-500">Buat dan cetak invoice berdasarkan order yang masuk.</p>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+            <FileText size={18} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Generate Invoice</h1>
+            <p className="text-sm text-slate-500">Pilih project untuk invoice — per project atau gabungan.</p>
+          </div>
         </div>
-        {selectedOrder && (
-          <button onClick={handlePrint} className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
-            <Printer size={18} /> Cetak / Export PDF
+        {selected.length > 0 && (
+          <button onClick={handlePrint} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 shadow-sm">
+            <Printer size={15} /> Print / Save PDF
           </button>
         )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-3 text-slate-500 mb-3">
-            <CreditCard size={18} />
-            <p className="text-sm uppercase tracking-[0.18em]">Total Invoice</p>
-          </div>
-          <p className="text-4xl font-bold text-slate-900">{formatMoney(totalRevenue)}</p>
-          <p className="mt-2 text-sm text-slate-500">Dari {orders.length} order</p>
+      {/* Order picker */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {/* search bar */}
+        <div className="relative border-b border-slate-100">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Cari project, klien, kode folder..."
+            className="w-full py-3 pl-10 pr-4 text-sm text-slate-700 outline-none"
+          />
+          {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={14} /></button>}
         </div>
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-3 text-slate-500 mb-3">
-            <FileText size={18} />
-            <p className="text-sm uppercase tracking-[0.18em]">Belum Lunas</p>
-          </div>
-          <p className="text-4xl font-bold text-rose-600">{unpaidOrders.length}</p>
-          <p className="mt-2 text-sm text-slate-500">Order perlu ditagih</p>
-        </div>
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-5">
-            <p className="font-semibold text-slate-900">Pilih Order untuk Invoice</p>
-            <p className="text-sm text-slate-500">Klik order untuk preview invoice.</p>
-          </div>
-          <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
-            {orders.map((order, idx) => (
-              <button
-                key={order.id}
-                onClick={() => setSelectedId(order.id)}
-                className={`w-full flex items-center justify-between px-6 py-4 text-left transition hover:bg-slate-50 ${selectedId === order.id ? "bg-slate-100" : ""}`}
-              >
-                <div>
-                  <p className="font-semibold text-slate-900">{invoiceNumber(order, idx)}</p>
-                  <p className="text-sm text-slate-500">{order.client} · {order.project}</p>
+        {/* order list */}
+        <div className="max-h-[340px] overflow-y-auto divide-y divide-slate-50">
+          {filteredOrders.map((order) => {
+            const checked = selected.includes(order.id);
+            return (
+              <label key={order.id} className={`flex items-center gap-4 px-5 py-3.5 cursor-pointer hover:bg-slate-50 transition ${checked ? "bg-indigo-50/60" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(order.id)}
+                  className="h-4 w-4 rounded accent-indigo-600"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 truncate">{order.project}</p>
+                  <p className="text-xs text-slate-400">{order.client} · <span className="font-mono">{order.folder_code || order.order_id || "—"}</span> · {fmtDate(order.order_date || order.created_at)}</p>
                 </div>
-                <div className="text-right">
-                  <p className="font-semibold text-slate-900">{formatMoney(order.total)}</p>
-                  <span className={`text-xs font-semibold ${order.payment_status === "Lunas" ? "text-emerald-600" : "text-rose-600"}`}>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-bold text-slate-900">{formatMoney(order.total)}</p>
+                  <span className={`text-xs font-semibold ${order.payment_status === "Lunas" ? "text-emerald-600" : "text-rose-500"}`}>
                     {order.payment_status || "Belum Lunas"}
                   </span>
                 </div>
-              </button>
-            ))}
-            {orders.length === 0 && <p className="px-6 py-8 text-sm text-slate-500">Belum ada order.</p>}
-          </div>
+              </label>
+            );
+          })}
+          {filteredOrders.length === 0 && <p className="px-5 py-8 text-sm text-slate-400 text-center">Tidak ada order.</p>}
         </div>
 
-        {selectedOrder ? (
-          <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="border-b border-slate-200 px-6 py-5 flex items-center justify-between">
-              <p className="font-semibold text-slate-900">Preview Invoice</p>
-              <button onClick={handlePrint} className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">
-                <Printer size={14} /> Print
-              </button>
-            </div>
-            <div ref={printRef} className="p-8">
-              <div className="header" style={{ display: "flex", justifyContent: "space-between", marginBottom: "32px" }}>
-                <div>
-                  <p className="text-2xl font-bold text-slate-900">Magsika Studio</p>
-                  <p className="text-sm text-slate-500 mt-1">admin@magsikastudio.com</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xl font-bold text-slate-900">INVOICE</p>
-                  <p className="text-sm text-slate-500 mt-1">{invoiceNumber(selectedOrder, orders.indexOf(selectedOrder))}</p>
-                  <p className="text-sm text-slate-500">{selectedOrder.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10)}</p>
-                </div>
-              </div>
-
-              <div className="mb-6 grid grid-cols-2 gap-4">
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-widest text-slate-400 mb-2">Kepada</p>
-                  <p className="font-semibold text-slate-900">{selectedOrder.client}</p>
-                  <p className="text-sm text-slate-500">{selectedOrder.platform}</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-widest text-slate-400 mb-2">Status</p>
-                  <p className={`font-semibold ${selectedOrder.payment_status === "Lunas" ? "text-emerald-600" : "text-rose-600"}`}>
-                    {selectedOrder.payment_status || "Belum Lunas"}
-                  </p>
-                  <p className="text-sm text-slate-500">Deadline: {selectedOrder.deadline || "-"}</p>
-                </div>
-              </div>
-
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    <th style={{ padding: "10px 16px", textAlign: "left", fontSize: "12px", textTransform: "uppercase", color: "#64748b" }}>Deskripsi</th>
-                    <th style={{ padding: "10px 16px", textAlign: "left", fontSize: "12px", textTransform: "uppercase", color: "#64748b" }}>Jenis</th>
-                    <th style={{ padding: "10px 16px", textAlign: "right", fontSize: "12px", textTransform: "uppercase", color: "#64748b" }}>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td style={{ padding: "12px 16px" }}>
-                      <p style={{ fontWeight: 600 }}>{selectedOrder.project}</p>
-                      {selectedOrder.folder_code && <p style={{ fontSize: "12px", color: "#94a3b8", fontFamily: "monospace" }}>{selectedOrder.folder_code}</p>}
-                    </td>
-                    <td style={{ padding: "12px 16px", color: "#64748b" }}>{selectedOrder.work_type}</td>
-                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700 }}>${selectedOrder.total}</td>
-                  </tr>
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan="2" style={{ padding: "16px", textAlign: "right", fontWeight: 700 }}>Total</td>
-                    <td style={{ padding: "16px", textAlign: "right", fontWeight: 800, fontSize: "18px" }}>{formatMoney(selectedOrder.total)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-
-              <div style={{ background: "#f8fafc", borderRadius: "12px", padding: "20px", marginTop: "24px" }}>
-                <p style={{ fontWeight: 600, marginBottom: "8px", fontSize: "14px" }}>Informasi Pembayaran</p>
-                <p style={{ fontSize: "13px", color: "#475569", margin: "4px 0" }}>Bank: <strong>{BANK_INFO.bank}</strong></p>
-                <p style={{ fontSize: "13px", color: "#475569", margin: "4px 0" }}>No. Rekening: <strong>{BANK_INFO.rekening}</strong></p>
-                <p style={{ fontSize: "13px", color: "#475569", margin: "4px 0" }}>Atas Nama: <strong>{BANK_INFO.nama}</strong></p>
-              </div>
-
-              <p style={{ marginTop: "32px", fontSize: "12px", color: "#94a3b8", textAlign: "center" }}>
-                Terima kasih telah menggunakan jasa Magsika Studio · workspace.magsikastudio.com
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center">
-            <div>
-              <FileText size={40} className="mx-auto mb-3 text-slate-300" />
-              <p className="text-sm text-slate-500">Pilih order dari daftar kiri untuk preview invoice.</p>
-            </div>
-          </div>
-        )}
+        {/* filter toolbar */}
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-5 py-3">
+          <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 outline-none">
+            <option>Semua Klien</option>
+            {allClients.map((c) => <option key={c}>{c}</option>)}
+          </select>
+          <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 outline-none">
+            <option>Semua Bulan</option>
+            {allMonths.map((m) => <option key={m}>{m}</option>)}
+          </select>
+          <button onClick={selectAll} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+            Pilih semua ({filteredOrders.length})
+          </button>
+          {selected.length > 0 && (
+            <button onClick={clearAll} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-rose-500 hover:bg-rose-50">
+              Clear ({selected.length})
+            </button>
+          )}
+          {selected.length > 0 && (
+            <button onClick={handlePrint} className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700">
+              <Printer size={13} /> Print / Save PDF
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Invoice preview */}
+      {selected.length > 0 ? (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div ref={printRef} className="p-8" style={{ fontFamily: "'Segoe UI', sans-serif", color: "#0f172a" }}>
+            {/* Top: company + invoice number */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "28px" }}>
+              <div>
+                <p style={{ fontSize: "26px", fontWeight: 800, color: "#0f172a" }}>
+                  Magsika <span style={{ color: "#7c3aed" }}>Studio</span>
+                </p>
+                <p style={{ fontSize: "13px", color: "#94a3b8", marginTop: "4px" }}>3D Production Studio · magsikastudio.com</p>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <p style={{ fontSize: "20px", fontWeight: 700, color: "#0f172a" }}>INVOICE</p>
+                <p style={{ fontSize: "13px", fontWeight: 600, color: "#7c3aed", marginTop: "2px" }}>{invoiceNum}</p>
+                <p style={{ fontSize: "12px", color: "#94a3b8" }}>{invoiceDate}</p>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ height: "1px", background: "#e2e8f0", marginBottom: "24px" }} />
+
+            {/* Client info + count */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "24px" }}>
+              <div>
+                <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.15em", color: "#94a3b8", marginBottom: "6px" }}>Ditagihkan Kepada</p>
+                <p style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>{selectedOrders[0]?.client || "—"}</p>
+                <p style={{ fontSize: "13px", color: "#64748b", marginTop: "2px" }}>{selectedOrders[0]?.platform || ""}</p>
+              </div>
+              <div>
+                <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.15em", color: "#94a3b8", marginBottom: "6px" }}>Jumlah Item</p>
+                <p style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>{selectedOrders.length} project</p>
+              </div>
+            </div>
+
+            {/* Table */}
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                  {["Tanggal", "Project", "Folder", "Value", "Status"].map((h) => (
+                    <th key={h} style={{ padding: "8px 12px", textAlign: h === "Value" ? "right" : "left", fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#7c3aed", fontWeight: 600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {selectedOrders.map((o) => (
+                  <tr key={o.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "10px 12px", fontSize: "13px", color: "#64748b", whiteSpace: "nowrap" }}>{fmtDate(o.order_date || o.created_at)}</td>
+                    <td style={{ padding: "10px 12px", fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>{o.project}</td>
+                    <td style={{ padding: "10px 12px", fontSize: "11px", fontFamily: "monospace", color: "#94a3b8" }}>{o.folder_code || o.order_id || "—"}</td>
+                    <td style={{ padding: "10px 12px", fontSize: "14px", fontWeight: 700, color: "#0f172a", textAlign: "right" }}>
+                      {currency === "USD" ? `$${o.total}` : `Rp${((o.total || 0) * exchangeRate).toLocaleString("id-ID")}`}
+                    </td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 600, background: o.payment_status === "Lunas" ? "#dcfce7" : o.payment_status === "DP" ? "#fef9c3" : "#fee2e2", color: o.payment_status === "Lunas" ? "#166534" : o.payment_status === "DP" ? "#a16207" : "#b91c1c" }}>
+                        {o.payment_status || "Belum Lunas"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Totals */}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "24px" }}>
+              <div style={{ minWidth: "240px" }}>
+                {[
+                  { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
+                  { label: "Sudah Dibayar", value: formatMoney(sudahDibayar), bold: false },
+                  { label: "Sisa Tagihan", value: formatMoney(sisaTagihan), bold: true },
+                ].map((row) => (
+                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: row.bold ? "2px solid #e2e8f0" : "none", marginTop: row.bold ? "4px" : 0 }}>
+                    <span style={{ fontSize: "13px", color: "#64748b" }}>{row.label}</span>
+                    <span style={{ fontSize: row.bold ? "16px" : "13px", fontWeight: row.bold ? 800 : 600, color: row.bold && sisaTagihan > 0 ? "#16a34a" : "#0f172a" }}>{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Payment info */}
+            <div style={{ display: "flex", gap: "16px", background: "#f8fafc", borderRadius: "12px", padding: "16px 20px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "36px", height: "36px", borderRadius: "10px", background: "#e0e7ff", flexShrink: 0 }}>
+                <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#6366f1" strokeWidth="2"/><path d="M2 10h20" stroke="#6366f1" strokeWidth="2"/></svg>
+              </div>
+              <div>
+                <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.15em", color: "#94a3b8", marginBottom: "8px" }}>Pembayaran Ditransfer Ke</p>
+                <div style={{ display: "flex", gap: "40px" }}>
+                  <div><p style={{ fontSize: "11px", color: "#94a3b8" }}>BANK</p><p style={{ fontSize: "14px", fontWeight: 700 }}>{BANK_INFO.bank}</p></div>
+                  <div><p style={{ fontSize: "11px", color: "#94a3b8" }}>NO. REKENING</p><p style={{ fontSize: "14px", fontWeight: 700, fontFamily: "monospace" }}>{BANK_INFO.rekening}</p></div>
+                  <div><p style={{ fontSize: "11px", color: "#94a3b8" }}>ATAS NAMA</p><p style={{ fontSize: "14px", fontWeight: 700 }}>{BANK_INFO.nama}</p></div>
+                </div>
+              </div>
+            </div>
+
+            <p style={{ fontSize: "12px", color: "#94a3b8", textAlign: "center" }}>
+              Terima kasih atas kepercayaan Anda. — Magsika Studio Team
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-40 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white text-sm text-slate-400">
+          Pilih order dari daftar atas untuk preview invoice.
+        </div>
+      )}
     </div>
   );
 }

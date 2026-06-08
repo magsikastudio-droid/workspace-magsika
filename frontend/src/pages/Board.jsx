@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Kanban } from "lucide-react";
 import { useOrders } from "../context/OrdersContext";
 import { ACTIVE_STATUSES, STATUS_COLORS, getArtistColor, normalizeStatus } from "../lib/constants";
@@ -17,8 +17,8 @@ export default function Board() {
   const { orders, updateOrder } = useOrders();
   const [viewBy, setViewBy] = useState("status");
   const [showAll, setShowAll] = useState(false);
-  const [dragId, setDragId] = useState(null);
   const [dragOver, setDragOver] = useState(null);
+  const dragIdRef = useRef(null);
 
   const activeOrders = useMemo(
     () => orders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel"),
@@ -45,13 +45,14 @@ export default function Board() {
     return Object.entries(grouped);
   }, [grouped, viewBy, showAll]);
 
-  const handleDrop = async (orderId, target) => {
+  const handleDrop = async (target) => {
+    const orderId = dragIdRef.current;
     if (!orderId) return;
     const order = orders.find((o) => o.id === orderId);
     if (!order) return;
     const payload = viewBy === "status" ? { status: target } : { artists: [target] };
     await updateOrder(orderId, payload);
-    setDragId(null);
+    dragIdRef.current = null;
     setDragOver(null);
   };
 
@@ -70,8 +71,8 @@ export default function Board() {
       <div
         key={order.id}
         draggable
-        onDragStart={() => setDragId(order.id)}
-        onDragEnd={() => setDragId(null)}
+        onDragStart={(e) => { dragIdRef.current = order.id; e.dataTransfer.effectAllowed = "move"; }}
+        onDragEnd={() => { dragIdRef.current = null; }}
         className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md cursor-grab active:cursor-grabbing"
       >
         <div className="flex items-start justify-between gap-3">
@@ -133,8 +134,8 @@ export default function Board() {
             <div
               key={key}
               onDragOver={(e) => { e.preventDefault(); setDragOver(key); }}
-              onDragLeave={() => setDragOver(null)}
-              onDrop={() => handleDrop(dragId, key)}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
+              onDrop={(e) => { e.preventDefault(); handleDrop(key); }}
               className={`flex-shrink-0 w-72 rounded-3xl border p-4 transition ${isOver ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}
             >
               <div className="mb-4 flex items-center justify-between gap-3">

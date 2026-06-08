@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2, ClipboardList, GripVertical, Pause, Pencil, Play,
-  Plus, Timer, Trash2, X, Zap,
+  Plus, Search, Timer, X, Zap,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
+import { useOrders } from "../context/OrdersContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 
@@ -73,6 +74,7 @@ const getElapsed = (task, now) => {
 export default function Todo() {
   const { user } = useAuth();
   const { tasks, loading, fetchTasks, createTask, updateTask, deleteTask } = useTasks();
+  const { orders } = useOrders();
   const now = useNow();
 
   const [date, setDate] = useState(todayStr());
@@ -320,6 +322,8 @@ export default function Todo() {
           onChange={setTaskInput}
           onSubmit={handleCreateTask}
           onClose={() => setShowAdd(false)}
+          orders={orders}
+          isAdd
         />
       )}
 
@@ -500,68 +504,153 @@ function TaskCard({ task, now, onStatus, onDelete, onTimer, onEdit, onDragStart,
 }
 
 /* ─── TaskModal (add + edit) ────────────────────────────────────── */
-function TaskModal({ title, data, onChange, onSubmit, onClose }) {
+function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], isAdd = false }) {
+  const [orderSearch, setOrderSearch] = useState("");
+  const [showOrderList, setShowOrderList] = useState(false);
+
+  const filteredOrders = useMemo(() => {
+    if (!orderSearch) return orders.slice(0, 8);
+    const q = orderSearch.toLowerCase();
+    return orders.filter((o) =>
+      o.project?.toLowerCase().includes(q) ||
+      o.folder_code?.toLowerCase().includes(q) ||
+      o.client?.toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [orders, orderSearch]);
+
+  const selectedOrder = orders.find((o) => o.id === data.order_id);
+
+  const pickOrder = (order) => {
+    onChange((p) => ({
+      ...p,
+      order_id: order.id,
+      notes: order.folder_code || p.notes,
+    }));
+    setOrderSearch("");
+    setShowOrderList(false);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
-      <div className="w-full max-w-lg rounded-3xl bg-white p-7 shadow-2xl">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+      <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+            {data.date && <p className="text-xs text-slate-400 mt-0.5">· {data.date}</p>}
+          </div>
           <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100">
             <X size={18} />
           </button>
         </div>
-        <form className="space-y-4" onSubmit={onSubmit}>
-          <label className="block space-y-1.5 text-xs font-medium text-slate-600">
-            Judul Task
+        <form className="space-y-4 p-6" onSubmit={onSubmit}>
+          {/* Order link (only for add) */}
+          {isAdd && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">Link ke Order (opsional)</p>
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={orderSearch}
+                  onChange={(e) => { setOrderSearch(e.target.value); setShowOrderList(true); }}
+                  onFocus={() => setShowOrderList(true)}
+                  placeholder="Cari project atau kode folder..."
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-indigo-300"
+                />
+                {showOrderList && (
+                  <div className="absolute z-10 mt-1 w-full rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                    {filteredOrders.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => pickOrder(o)}
+                        className="w-full px-4 py-3 text-left hover:bg-indigo-50 transition border-b border-slate-50 last:border-0"
+                      >
+                        <p className="text-sm font-semibold text-slate-900">{o.project}</p>
+                        <p className="text-xs text-indigo-500 font-mono">{o.client} · {o.folder_code}</p>
+                      </button>
+                    ))}
+                    {filteredOrders.length === 0 && (
+                      <p className="px-4 py-3 text-xs text-slate-400">Tidak ditemukan.</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowOrderList(false)}
+                      className="w-full py-2 text-xs text-slate-400 hover:bg-slate-50"
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                )}
+              </div>
+              {selectedOrder && (
+                <div className="flex items-center justify-between rounded-xl bg-indigo-50 px-3 py-2">
+                  <div>
+                    <p className="text-xs font-semibold text-indigo-800">{selectedOrder.project}</p>
+                    <p className="text-xs text-indigo-500 font-mono">{selectedOrder.folder_code}</p>
+                  </div>
+                  <button type="button" onClick={() => onChange((p) => ({ ...p, order_id: null }))} className="text-indigo-300 hover:text-indigo-600">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+            Title
             <input
               value={data.title}
               onChange={(e) => onChange((p) => ({ ...p, title: e.target.value }))}
               required
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-indigo-300"
+              placeholder="Mis: Modeling chest rig"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
             />
           </label>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-1.5 text-xs font-medium text-slate-600">
+            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
               Assignee
               <input
                 value={data.assignee}
                 onChange={(e) => onChange((p) => ({ ...p, assignee: e.target.value }))}
                 required
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-indigo-300"
+                placeholder="Nama"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
               />
             </label>
-            <label className="block space-y-1.5 text-xs font-medium text-slate-600">
+            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
               Tipe
               <select
                 value={data.assignee_type}
                 onChange={(e) => onChange((p) => ({ ...p, assignee_type: e.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-indigo-300"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
               >
                 <option value="tim">Tim Internal</option>
                 <option value="freelance">Freelance</option>
               </select>
             </label>
           </div>
-          <label className="block space-y-1.5 text-xs font-medium text-slate-600">
-            Status
-            <select
-              value={data.status}
-              onChange={(e) => onChange((p) => ({ ...p, status: e.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-indigo-300"
-            >
-              <option value="pending">Pending</option>
-              <option value="in progress">In Progress</option>
-              <option value="done">Done</option>
-              <option value="failed">Gagal</option>
-            </select>
-          </label>
-          <label className="block space-y-1.5 text-xs font-medium text-slate-600">
+          {!isAdd && (
+            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+              Status
+              <select
+                value={data.status}
+                onChange={(e) => onChange((p) => ({ ...p, status: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
+              >
+                <option value="pending">Pending</option>
+                <option value="in progress">In Progress</option>
+                <option value="done">Done</option>
+                <option value="failed">Gagal</option>
+              </select>
+            </label>
+          )}
+          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
             Catatan
             <textarea
               value={data.notes || ""}
               onChange={(e) => onChange((p) => ({ ...p, notes: e.target.value }))}
-              rows={3}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-indigo-300"
+              rows={2}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal font-mono"
             />
           </label>
           <div className="flex justify-end gap-3 pt-2">
