@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Plus, Search, Edit3, Trash2, Upload, Download } from "lucide-react";
+import { Plus, Search, Edit3, Trash2, Upload, Download, Columns } from "lucide-react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
 import {
@@ -32,6 +32,7 @@ export default function OrdersPage() {
   const [activeOrder, setActiveOrder] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [newOrder, setNewOrder] = useState(emptyOrder());
+  const [compactMode, setCompactMode] = useState(true);
 
   const visibleOrders = useMemo(() =>
     orders
@@ -131,11 +132,23 @@ export default function OrdersPage() {
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-6 py-5">
           <div>
             <p className="text-sm font-semibold text-slate-900">Daftar Order</p>
-            <p className="text-sm text-slate-500">Tabel order dengan detail folder, tipe, dan status pembayaran.</p>
+            <p className="text-sm text-slate-500">{compactMode ? "Mode ringkas: klik Kolom untuk lihat semua detail." : "Mode lengkap: semua kolom ditampilkan."}</p>
           </div>
-          <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">
-            {loading ? "Memuat..." : `${visibleOrders.length} order`}
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setCompactMode((v) => !v)}
+              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition ${
+                compactMode
+                  ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  : "border-slate-900 bg-slate-900 text-white"
+              }`}
+            >
+              <Columns size={13} /> {compactMode ? "Kolom Lengkap" : "Ringkas"}
+            </button>
+            <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">
+              {loading ? "Memuat..." : `${visibleOrders.length} order`}
+            </span>
+          </div>
         </div>
         <div className="overflow-x-auto p-6">
           <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
@@ -143,11 +156,11 @@ export default function OrdersPage() {
               <tr className="text-xs uppercase tracking-[0.18em] text-slate-500">
                 <th className="px-4 py-3">Tanggal</th>
                 <th className="px-4 py-3">Platform</th>
-                <th className="px-4 py-3">Market</th>
-                <th className="px-4 py-3">Order ID</th>
+                {!compactMode && <th className="px-4 py-3">Market</th>}
+                {!compactMode && <th className="px-4 py-3">Order ID</th>}
                 <th className="px-4 py-3">Klien</th>
                 <th className="px-4 py-3">Project</th>
-                <th className="px-4 py-3">Jenis</th>
+                {!compactMode && <th className="px-4 py-3">Jenis</th>}
                 <th className="px-4 py-3">Artist</th>
                 <th className="px-4 py-3">Deadline</th>
                 <th className="px-4 py-3">Value</th>
@@ -160,24 +173,32 @@ export default function OrdersPage() {
               {visibleOrders.map((order) => {
                 const sc = STATUS_COLORS[normalizeStatus(order.status)] || { bg: "#f1f5f9", text: "#64748b" };
                 const pc = PAYMENT_COLORS[order.payment_status] || { bg: "#f1f5f9", text: "#64748b" };
+                const colSpan = compactMode ? 10 : 13;
                 return (
                   <tr key={order.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-4 text-slate-500">{order.created_at?.slice(0, 10) || "-"}</td>
-                    <td className="px-4 py-4">{order.platform || "Direct"}</td>
-                    <td className="px-4 py-4">{order.market || "-"}</td>
-                    <td className="px-4 py-4 font-mono text-xs">{order.order_id || "-"}</td>
-                    <td className="px-4 py-4">{order.client}</td>
-                    <td className="px-4 py-4 font-semibold text-slate-900">{order.project}</td>
-                    <td className="px-4 py-4">{order.work_type || "-"}</td>
+                    <td className="px-4 py-4 text-slate-500 whitespace-nowrap">{order.created_at?.slice(0, 10) || "-"}</td>
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <span className="text-sm">{order.platform || "Direct"}</span>
+                    </td>
+                    {!compactMode && <td className="px-4 py-4">{order.market || "-"}</td>}
+                    {!compactMode && <td className="px-4 py-4 font-mono text-xs">{order.order_id || "-"}</td>}
+                    <td className="px-4 py-4 max-w-[140px] truncate">{order.client}</td>
+                    <td className="px-4 py-4 font-semibold text-slate-900 max-w-[180px]">
+                      <p className="truncate">{order.project}</p>
+                      {compactMode && order.work_type && (
+                        <p className="text-xs font-normal text-slate-400">{order.work_type}</p>
+                      )}
+                    </td>
+                    {!compactMode && <td className="px-4 py-4">{order.work_type || "-"}</td>}
                     <td className="px-4 py-4">{order.artists?.[0] || "-"}</td>
-                    <td className={`px-4 py-4 ${deadlineClass(order.deadline)}`}>{order.deadline || "-"}</td>
-                    <td className="px-4 py-4 font-semibold">{formatMoney(order.total)}</td>
-                    <td className="px-4 py-4">
+                    <td className={`px-4 py-4 whitespace-nowrap ${deadlineClass(order.deadline)}`}>{order.deadline || "-"}</td>
+                    <td className="px-4 py-4 font-semibold whitespace-nowrap">{formatMoney(order.total)}</td>
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <span className="inline-flex rounded-full px-3 py-1 text-xs font-semibold" style={{ background: sc.bg, color: sc.text }}>
-                        {order.status}
+                        {normalizeStatus(order.status)}
                       </span>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <span className="inline-flex rounded-full px-3 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
                         {order.payment_status || "Belum Lunas"}
                       </span>
@@ -196,7 +217,7 @@ export default function OrdersPage() {
                 );
               })}
               {visibleOrders.length === 0 && (
-                <tr><td colSpan="13" className="py-10 text-center text-sm text-slate-500">Tidak ada order yang cocok.</td></tr>
+                <tr><td colSpan={compactMode ? 10 : 13} className="py-10 text-center text-sm text-slate-500">Tidak ada order yang cocok.</td></tr>
               )}
             </tbody>
           </table>

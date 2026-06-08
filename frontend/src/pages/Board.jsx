@@ -16,6 +16,7 @@ function groupBy(items, keyFn) {
 export default function Board() {
   const { orders, updateOrder } = useOrders();
   const [viewBy, setViewBy] = useState("status");
+  const [showAll, setShowAll] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOver, setDragOver] = useState(null);
 
@@ -27,7 +28,7 @@ export default function Board() {
   const grouped = useMemo(() => {
     if (viewBy === "status") {
       return ACTIVE_STATUSES.reduce(
-        (acc, status) => ({ ...acc, [status]: activeOrders.filter((o) => o.status === status) }),
+        (acc, status) => ({ ...acc, [status]: activeOrders.filter((o) => normalizeStatus(o.status) === status) }),
         {}
       );
     }
@@ -37,10 +38,12 @@ export default function Board() {
 
   const nonEmptyColumns = useMemo(() => {
     if (viewBy === "status") {
-      return Object.entries(grouped).filter(([, items]) => items.length > 0);
+      return showAll
+        ? Object.entries(grouped)
+        : Object.entries(grouped).filter(([, items]) => items.length > 0);
     }
     return Object.entries(grouped);
-  }, [grouped, viewBy]);
+  }, [grouped, viewBy, showAll]);
 
   const handleDrop = async (orderId, target) => {
     if (!orderId) return;
@@ -104,9 +107,21 @@ export default function Board() {
           <h1 className="text-3xl font-bold text-slate-900">Visual Board Produksi</h1>
           <p className="mt-2 text-sm text-slate-500">Drag-and-drop order untuk memindahkan status atau artist.</p>
         </div>
-        <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-sm shadow-sm">
-          <button onClick={() => setViewBy("status")} className={`px-4 py-2 rounded-full transition ${viewBy === "status" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}>Status</button>
-          <button onClick={() => setViewBy("artist")} className={`px-4 py-2 rounded-full transition ${viewBy === "artist" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}>Artist</button>
+        <div className="flex items-center gap-3">
+          {viewBy === "status" && (
+            <button
+              onClick={() => setShowAll((v) => !v)}
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                showAll ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {showAll ? "Semua Status" : "Aktif Saja"}
+            </button>
+          )}
+          <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 text-sm shadow-sm">
+            <button onClick={() => setViewBy("status")} className={`px-4 py-2 rounded-full transition ${viewBy === "status" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}>Status</button>
+            <button onClick={() => setViewBy("artist")} className={`px-4 py-2 rounded-full transition ${viewBy === "artist" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}>Artist</button>
+          </div>
         </div>
       </div>
 
