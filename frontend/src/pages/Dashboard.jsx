@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
-import { TrendingUp, CheckCircle2, Clock3, Layers, Users, AlertTriangle, ArrowUpRight, Plus } from "lucide-react";
+import { TrendingUp, CheckCircle2, Clock3, Layers, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { PLATFORM_COLORS, normalizeStatus } from "../lib/constants";
 import { useNavigate } from "react-router-dom";
 
@@ -64,14 +64,9 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-slate-500">Selamat datang kembali — ringkasan produksi Magsika Studio.</p>
-        </div>
-        <button onClick={() => navigate("/orders")} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-700 transition">
-          <Plus size={15} /> Tambah Order
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+        <p className="mt-0.5 text-sm text-slate-500">Selamat datang kembali — ringkasan produksi Magsika Studio.</p>
       </div>
 
       {/* Alerts */}
@@ -104,6 +99,7 @@ export default function DashboardPage() {
           icon={Layers}
           iconBg="bg-violet-50 text-violet-600"
           trend={`${activeOrders} aktif`}
+          onClick={() => navigate("/orders")}
         />
         <MetricCard
           label="New / Active Orders"
@@ -113,6 +109,7 @@ export default function DashboardPage() {
           icon={TrendingUp}
           iconBg="bg-sky-50 text-sky-600"
           trend={`${Math.round((activeOrders / Math.max(totalOrders, 1)) * 100)}% dari total`}
+          onClick={() => navigate("/orders")}
         />
         <MetricCard
           label="Completed Orders"
@@ -123,6 +120,7 @@ export default function DashboardPage() {
           iconBg="bg-emerald-50 text-emerald-600"
           trend="selesai"
           positive
+          onClick={() => navigate("/orders")}
         />
         <MetricCard
           label="Cancelled Orders"
@@ -133,6 +131,7 @@ export default function DashboardPage() {
           iconBg="bg-rose-50 text-rose-600"
           trend={`${Math.round((cancelOrders / Math.max(totalOrders, 1)) * 100)}% cancel rate`}
           negative
+          onClick={() => navigate("/orders")}
         />
       </div>
 
@@ -253,9 +252,9 @@ export default function DashboardPage() {
   );
 }
 
-function MetricCard({ label, value, sub, accent, icon: Icon, iconBg, trend, positive, negative }) {
+function MetricCard({ label, value, sub, accent, icon: Icon, iconBg, trend, positive, negative, onClick }) {
   return (
-    <div className={`rounded-2xl border-l-4 border border-slate-200 bg-white p-5 shadow-sm ${accent}`}>
+    <div onClick={onClick} className={`rounded-2xl border-l-4 border border-slate-200 bg-white p-5 shadow-sm ${accent} ${onClick ? "cursor-pointer hover:shadow-md transition-shadow" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">{label}</p>
