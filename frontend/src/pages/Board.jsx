@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Kanban } from "lucide-react";
 import { useOrders } from "../context/OrdersContext";
-import { ACTIVE_STATUSES, STATUS_COLORS, getArtistColor } from "../lib/constants";
+import { ACTIVE_STATUSES, STATUS_COLORS, getArtistColor, normalizeStatus } from "../lib/constants";
 import Pill from "../components/Pill";
 
 function groupBy(items, keyFn) {
@@ -20,7 +20,7 @@ export default function Board() {
   const [dragOver, setDragOver] = useState(null);
 
   const activeOrders = useMemo(
-    () => orders.filter((o) => o.status !== "Done" && o.status !== "Cancel"),
+    () => orders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel"),
     [orders]
   );
 
@@ -62,7 +62,7 @@ export default function Board() {
 
   const renderCard = (order) => {
     const color = getArtistColor(order.artists?.[0]);
-    const sc = STATUS_COLORS[order.status] || { bg: "#f8fafc", text: "#334155" };
+    const sc = STATUS_COLORS[normalizeStatus(order.status)] || { bg: "#f8fafc", text: "#334155" };
     return (
       <div
         key={order.id}

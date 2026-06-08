@@ -3,15 +3,15 @@ import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { TrendingUp, CheckCircle2, Clock3, Layers, Users, AlertTriangle } from "lucide-react";
 import { MetricCard } from "../components/MetricCard";
-import { PLATFORM_COLORS } from "../lib/constants";
+import { PLATFORM_COLORS, normalizeStatus } from "../lib/constants";
 
 export default function DashboardPage() {
   const { orders, loading } = useOrders();
   const { formatMoney } = useCurrency();
 
   const totalOrders = orders.length;
-  const completedOrders = orders.filter((o) => o.status === "Done").length;
-  const activeOrders = orders.filter((o) => o.status !== "Done" && o.status !== "Cancel").length;
+  const completedOrders = orders.filter((o) => normalizeStatus(o.status) === "Done").length;
+  const activeOrders = orders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
   const revenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
   const freelanceFee = Math.round(revenue * 0.12);
   const unpaid = orders
@@ -19,13 +19,13 @@ export default function DashboardPage() {
     .reduce((sum, o) => sum + (o.total || 0), 0);
 
   const deadlineAlerts = orders.filter((o) => {
-    if (!o.deadline || o.status === "Done" || o.status === "Cancel") return false;
+    if (!o.deadline || normalizeStatus(o.status) === "Done" || normalizeStatus(o.status) === "Cancel") return false;
     const diff = Math.ceil((new Date(o.deadline) - new Date()) / 86400000);
     return diff >= 0 && diff <= 3;
   });
 
   const overdueOrders = orders.filter((o) => {
-    if (!o.deadline || o.status === "Done" || o.status === "Cancel") return false;
+    if (!o.deadline || normalizeStatus(o.status) === "Done" || normalizeStatus(o.status) === "Cancel") return false;
     return new Date(o.deadline) < new Date();
   });
 
@@ -59,7 +59,7 @@ export default function DashboardPage() {
 
   const statusSummary = useMemo(() => {
     const map = {};
-    orders.filter((o) => o.status !== "Done" && o.status !== "Cancel").forEach((o) => {
+    orders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").forEach((o) => {
       map[o.status] = (map[o.status] || 0) + 1;
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6);

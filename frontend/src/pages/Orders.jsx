@@ -6,7 +6,7 @@ import {
   STATUS_OPTIONS, STATUS_COLORS,
   PLATFORM_OPTIONS, PAYMENT_OPTIONS, PAYMENT_COLORS,
   WORK_TYPE_OPTIONS, MARKET_OPTIONS, MARKETER_OPTIONS,
-  generateFolderCode,
+  generateFolderCode, normalizeStatus,
 } from "../lib/constants";
 
 const todayStr = () => {
@@ -158,7 +158,7 @@ export default function OrdersPage() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {visibleOrders.map((order) => {
-                const sc = STATUS_COLORS[order.status] || { bg: "#f1f5f9", text: "#64748b" };
+                const sc = STATUS_COLORS[normalizeStatus(order.status)] || { bg: "#f1f5f9", text: "#64748b" };
                 const pc = PAYMENT_COLORS[order.payment_status] || { bg: "#f1f5f9", text: "#64748b" };
                 return (
                   <tr key={order.id} className="hover:bg-slate-50">

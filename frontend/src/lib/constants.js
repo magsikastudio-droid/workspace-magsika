@@ -91,6 +91,18 @@ export const PAYMENT_COLORS = {
   "Belum Lunas": { bg: "#fee2e2", text: "#b91c1c" },
 };
 
+export const STATUS_LEGACY_MAP = {
+  "pending":     "Pending",
+  "in progress": "Modeling",
+  "done":        "Done",
+  "cancel":      "Cancel",
+};
+
+export function normalizeStatus(status) {
+  if (!status) return "Pending";
+  return STATUS_LEGACY_MAP[status.toLowerCase()] || status;
+}
+
 export const ARTIST_COLORS = {
   Default: "#0f172a",
 };
