@@ -702,6 +702,34 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
         updated = None
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    new_status = payload.get("status")
+    # Talent kirim ke review → buat notifikasi
+    if new_status == "menunggu_review":
+        try:
+            await db.notifications.insert_one({
+                "type": "review_request",
+                "task_id": task_id,
+                "task_title": updated.get("title", ""),
+                "assignee": updated.get("assignee", ""),
+                "order_id": updated.get("order_id"),
+                "notes": updated.get("notes", ""),
+                "date": updated.get("date", ""),
+                "read": False,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            pass
+    # Keluar dari review (approved/rejected) → tandai notifikasi terkait sebagai dibaca
+    elif new_status in ["done", "in progress", "failed"]:
+        try:
+            await db.notifications.update_many(
+                {"task_id": task_id, "read": False},
+                {"$set": {"read": True}},
+            )
+        except Exception:
+            pass
+
     return {"task": format_task(updated)}
 
 
@@ -1187,3 +1215,69 @@ async def delete_schedule_event(event_id: str, current_user: dict = Depends(get_
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"deleted": True}
+
+
+# ─── Notifications ────────────────────────────────────────────────────────────
+
+def format_notification(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")) if record.get("_id") else record.get("id", ""),
+        "type": record.get("type", "review_request"),
+        "task_id": record.get("task_id", ""),
+        "task_title": record.get("task_title", ""),
+        "assignee": record.get("assignee", ""),
+        "order_id": record.get("order_id"),
+        "notes": record.get("notes", ""),
+        "date": record.get("date", ""),
+        "read": record.get("read", False),
+        "created_at": record.get("created_at", ""),
+    }
+
+
+@app.get("/notifications/unread-count")
+async def get_unread_count(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        return {"count": 0}
+    try:
+        count = await db.notifications.count_documents({"read": False})
+        return {"count": count}
+    except Exception:
+        return {"count": 0}
+
+
+@app.get("/notifications")
+async def list_notifications(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        records = await db.notifications.find().sort("created_at", -1).to_list(200)
+        unread = sum(1 for r in records if not r.get("read", False))
+        return {
+            "notifications": [format_notification(r) for r in records],
+            "unread_count": unread,
+        }
+    except Exception:
+        return {"notifications": [], "unread_count": 0}
+
+
+@app.patch("/notifications/read-all")
+async def mark_all_notifications_read(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        await db.notifications.update_many({"read": False}, {"$set": {"read": True}})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
+
+
+@app.patch("/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    object_id = to_object_id(notif_id)
+    try:
+        await db.notifications.update_one({"_id": object_id}, {"$set": {"read": True}})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}

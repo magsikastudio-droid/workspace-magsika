@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2, ClipboardList, GripVertical, Kanban, Pause, Pencil, Play,
-  Plus, Search, X, Zap, Clock, Send,
+  Plus, Search, X, Zap, Clock, Send, CheckCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
@@ -53,17 +53,19 @@ const avatarColor = (name) => {
 };
 
 const STATUS_META = {
-  pending:       { label: "Pending",     bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-400"   },
-  "in progress": { label: "In Progress", bg: "bg-sky-100",     text: "text-sky-700",     dot: "bg-sky-500"     },
-  done:          { label: "Done",        bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
-  failed:        { label: "Gagal",       bg: "bg-rose-100",    text: "text-rose-700",    dot: "bg-rose-500"    },
+  pending:          { label: "Pending",     bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-400"   },
+  "in progress":    { label: "In Progress", bg: "bg-sky-100",     text: "text-sky-700",     dot: "bg-sky-500"     },
+  menunggu_review:  { label: "Review",      bg: "bg-orange-100",  text: "text-orange-700",  dot: "bg-orange-500"  },
+  done:             { label: "Done",        bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
+  failed:           { label: "Gagal",       bg: "bg-rose-100",    text: "text-rose-700",    dot: "bg-rose-500"    },
 };
 
 const KANBAN_COLS = [
-  { key: "pending",     label: "Pending",     color: "border-t-amber-400"   },
-  { key: "in progress", label: "In Progress", color: "border-t-sky-400"     },
-  { key: "done",        label: "Done",        color: "border-t-emerald-400" },
-  { key: "failed",      label: "Gagal",       color: "border-t-rose-400"    },
+  { key: "pending",         label: "Pending",     color: "border-t-amber-400"   },
+  { key: "in progress",     label: "In Progress", color: "border-t-sky-400"     },
+  { key: "menunggu_review", label: "Review",      color: "border-t-orange-400"  },
+  { key: "done",            label: "Done",        color: "border-t-emerald-400" },
+  { key: "failed",          label: "Gagal",       color: "border-t-rose-400"    },
 ];
 
 /* ─── global 1-second tick ─────────────────────────────────────── */
@@ -76,8 +78,6 @@ function useNow() {
   return now;
 }
 
-// Guard: jika task dari hari kemarin dan timer_started masih set,
-// cap elapsed di akhir hari itu (auto-fail harusnya sudah clear, tapi jaga-jaga)
 const getElapsed = (task, now) => {
   let base = task.time_elapsed || 0;
   if (task.timer_started) {
@@ -98,6 +98,9 @@ export default function Todo() {
   const { tasks, loading, fetchTasks, createTask, updateTask, deleteTask } = useTasks();
   const { orders } = useOrders();
   const now = useNow();
+
+  const role = user?.role || "talent";
+  const isAdminOrPM = role === "admin" || role === "pm";
 
   const [date, setDate] = useState(todayStr());
   const [viewMode, setViewMode] = useState("list");
@@ -139,13 +142,11 @@ export default function Todo() {
 
   const taskMap = useMemo(() => Object.fromEntries(tasks.map((t) => [t.id, t])), [tasks]);
 
-  // Live detail task — selalu ambil dari context terbaru, bukan snapshot stale
   const liveDetailTask = useMemo(() => {
     if (!detailTaskId) return null;
     return tasks.find((t) => t.id === detailTaskId) || null;
   }, [detailTaskId, tasks]);
 
-  // Semua nama assignee yang sudah pernah ada (untuk autocomplete)
   const knownAssignees = useMemo(() => {
     const names = new Set(tasks.map((t) => t.assignee).filter(Boolean));
     return [...names].sort();
@@ -153,9 +154,10 @@ export default function Todo() {
 
   const stats = useMemo(() => ({
     total: visibleTasks.length,
-    done: visibleTasks.filter((t) => t.status === "done").length,
     pending: visibleTasks.filter((t) => t.status === "pending").length,
     inProgress: visibleTasks.filter((t) => t.status === "in progress").length,
+    review: visibleTasks.filter((t) => t.status === "menunggu_review").length,
+    done: visibleTasks.filter((t) => t.status === "done").length,
     failed: visibleTasks.filter((t) => t.status === "failed").length,
   }), [visibleTasks]);
 
@@ -182,38 +184,57 @@ export default function Todo() {
     fetchTasks(date);
   };
 
-  /* ── status change — selalu clear timer saat done/failed ── */
+  /* ── status change — clear timer saat done/failed/menunggu_review ── */
   const handleStatus = useCallback(async (task, newStatus) => {
     const payload = { status: newStatus };
-    if (newStatus === "done" || newStatus === "failed") {
+    if (["done", "failed", "menunggu_review"].includes(newStatus)) {
       if (task.timer_started) {
         payload.time_elapsed = getElapsed(task, Date.now());
       }
-      payload.timer_started = null; // selalu clear
+      payload.timer_started = null;
     }
     await updateTask(task.id, payload);
   }, [updateTask]);
 
-  /* ── complete dengan konfirmasi Telegram ── */
-  const handleComplete = useCallback((task) => { setConfirmDone(task); }, []);
+  /* ── tombol Mulai: start timer + auto in-progress jika masih pending ── */
+  const handleTimer = useCallback(async (task) => {
+    if (task.timer_started) {
+      const elapsed = getElapsed(task, Date.now());
+      await updateTask(task.id, { time_elapsed: elapsed, timer_started: null });
+    } else {
+      const payload = { timer_started: new Date().toISOString() };
+      if (task.status === "pending") payload.status = "in progress";
+      await updateTask(task.id, payload);
+    }
+  }, [updateTask]);
 
-  // Gunakan live task dari context saat konfirmasi — hindari snapshot stale
+  /* ── tombol Done: admin/PM → konfirmasi Telegram, talent → menunggu review ── */
+  const handleMarkDone = useCallback((task) => {
+    if (isAdminOrPM) {
+      setConfirmDone(task);
+    } else {
+      handleStatus(task, "menunggu_review");
+      toast.success("File dikirim untuk review admin.");
+    }
+  }, [isAdminOrPM, handleStatus]);
+
+  /* ── admin approve/reject dari card ── */
+  const handleApprove = useCallback(async (task) => {
+    await handleStatus(task, "done");
+    toast.success("Task disetujui ✓");
+  }, [handleStatus]);
+
+  const handleReject = useCallback(async (task) => {
+    await handleStatus(task, "in progress");
+    toast.info("Task dikembalikan ke In Progress.");
+  }, [handleStatus]);
+
   const handleConfirmDone = useCallback(async () => {
     if (!confirmDone) return;
     const liveTask = tasks.find((t) => t.id === confirmDone.id) || confirmDone;
     await handleStatus(liveTask, "done");
     setConfirmDone(null);
   }, [confirmDone, tasks, handleStatus]);
-
-  /* ── timer toggle ── */
-  const handleTimer = useCallback(async (task) => {
-    if (task.timer_started) {
-      const elapsed = getElapsed(task, Date.now());
-      await updateTask(task.id, { time_elapsed: elapsed, timer_started: null });
-    } else {
-      await updateTask(task.id, { timer_started: new Date().toISOString() });
-    }
-  }, [updateTask]);
 
   /* ── delete ─────────────── */
   const handleDelete = useCallback(async (taskId) => { await deleteTask(taskId); }, [deleteTask]);
@@ -225,7 +246,7 @@ export default function Todo() {
       title: editTask.title, notes: editTask.notes,
       assignee: editTask.assignee, assignee_type: editTask.assignee_type, status: editTask.status,
     };
-    if ((editTask.status === "done" || editTask.status === "failed") && editTask.timer_started) {
+    if (["done", "failed", "menunggu_review"].includes(editTask.status) && editTask.timer_started) {
       payload.time_elapsed = getElapsed(editTask, Date.now());
       payload.timer_started = null;
     }
@@ -249,23 +270,17 @@ export default function Todo() {
     const fromId = dragIdRef.current;
     dragIdRef.current = null;
     if (!fromId) return;
-
     const fromTask = taskMap[fromId];
     if (!fromTask) return;
-
-    // Pindah ke assignee berbeda — update field assignee
     if (fromTask.assignee !== targetAssignee) {
       dragOverRef.current = null;
       await updateTask(fromId, { assignee: targetAssignee, assignee_type: targetAssigneeType });
       await fetchTasks(date);
       return;
     }
-
-    // Reorder dalam assignee yang sama
     const { overTaskId } = dragOverRef.current || {};
     dragOverRef.current = null;
     if (!overTaskId || overTaskId === fromId) return;
-
     setDragState((prev) => {
       const ids = [...(prev[targetAssignee] || [])];
       const fromIdx = ids.indexOf(fromId);
@@ -312,11 +327,12 @@ export default function Todo() {
         </div>
 
         {/* Stats */}
-        <div className="mt-4 flex flex-wrap gap-3">
+        <div className="mt-4 flex flex-wrap gap-2">
           {[
             { label: "Total",       value: stats.total,      color: "text-slate-700",   bg: "bg-slate-100"  },
             { label: "Pending",     value: stats.pending,    color: "text-amber-700",   bg: "bg-amber-50"   },
             { label: "In Progress", value: stats.inProgress, color: "text-sky-700",     bg: "bg-sky-50"     },
+            { label: "Review",      value: stats.review,     color: "text-orange-700",  bg: "bg-orange-50"  },
             { label: "Done",        value: stats.done,       color: "text-emerald-700", bg: "bg-emerald-50" },
             { label: "Gagal",       value: stats.failed,     color: "text-rose-700",    bg: "bg-rose-50"    },
           ].map((s) => (
@@ -339,24 +355,30 @@ export default function Todo() {
         </div>
       ) : viewMode === "kanban" ? (
         <KanbanView
-          tasks={visibleTasks} now={now}
-          onStatus={handleStatus} onComplete={handleComplete} onTimer={handleTimer}
-          onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)} onDelete={handleDelete}
+          tasks={visibleTasks} now={now} isAdminOrPM={isAdminOrPM}
+          onTimer={handleTimer} onMarkDone={handleMarkDone}
+          onApprove={handleApprove} onReject={handleReject}
+          onStatus={handleStatus} onEdit={setEditTask}
+          onDetail={(t) => setDetailTaskId(t.id)} onDelete={handleDelete}
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           <TaskGroup
             title="Tim Internal" icon="👥" groups={grouped.tim} assigneeType="tim"
-            dragState={dragState} taskMap={taskMap} now={now}
-            onStatus={handleStatus} onComplete={handleComplete} onDelete={handleDelete}
-            onTimer={handleTimer} onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
+            dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
+            onTimer={handleTimer} onMarkDone={handleMarkDone}
+            onApprove={handleApprove} onReject={handleReject}
+            onStatus={handleStatus} onDelete={handleDelete}
+            onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
             onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
           />
           <TaskGroup
             title="Freelance" icon="🎨" groups={grouped.freelance} assigneeType="freelance"
-            dragState={dragState} taskMap={taskMap} now={now}
-            onStatus={handleStatus} onComplete={handleComplete} onDelete={handleDelete}
-            onTimer={handleTimer} onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
+            dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
+            onTimer={handleTimer} onMarkDone={handleMarkDone}
+            onApprove={handleApprove} onReject={handleReject}
+            onStatus={handleStatus} onDelete={handleDelete}
+            onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
             onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
           />
         </div>
@@ -397,7 +419,7 @@ export default function Todo() {
 }
 
 /* ─── KanbanView ────────────────────────────────────────────────── */
-function KanbanView({ tasks, now, onStatus, onComplete, onTimer, onEdit, onDetail, onDelete }) {
+function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onStatus, onEdit, onDetail, onDelete }) {
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
       {KANBAN_COLS.map(({ key, label, color }) => {
@@ -415,7 +437,10 @@ function KanbanView({ tasks, now, onStatus, onComplete, onTimer, onEdit, onDetai
               {colTasks.length === 0
                 ? <div className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-xs text-slate-400">Kosong</div>
                 : colTasks.map((task) => (
-                  <TaskCard key={task.id} task={task} now={now} onStatus={onStatus} onComplete={onComplete} onDelete={onDelete} onTimer={onTimer} onEdit={onEdit} onDetail={onDetail} onDragStart={() => {}} onDragOver={() => {}} compact />
+                  <TaskCard key={task.id} task={task} now={now} isAdminOrPM={isAdminOrPM}
+                    onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+                    onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
+                    onDragStart={() => {}} onDragOver={() => {}} compact />
                 ))}
             </div>
           </div>
@@ -426,7 +451,7 @@ function KanbanView({ tasks, now, onStatus, onComplete, onTimer, onEdit, onDetai
 }
 
 /* ─── TaskGroup ─────────────────────────────────────────────────── */
-function TaskGroup({ title, icon, groups, assigneeType, dragState, taskMap, now, onStatus, onComplete, onDelete, onTimer, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function TaskGroup({ title, icon, groups, assigneeType, dragState, taskMap, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const entries = Object.entries(groups);
   const totalTasks = entries.reduce((s, [, t]) => s + t.length, 0);
   return (
@@ -447,9 +472,9 @@ function TaskGroup({ title, icon, groups, assigneeType, dragState, taskMap, now,
             const ordered = orderedIds.map((id) => taskMap[id]).filter(Boolean);
             return (
               <ArtistSection
-                key={assignee} assignee={assignee} tasks={ordered} now={now}
-                onStatus={onStatus} onComplete={onComplete} onDelete={onDelete}
-                onTimer={onTimer} onEdit={onEdit} onDetail={onDetail}
+                key={assignee} assignee={assignee} tasks={ordered} now={now} isAdminOrPM={isAdminOrPM}
+                onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+                onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
                 onDragStart={onDragStart}
                 onDragOver={(e, overId) => onDragOver(e, assignee, overId)}
                 onDrop={(e) => onDrop(e, assignee, assigneeType)}
@@ -463,15 +488,14 @@ function TaskGroup({ title, icon, groups, assigneeType, dragState, taskMap, now,
 }
 
 /* ─── ArtistSection ─────────────────────────────────────────────── */
-function ArtistSection({ assignee, tasks, now, onStatus, onComplete, onDelete, onTimer, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function ArtistSection({ assignee, tasks, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const bgColor = avatarColor(assignee);
   const totalElapsed = tasks.reduce((s, t) => s + getElapsed(t, now), 0);
 
-  // Done/failed selalu ke bawah, urutan lain tetap
   const sortedTasks = useMemo(() => {
     return [...tasks].sort((a, b) => {
-      const aFinished = a.status === "done" || a.status === "failed";
-      const bFinished = b.status === "done" || b.status === "failed";
+      const aFinished = ["done", "failed", "menunggu_review"].includes(a.status);
+      const bFinished = ["done", "failed", "menunggu_review"].includes(b.status);
       if (aFinished !== bFinished) return aFinished ? 1 : -1;
       return 0;
     });
@@ -494,9 +518,9 @@ function ArtistSection({ assignee, tasks, now, onStatus, onComplete, onDelete, o
       <div className="ml-10 space-y-2" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
         {sortedTasks.map((task) => (
           <TaskCard
-            key={task.id} task={task} now={now}
-            onStatus={onStatus} onComplete={onComplete} onDelete={onDelete}
-            onTimer={onTimer} onEdit={onEdit} onDetail={onDetail}
+            key={task.id} task={task} now={now} isAdminOrPM={isAdminOrPM}
+            onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+            onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
             onDragStart={onDragStart} onDragOver={onDragOver}
           />
         ))}
@@ -506,35 +530,41 @@ function ArtistSection({ assignee, tasks, now, onStatus, onComplete, onDelete, o
 }
 
 /* ─── TaskCard ──────────────────────────────────────────────────── */
-function TaskCard({ task, now, onStatus, onComplete, onDelete, onTimer, onEdit, onDetail, onDragStart, onDragOver, compact = false }) {
+function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, compact = false }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
   const isDone = task.status === "done";
   const isFailed = task.status === "failed";
-  const isFinished = isDone || isFailed;
-  // Timer dianggap jalan hanya jika hari ini (past date: auto-fail harusnya sudah bersihkan)
+  const isReview = task.status === "menunggu_review";
+  const isFinished = isDone || isFailed || isReview;
   const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
+  const isActive = task.status === "pending" || task.status === "in progress";
+
+  const stopProp = (fn) => (e) => { e.stopPropagation(); fn(); };
 
   return (
     <div
       draggable={!compact}
-      onDragStart={compact ? undefined : (e) => onDragStart(e, task.id)}
+      onDragStart={compact ? undefined : (e) => { e.stopPropagation(); onDragStart(e, task.id); }}
       onDragOver={compact ? undefined : (e) => onDragOver(e, task.id)}
-      className={`rounded-2xl border transition ${
+      onClick={() => onDetail(task)}
+      className={`rounded-2xl border transition cursor-pointer ${
         isRunning
           ? "border-sky-300 bg-sky-50"
           : isDone
-          ? "border-emerald-300 bg-emerald-50"
+          ? "border-emerald-300 bg-emerald-50 opacity-70"
           : isFailed
-          ? "border-rose-200 bg-rose-50/50"
+          ? "border-rose-200 bg-rose-50/50 opacity-70"
+          : isReview
+          ? "border-orange-300 bg-orange-50/40"
           : "border-slate-200 bg-white hover:border-slate-300"
-      } ${isFinished ? "opacity-70" : ""} ${!compact ? "cursor-grab active:cursor-grabbing" : ""}`}
+      } ${!compact ? "active:cursor-grabbing" : ""}`}
     >
-      {/* Status stripe di atas */}
-      {isDone  && <div className="h-1 rounded-t-2xl bg-emerald-400" />}
-      {isFailed && <div className="h-1 rounded-t-2xl bg-rose-400" />}
+      {isDone    && <div className="h-1 rounded-t-2xl bg-emerald-400" />}
+      {isFailed  && <div className="h-1 rounded-t-2xl bg-rose-400" />}
+      {isReview  && <div className="h-1 rounded-t-2xl bg-orange-400" />}
 
-      {/* Top row */}
+      {/* Top row: title + edit/delete */}
       <div className="flex items-start gap-2 px-4 pt-3">
         {!compact && <GripVertical size={14} className="mt-1 shrink-0 text-slate-300" />}
         <div className="flex-1 min-w-0 overflow-hidden">
@@ -543,14 +573,10 @@ function TaskCard({ task, now, onStatus, onComplete, onDelete, onTimer, onEdit, 
               <div className="flex items-center gap-1.5">
                 <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${sm.dot}`} />
                 {isDone && <span className="text-emerald-500 text-xs font-bold shrink-0">✓</span>}
-                <p
-                  onClick={(e) => { e.stopPropagation(); onDetail(task); }}
-                  className={`text-sm font-semibold cursor-pointer hover:underline break-words min-w-0 ${
-                    isDone ? "line-through text-slate-400" :
-                    isFailed ? "line-through text-slate-400" :
-                    "text-slate-900 hover:text-indigo-600"
-                  }`}
-                >
+                {isReview && <span className="text-orange-500 text-xs font-bold shrink-0">⏳</span>}
+                <p className={`text-sm font-semibold break-words min-w-0 ${
+                  isDone || isFailed ? "line-through text-slate-400" : "text-slate-900"
+                }`}>
                   {task.title}
                 </p>
               </div>
@@ -561,10 +587,10 @@ function TaskCard({ task, now, onStatus, onComplete, onDelete, onTimer, onEdit, 
               )}
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              <button onClick={() => onEdit({ ...task })} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
+              <button onClick={stopProp(() => onEdit({ ...task }))} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
                 <Pencil size={13} />
               </button>
-              <button onClick={() => onDelete(task.id)} title="Hapus" className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
+              <button onClick={stopProp(() => onDelete(task.id))} title="Hapus" className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
                 <X size={13} />
               </button>
             </div>
@@ -572,13 +598,16 @@ function TaskCard({ task, now, onStatus, onComplete, onDelete, onTimer, onEdit, 
         </div>
       </div>
 
-      {/* Timer + status row */}
+      {/* Bottom row: aksi kiri + status kanan */}
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          {!isFinished && (
+
+        {/* Kiri: tombol aksi */}
+        <div className="flex items-center gap-1.5">
+          {/* Tombol Mulai / timer — hanya untuk task aktif */}
+          {isActive && (
             <button
-              onClick={() => onTimer(task)}
-              title={isRunning ? "Pause timer" : "Mulai timer"}
+              onClick={stopProp(() => onTimer(task))}
+              title={isRunning ? "Pause" : task.status === "pending" ? "Mulai" : "Lanjutkan timer"}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
                 isRunning
                   ? "bg-sky-500 text-white hover:bg-sky-600"
@@ -586,41 +615,57 @@ function TaskCard({ task, now, onStatus, onComplete, onDelete, onTimer, onEdit, 
               }`}
             >
               {isRunning ? <Pause size={12} /> : <Play size={12} />}
-              {isRunning ? (
-                <span className="font-mono tracking-tight">{fmtClock(elapsed)}</span>
-              ) : elapsed > 0 ? (
-                <span className="font-mono tracking-tight">{fmtElapsed(elapsed)}</span>
-              ) : (
-                <span>Mulai</span>
-              )}
-              {isRunning && <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />}
+              {isRunning
+                ? <><span className="font-mono tracking-tight">{fmtClock(elapsed)}</span><span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" /></>
+                : elapsed > 0
+                ? <span className="font-mono tracking-tight">{fmtElapsed(elapsed)}</span>
+                : <span>Mulai</span>
+              }
             </button>
           )}
-          {isFinished && elapsed > 0 && (
+
+          {/* Tombol Done — hanya untuk task aktif */}
+          {isActive && (
+            <button
+              onClick={stopProp(() => onMarkDone(task))}
+              title={isAdminOrPM ? "Tandai selesai" : "Kirim untuk review"}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition"
+            >
+              <CheckCircle2 size={12} />
+              <span>{isAdminOrPM ? "Done" : "Done"}</span>
+            </button>
+          )}
+
+          {/* Admin/PM: approve & reject untuk task menunggu review */}
+          {isReview && isAdminOrPM && (
+            <>
+              <button
+                onClick={stopProp(() => onApprove(task))}
+                className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold bg-emerald-500 text-white hover:bg-emerald-600 transition"
+              >
+                <CheckCheck size={12} /> Approve
+              </button>
+              <button
+                onClick={stopProp(() => onReject(task))}
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600 transition"
+              >
+                <X size={12} /> Tolak
+              </button>
+            </>
+          )}
+
+          {/* Waktu kerja jika sudah selesai */}
+          {(isDone || isFailed) && elapsed > 0 && (
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-mono font-semibold text-slate-600">
               <Clock size={12} /> {fmtElapsed(elapsed)}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1">
-          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${sm.bg} ${sm.text}`}>{sm.label}</span>
-          {task.status === "pending" && (
-            <button onClick={() => onStatus(task, "in progress")} title="Mulai pengerjaan" className="rounded-lg p-1.5 text-sky-500 hover:bg-sky-50 transition">
-              <Play size={13} />
-            </button>
-          )}
-          {task.status === "in progress" && (
-            <button onClick={() => onComplete(task)} title="Selesai — konfirmasi Telegram" className="rounded-lg p-1.5 text-emerald-500 hover:bg-emerald-50 transition">
-              <CheckCircle2 size={15} />
-            </button>
-          )}
-          {task.status === "pending" && (
-            <button onClick={() => onComplete(task)} title="Tandai selesai" className="rounded-lg p-1.5 text-slate-300 hover:bg-emerald-50 hover:text-emerald-500 transition">
-              <CheckCircle2 size={13} />
-            </button>
-          )}
-        </div>
+        {/* Kanan: status badge saja */}
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold shrink-0 ${sm.bg} ${sm.text}`}>
+          {sm.label}
+        </span>
       </div>
     </div>
   );
@@ -633,7 +678,6 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
   const linkedOrder = orders.find((o) => o.id === task.order_id);
   const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
 
-  // Total akumulasi jam semua hari untuk kode folder ini
   const [orderTotal, setOrderTotal] = useState(null);
   useEffect(() => {
     if (!task.order_id) { setOrderTotal(null); return; }
@@ -643,12 +687,11 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
   }, [task.order_id]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/50 backdrop-blur-sm px-0 sm:px-4">
-      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/50 backdrop-blur-sm px-0 sm:px-4" onClick={onClose}>
+      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className="h-1 w-10 rounded-full bg-slate-200" />
         </div>
-        {/* Header */}
         <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-slate-100">
           <div className="min-w-0 flex-1">
             <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${sm.bg} ${sm.text}`}>
@@ -664,7 +707,6 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
           </button>
         </div>
 
-        {/* Body */}
         <div className="px-6 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
           {task.notes && (
             <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
@@ -680,7 +722,6 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
             </div>
           )}
 
-          {/* Waktu kerja */}
           <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
             <div className="flex items-center gap-3">
               <Clock size={14} className="text-slate-400 shrink-0" />
@@ -692,20 +733,19 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
                 </p>
               </div>
             </div>
-            {/* Total lintas hari per kode folder */}
-            {orderTotal !== null && orderTotal > 0 && (
-              <div className="mt-3 border-t border-slate-200 pt-3 flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Total Akumulasi (semua hari)</p>
-                  <p className="text-base font-mono font-bold text-indigo-700">{fmtElapsed(orderTotal)}</p>
-                </div>
-                <span className="text-xs text-indigo-300 font-mono">{linkedOrder?.folder_code || task.order_id?.slice(-6)}</span>
+            {/* Total lintas hari + lintas assignee, per order */}
+            {orderTotal !== null && (
+              <div className="mt-3 border-t border-slate-200 pt-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Total Akumulasi Semua Tim (semua hari)</p>
+                <p className="text-base font-mono font-bold text-indigo-700">
+                  {orderTotal > 0 ? fmtElapsed(orderTotal) : "Belum ada waktu tercatat"}
+                </p>
+                <p className="text-xs text-indigo-300 font-mono mt-0.5">{linkedOrder?.folder_code || task.order_id?.slice(-6)}</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
           <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
             Tutup
@@ -876,6 +916,7 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
               >
                 <option value="pending">Pending</option>
                 <option value="in progress">In Progress</option>
+                <option value="menunggu_review">Menunggu Review</option>
                 <option value="done">Done</option>
                 <option value="failed">Gagal</option>
               </select>

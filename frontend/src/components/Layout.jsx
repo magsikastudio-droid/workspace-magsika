@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Kanban, MessageSquare,
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
-  Megaphone, CalendarDays,
+  Megaphone, CalendarDays, Bell,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
+import { api } from "../lib/api";
 
 const NAV_SECTIONS = [
   {
@@ -32,8 +33,9 @@ const NAV_SECTIONS = [
     label: "Tim",
     items: [
       { to: "/pengumuman",   label: "Pengumuman",   icon: Megaphone,       roles: ["admin", "pm", "talent"] },
-      { to: "/schedule",     label: "Schedule",     icon: CalendarDays,    roles: ["admin", "pm", "talent"] },
-      { to: "/freelance",    label: "Freelance",    icon: Users,           roles: ["admin", "pm"] },
+      { to: "/schedule",       label: "Schedule",       icon: CalendarDays,    roles: ["admin", "pm", "talent"] },
+      { to: "/notifications",  label: "Notifikasi",     icon: Bell,            roles: ["admin", "pm"] },
+      { to: "/freelance",      label: "Freelance",      icon: Users,           roles: ["admin", "pm"] },
       { to: "/settings",     label: "Settings",     icon: SettingsIcon,    roles: ["admin", "pm"] },
     ],
   },
@@ -44,10 +46,24 @@ export default function Layout({ children }) {
   const { currency, setCurrency } = useCurrency();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
 
   const role = user?.role || "talent";
+
+  useEffect(() => {
+    if (role !== "admin" && role !== "pm") return;
+    const poll = async () => {
+      try {
+        const res = await api.get("/notifications/unread-count");
+        setUnreadCount(res.data?.count ?? 0);
+      } catch {}
+    };
+    poll();
+    const id = setInterval(poll, 20000);
+    return () => clearInterval(id);
+  }, [role]);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
@@ -165,6 +181,20 @@ export default function Layout({ children }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {(role === "admin" || role === "pm") && (
+              <button
+                onClick={() => navigate("/notifications")}
+                title="Notifikasi"
+                className="relative rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-200 transition"
+              >
+                <Bell size={16} />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+            )}
             <button onClick={logout} title="Logout" className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-500 hover:border-rose-200 transition">
               <LogOut size={16} />
             </button>
