@@ -33,6 +33,7 @@ jobs:
 
       - name: Copy frontend build to VPS
         run: |
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} "rm -rf /var/www/admin-dashboard/* && mkdir -p /var/www/admin-dashboard"
           scp -i ~/.ssh/deploy_key -r frontend/dist/* root@${{ secrets.VPS_HOST }}:/var/www/admin-dashboard/
 
       - name: Copy backend to VPS
