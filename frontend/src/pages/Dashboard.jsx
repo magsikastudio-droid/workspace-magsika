@@ -1,24 +1,67 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
-import { TrendingUp, CheckCircle2, Clock3, Layers, AlertTriangle, ArrowUpRight } from "lucide-react";
+import { TrendingUp, CheckCircle2, Clock3, Layers, AlertTriangle, ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { PLATFORM_COLORS, normalizeStatus } from "../lib/constants";
 import { useNavigate } from "react-router-dom";
+
+const MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const now = new Date();
 
 export default function DashboardPage() {
   const { orders, loading } = useOrders();
   const { formatMoney } = useCurrency();
   const navigate = useNavigate();
 
-  const totalOrders = orders.length;
-  const completedOrders = orders.filter((o) => normalizeStatus(o.status) === "Done").length;
-  const activeOrders = orders.filter((o) => {
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(null); // null = semua bulan di tahun ini
+
+  const availableYears = useMemo(() => {
+    const years = new Set([now.getFullYear()]);
+    orders.forEach((o) => {
+      const d = o.order_date || o.created_at?.slice(0, 10);
+      if (d) years.add(parseInt(d.slice(0, 4)));
+    });
+    return [...years].sort().reverse();
+  }, [orders]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const d = o.order_date || o.created_at?.slice(0, 10) || "";
+      if (!d) return selectedMonth === null;
+      const [y, m] = d.split("-").map(Number);
+      if (y !== selectedYear) return false;
+      if (selectedMonth !== null && m !== selectedMonth + 1) return false;
+      return true;
+    });
+  }, [orders, selectedYear, selectedMonth]);
+
+  const prevMonth = () => {
+    if (selectedMonth === null || selectedMonth === 0) {
+      setSelectedYear((y) => y - 1);
+      setSelectedMonth(11);
+    } else {
+      setSelectedMonth((m) => m - 1);
+    }
+  };
+  const nextMonth = () => {
+    if (selectedMonth === null || selectedMonth === 11) {
+      setSelectedYear((y) => y + 1);
+      setSelectedMonth(0);
+    } else {
+      setSelectedMonth((m) => m + 1);
+    }
+  };
+
+  const totalOrders = filteredOrders.length;
+  const completedOrders = filteredOrders.filter((o) => normalizeStatus(o.status) === "Done").length;
+  const activeOrders = filteredOrders.filter((o) => {
     const s = normalizeStatus(o.status);
     return s !== "Done" && s !== "Cancel";
   }).length;
-  const cancelOrders = orders.filter((o) => normalizeStatus(o.status) === "Cancel").length;
-  const revenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
-  const unpaid = orders.filter((o) => o.payment_status !== "Lunas").reduce((sum, o) => sum + (o.total || 0), 0);
+  const cancelOrders = filteredOrders.filter((o) => normalizeStatus(o.status) === "Cancel").length;
+  const revenue = filteredOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+  const unpaid = filteredOrders.filter((o) => o.payment_status !== "Lunas").reduce((sum, o) => sum + (o.total || 0), 0);
 
   const deadlineAlerts = orders.filter((o) => {
     if (!o.deadline || normalizeStatus(o.status) === "Done" || normalizeStatus(o.status) === "Cancel") return false;
@@ -33,25 +76,25 @@ export default function DashboardPage() {
 
   const clientTotals = useMemo(() => {
     const map = {};
-    orders.forEach((o) => {
+    filteredOrders.forEach((o) => {
       if (!o.client) return;
       map[o.client] = (map[o.client] || 0) + (o.total || 0);
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5)
-      .map(([client, total]) => ({ client, total, count: orders.filter((o) => o.client === client).length }));
-  }, [orders]);
+      .map(([client, total]) => ({ client, total, count: filteredOrders.filter((o) => o.client === client).length }));
+  }, [filteredOrders]);
 
   const platformSummary = useMemo(() => {
     const map = {};
-    orders.forEach((o) => { const p = o.platform || "Direct"; map[p] = (map[p] || 0) + 1; });
+    filteredOrders.forEach((o) => { const p = o.platform || "Direct"; map[p] = (map[p] || 0) + 1; });
     const total = Object.values(map).reduce((s, c) => s + c, 0);
     return Object.entries(map).sort((a, b) => b[1] - a[1])
       .map(([platform, count]) => ({ platform, count, share: total ? Math.round((count / total) * 100) : 0, color: PLATFORM_COLORS[platform] || "#94a3b8" }));
-  }, [orders]);
+  }, [filteredOrders]);
 
   const recentOrders = useMemo(() =>
-    [...orders].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, 5),
-    [orders]
+    [...filteredOrders].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).slice(0, 5),
+    [filteredOrders]
   );
 
   const STATUS_BADGE = {
@@ -64,9 +107,25 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="mt-0.5 text-sm text-slate-500">Selamat datang kembali — ringkasan produksi Magsika Studio.</p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          <p className="mt-0.5 text-sm text-slate-500">Ringkasan produksi Magsika Studio.</p>
+        </div>
+        {/* Month selector */}
+        <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <button onClick={prevMonth} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"><ChevronLeft size={16} /></button>
+          <div className="flex items-center gap-2 min-w-[160px] justify-center">
+            <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="rounded-lg bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+              {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select value={selectedMonth ?? "all"} onChange={(e) => setSelectedMonth(e.target.value === "all" ? null : Number(e.target.value))} className="rounded-lg bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+              <option value="all">Semua Bulan</option>
+              {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+            </select>
+          </div>
+          <button onClick={nextMonth} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"><ChevronRight size={16} /></button>
+        </div>
       </div>
 
       {/* Alerts */}
