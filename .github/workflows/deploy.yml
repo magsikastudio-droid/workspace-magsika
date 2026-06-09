@@ -19,6 +19,8 @@ jobs:
           node-version: "18"
 
       - name: Build frontend
+        env:
+          VITE_BACKEND_URL: /api
         run: |
           cd frontend
           npm install
