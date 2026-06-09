@@ -503,9 +503,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 async def login(req: LoginRequest):
     user = await authenticate_user(req.username, req.password)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Username atau password salah")
+    if user.get("status") == "pending":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Akun menunggu persetujuan admin")
     token = create_access_token({"sub": user["username"]})
-    return {"access_token": token, "token_type": "bearer", "user": {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "admin")}}
+    return {"access_token": token, "token_type": "bearer", "user": {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "admin"), "status": user.get("status", "active")}}
 
 
 @app.get("/auth/me")
@@ -852,3 +854,336 @@ async def performance(current_user: dict = Depends(get_current_user)):
         "revenue": revenue,
         "average": round(revenue / len(orders), 2) if orders else 0,
     }
+
+
+# ─── User Registration & Management ──────────────────────────────────────────
+
+def format_user(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")) if record.get("_id") else record.get("id", ""),
+        "username": record.get("username", ""),
+        "full_name": record.get("full_name", ""),
+        "email": record.get("email", ""),
+        "role": record.get("role", "talent"),
+        "status": record.get("status", "pending"),
+        "avatar_url": record.get("avatar_url"),
+        "created_at": record.get("created_at"),
+    }
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    full_name: str
+    email: EmailStr
+    password: str
+
+
+class InviteUserRequest(BaseModel):
+    username: str
+    full_name: str
+    email: EmailStr
+    role: str = "talent"
+    password: str
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    password: Optional[str] = None
+    status: Optional[str] = None
+
+
+class EmailWhitelistUpdate(BaseModel):
+    emails: List[str]
+
+
+@app.post("/auth/register")
+async def register(req: RegisterRequest):
+    try:
+        whitelist_doc = await db.settings.find_one({"key": "email_whitelist"})
+        whitelist = whitelist_doc.get("emails", []) if whitelist_doc else []
+        if whitelist and req.email not in whitelist:
+            raise HTTPException(status_code=403, detail="Email tidak ada dalam whitelist")
+        existing = await db.users.find_one({"$or": [{"username": req.username}, {"email": req.email}]})
+        if existing:
+            raise HTTPException(status_code=400, detail="Username atau email sudah digunakan")
+        user_doc = {
+            "username": req.username,
+            "full_name": req.full_name,
+            "email": req.email,
+            "hashed_password": hash_password(req.password),
+            "role": "talent",
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.users.insert_one(user_doc)
+        return {"message": "Pendaftaran berhasil. Menunggu persetujuan admin."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/users")
+async def list_users(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        records = await db.users.find().sort("created_at", 1).to_list(200)
+        return {"users": [format_user(r) for r in records]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/users/invite")
+async def invite_user(req: InviteUserRequest, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        existing = await db.users.find_one({"$or": [{"username": req.username}, {"email": req.email}]})
+        if existing:
+            raise HTTPException(status_code=400, detail="Username atau email sudah digunakan")
+        user_doc = {
+            "username": req.username,
+            "full_name": req.full_name,
+            "email": req.email,
+            "hashed_password": hash_password(req.password),
+            "role": req.role,
+            "status": "active",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        result = await db.users.insert_one(user_doc)
+        return {"user": format_user({**user_doc, "_id": result.inserted_id})}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/users/{user_id}")
+async def update_user(user_id: str, data: UserUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    payload: dict = {}
+    if data.full_name is not None:
+        payload["full_name"] = data.full_name
+    if data.role is not None:
+        payload["role"] = data.role
+    if data.status is not None:
+        payload["status"] = data.status
+    if data.password:
+        payload["hashed_password"] = hash_password(data.password)
+    if not payload:
+        raise HTTPException(status_code=400, detail="No update data")
+    object_id = to_object_id(user_id)
+    try:
+        await db.users.update_one({"_id": object_id}, {"$set": payload})
+        updated = await db.users.find_one({"_id": object_id})
+        return {"user": format_user(updated)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/users/{user_id}")
+async def delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    object_id = to_object_id(user_id)
+    try:
+        result = await db.users.delete_one({"_id": object_id})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"deleted": True}
+
+
+# ─── Email Whitelist ──────────────────────────────────────────────────────────
+
+@app.get("/settings/email-whitelist")
+async def get_email_whitelist(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        doc = await db.settings.find_one({"key": "email_whitelist"})
+        return {"emails": doc.get("emails", []) if doc else []}
+    except Exception:
+        return {"emails": []}
+
+
+@app.post("/settings/email-whitelist")
+async def update_email_whitelist(data: EmailWhitelistUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        await db.settings.update_one(
+            {"key": "email_whitelist"},
+            {"$set": {"key": "email_whitelist", "emails": data.emails}},
+            upsert=True,
+        )
+        return {"emails": data.emails}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Announcements ────────────────────────────────────────────────────────────
+
+def format_announcement(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")) if record.get("_id") else record.get("id", ""),
+        "title": record.get("title", ""),
+        "content": record.get("content", ""),
+        "author": record.get("author", "Admin"),
+        "created_at": record.get("created_at", ""),
+        "updated_at": record.get("updated_at"),
+        "pinned": record.get("pinned", False),
+    }
+
+
+class AnnouncementCreate(BaseModel):
+    title: str
+    content: str
+    pinned: bool = False
+
+
+class AnnouncementUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    pinned: Optional[bool] = None
+
+
+@app.get("/announcements")
+async def list_announcements(current_user: dict = Depends(get_current_user)):
+    try:
+        records = await db.announcements.find().sort("created_at", -1).to_list(100)
+        return {"announcements": [format_announcement(r) for r in records]}
+    except Exception:
+        return {"announcements": []}
+
+
+@app.post("/announcements")
+async def create_announcement(data: AnnouncementCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    doc = {
+        "title": data.title,
+        "content": data.content,
+        "pinned": data.pinned,
+        "author": current_user.get("full_name", "Admin"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    result = await db.announcements.insert_one(doc)
+    return {"announcement": format_announcement({**doc, "_id": result.inserted_id})}
+
+
+@app.patch("/announcements/{ann_id}")
+async def update_announcement(ann_id: str, data: AnnouncementUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    payload = {k: v for k, v in data.dict(exclude_unset=True).items()}
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    object_id = to_object_id(ann_id)
+    try:
+        await db.announcements.update_one({"_id": object_id}, {"$set": payload})
+        updated = await db.announcements.find_one({"_id": object_id})
+        return {"announcement": format_announcement(updated)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/announcements/{ann_id}")
+async def delete_announcement(ann_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    object_id = to_object_id(ann_id)
+    try:
+        await db.announcements.delete_one({"_id": object_id})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"deleted": True}
+
+
+# ─── Schedule ─────────────────────────────────────────────────────────────────
+
+def format_schedule_event(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")) if record.get("_id") else record.get("id", ""),
+        "title": record.get("title", ""),
+        "description": record.get("description", ""),
+        "date": record.get("date", ""),
+        "end_date": record.get("end_date"),
+        "time": record.get("time"),
+        "color": record.get("color", "violet"),
+        "author": record.get("author", "Admin"),
+        "created_at": record.get("created_at", ""),
+    }
+
+
+class ScheduleEventCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    date: str
+    end_date: Optional[str] = None
+    time: Optional[str] = None
+    color: str = "violet"
+
+
+class ScheduleEventUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    date: Optional[str] = None
+    end_date: Optional[str] = None
+    time: Optional[str] = None
+    color: Optional[str] = None
+
+
+@app.get("/schedule")
+async def list_schedule(current_user: dict = Depends(get_current_user)):
+    try:
+        records = await db.schedule.find().sort("date", 1).to_list(200)
+        return {"events": [format_schedule_event(r) for r in records]}
+    except Exception:
+        return {"events": []}
+
+
+@app.post("/schedule")
+async def create_schedule_event(data: ScheduleEventCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    doc = {
+        **data.dict(),
+        "author": current_user.get("full_name", "Admin"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    result = await db.schedule.insert_one(doc)
+    return {"event": format_schedule_event({**doc, "_id": result.inserted_id})}
+
+
+@app.patch("/schedule/{event_id}")
+async def update_schedule_event(event_id: str, data: ScheduleEventUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    payload = {k: v for k, v in data.dict(exclude_unset=True).items()}
+    if not payload:
+        raise HTTPException(status_code=400, detail="No update data")
+    object_id = to_object_id(event_id)
+    try:
+        await db.schedule.update_one({"_id": object_id}, {"$set": payload})
+        updated = await db.schedule.find_one({"_id": object_id})
+        return {"event": format_schedule_event(updated)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/schedule/{event_id}")
+async def delete_schedule_event(event_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    object_id = to_object_id(event_id)
+    try:
+        await db.schedule.delete_one({"_id": object_id})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"deleted": True}

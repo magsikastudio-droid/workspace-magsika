@@ -9,6 +9,7 @@ import { ChatProvider } from "./context/ChatContext";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Board from "./pages/Board";
 import DailyChat from "./pages/DailyChat";
@@ -19,7 +20,19 @@ import Settings from "./pages/Settings";
 import Todo from "./pages/Todo";
 import Freelance from "./pages/Freelance";
 import Earnings from "./pages/Earnings";
+import Pengumuman from "./pages/Pengumuman";
+import Schedule from "./pages/Schedule";
 import NotFound from "./pages/NotFound";
+import { useAuth } from "./context/AuthContext";
+
+function RoleGuard({ allowedRoles, children }) {
+  const { user } = useAuth();
+  const role = user?.role || "talent";
+  if (!allowedRoles.includes(role)) {
+    return <Navigate to="/todo" replace />;
+  }
+  return children;
+}
 
 function App() {
   return (
@@ -27,6 +40,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
           <Route
             path="/*"
             element={
@@ -34,24 +48,26 @@ function App() {
                 <CurrencyProvider>
                   <OrdersProvider>
                     <TasksProvider>
-                    <ChatProvider>
-                      <Layout>
-                        <Routes>
-                          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                          <Route path="/dashboard" element={<Dashboard />} />
-                          <Route path="/board" element={<Board />} />
-                          <Route path="/orders" element={<Orders />} />
-                          <Route path="/todo" element={<Todo />} />
-                          <Route path="/daily-chat" element={<DailyChat />} />
-                          <Route path="/invoice" element={<Invoice />} />
-                          <Route path="/performance" element={<Performance />} />
-                          <Route path="/earnings" element={<Earnings />} />
-                          <Route path="/freelance" element={<Freelance />} />
-                          <Route path="/settings" element={<Settings />} />
-                          <Route path="*" element={<NotFound />} />
-                        </Routes>
-                      </Layout>
-                    </ChatProvider>
+                      <ChatProvider>
+                        <Layout>
+                          <Routes>
+                            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                            <Route path="/dashboard" element={<RoleGuard allowedRoles={["admin","pm"]}><Dashboard /></RoleGuard>} />
+                            <Route path="/daily-chat" element={<RoleGuard allowedRoles={["admin","pm"]}><DailyChat /></RoleGuard>} />
+                            <Route path="/orders" element={<RoleGuard allowedRoles={["admin","pm"]}><Orders /></RoleGuard>} />
+                            <Route path="/invoice" element={<RoleGuard allowedRoles={["admin","pm"]}><Invoice /></RoleGuard>} />
+                            <Route path="/earnings" element={<RoleGuard allowedRoles={["admin","pm"]}><Earnings /></RoleGuard>} />
+                            <Route path="/freelance" element={<RoleGuard allowedRoles={["admin","pm"]}><Freelance /></RoleGuard>} />
+                            <Route path="/settings" element={<RoleGuard allowedRoles={["admin","pm"]}><Settings /></RoleGuard>} />
+                            <Route path="/board" element={<Board />} />
+                            <Route path="/todo" element={<Todo />} />
+                            <Route path="/performance" element={<Performance />} />
+                            <Route path="/pengumuman" element={<Pengumuman />} />
+                            <Route path="/schedule" element={<Schedule />} />
+                            <Route path="*" element={<NotFound />} />
+                          </Routes>
+                        </Layout>
+                      </ChatProvider>
                     </TasksProvider>
                   </OrdersProvider>
                 </CurrencyProvider>
