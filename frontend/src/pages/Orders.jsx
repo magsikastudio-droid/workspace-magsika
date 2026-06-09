@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X } from "lucide-react";
+import React, { useRef, useMemo, useState } from "react";
+import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X, Calendar, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -9,6 +9,27 @@ import {
   WORK_TYPE_OPTIONS, MARKET_OPTIONS, MARKETER_OPTIONS,
   generateFolderCode, normalizeStatus,
 } from "../lib/constants";
+
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+
+function parseCSVText(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map((h) => h.replace(/"/g, "").trim().toLowerCase().replace(/\s+/g, "_"));
+  return lines.slice(1).map((line) => {
+    const values = [];
+    let cur = "", inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === "," && !inQ) { values.push(cur); cur = ""; }
+      else cur += ch;
+    }
+    values.push(cur);
+    const row = {};
+    headers.forEach((h, i) => { row[h] = (values[i] || "").replace(/"/g, "").trim(); });
+    return row;
+  }).filter((r) => r.project || r.nama_project || r.project_name);
+}
 
 const todayStr = () => {
   const d = new Date();
@@ -33,24 +54,115 @@ export default function OrdersPage() {
   const [platformFilter, setPlatformFilter] = useState("Semua");
   const [statusFilter, setStatusFilter] = useState("Semua");
   const [paymentFilter, setPaymentFilter] = useState("Semua");
+  const [monthFilter, setMonthFilter] = useState("Semua");
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importRows, setImportRows] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [newOrder, setNewOrder] = useState(emptyOrder());
   const [compactMode, setCompactMode] = useState(true);
+  const fileInputRef = useRef(null);
+
+  const availableMonths = useMemo(() => {
+    const set = new Set();
+    orders.forEach((o) => {
+      const d = o.order_date || o.created_at?.slice(0, 10);
+      if (d) set.add(d.slice(0, 7));
+    });
+    return [...set].sort().reverse();
+  }, [orders]);
 
   const visibleOrders = useMemo(() =>
     orders
       .filter((o) => {
-        if (search && ![o.project, o.client, o.status, o.platform, o.order_id].some((v) => v?.toLowerCase().includes(search.toLowerCase()))) return false;
+        const d = o.order_date || o.created_at?.slice(0, 10) || "";
+        if (monthFilter !== "Semua" && !d.startsWith(monthFilter)) return false;
+        if (search && ![o.project, o.client, o.status, o.platform, o.folder_code].some((v) => v?.toLowerCase().includes(search.toLowerCase()))) return false;
         if (platformFilter !== "Semua" && o.platform !== platformFilter) return false;
         if (statusFilter !== "Semua" && o.status !== statusFilter) return false;
         if (paymentFilter !== "Semua" && o.payment_status !== paymentFilter) return false;
         return true;
       })
-      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)),
-    [orders, search, platformFilter, statusFilter, paymentFilter]
+      .sort((a, b) => {
+        const aDone = normalizeStatus(a.status) === "Done" || normalizeStatus(a.status) === "Cancel";
+        const bDone = normalizeStatus(b.status) === "Done" || normalizeStatus(b.status) === "Cancel";
+        // Done/Cancel ke bawah
+        if (aDone !== bDone) return aDone ? 1 : -1;
+        // Aktif: urutkan deadline terkecil (paling urgent) di atas; null/kosong paling bawah
+        if (!aDone && !bDone) {
+          const aT = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+          const bT = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+          return aT - bT;
+        }
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      }),
+    [orders, search, platformFilter, statusFilter, paymentFilter, monthFilter]
   );
+
+  const handleExportCSV = () => {
+    const headers = ["project","client","total","status","deadline","order_date","platform","order_id","work_type","payment_status","folder_code","marketer","notes","fee_freelance","artists"];
+    const rows = visibleOrders.map((o) => [
+      o.project, o.client, o.total, o.status, o.deadline || "", o.order_date || "",
+      o.platform, o.order_id || "", o.work_type || "", o.payment_status,
+      o.folder_code || "", o.marketer || "",
+      (o.notes || "").replace(/\n/g, " "), o.fee_freelance || 0,
+      (o.artists || []).join(";"),
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `orders-${monthFilter === "Semua" ? "all" : monthFilter}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const rows = parseCSVText(ev.target.result);
+      if (!rows.length) { toast.error("CSV kosong atau format tidak dikenali"); return; }
+      setImportRows(rows);
+      setShowImport(true);
+    };
+    reader.readAsText(file, "UTF-8");
+    e.target.value = "";
+  };
+
+  const handleImport = async () => {
+    let ok = 0, fail = 0;
+    for (const row of importRows) {
+      try {
+        const project = row.project || row.nama_project || row.project_name || "";
+        const client  = row.client  || row.klien  || row.nama_klien || "";
+        const total   = parseFloat(row.total || row.nilai || row.value || 0) || 0;
+        const artists = (row.artists || row.artist || "").split(";").map((a) => a.trim()).filter(Boolean);
+        await createOrder({
+          project, client, total,
+          status:         row.status || "Pending",
+          deadline:       row.deadline || row.batas_waktu || "",
+          order_date:     row.order_date || row.tanggal || todayStr(),
+          platform:       row.platform || "Direct",
+          order_id:       row.order_id || row.id_order || "",
+          work_type:      row.work_type || row.jenis_pekerjaan || "Modeling",
+          payment_status: row.payment_status || row.pembayaran || "Belum Lunas",
+          folder_code:    row.folder_code || row.kode_folder || "",
+          marketer:       row.marketer || "Ivo",
+          notes:          row.notes || row.catatan || "",
+          fee_freelance:  parseFloat(row.fee_freelance || row.fee || 0) || 0,
+          artists,
+          artist_contributions: artists.map((a) => ({ name: a, type: "Tim", percent: Math.round(100 / artists.length) })),
+          market: row.market || "Magsika",
+        });
+        ok++;
+      } catch { fail++; }
+    }
+    setShowImport(false);
+    setImportRows([]);
+    toast.success(`Import selesai: ${ok} berhasil${fail ? `, ${fail} gagal` : ""}`);
+  };
 
   const handleCreateSubmit = async (form) => {
     const contributions = (form.artist_contributions || []).filter((c) => c.name.trim());
@@ -89,6 +201,10 @@ export default function OrdersPage() {
     setConfirmDelete(null);
   };
 
+  const handleInlineUpdate = async (orderId, field, value) => {
+    try { await updateOrder(orderId, { [field]: value }); } catch { toast.error("Gagal update"); }
+  };
+
   const deadlineClass = (deadline) => {
     if (!deadline) return "";
     const diff = Math.ceil((new Date(deadline) - new Date()) / 86400000);
@@ -110,8 +226,12 @@ export default function OrdersPage() {
           <h1 className="text-2xl font-bold text-slate-900">Orders List</h1>
           <p className="mt-0.5 text-sm text-slate-500">Kelola semua order produksi 3D studio.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
+          <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
+            <Upload size={15} /> Import CSV
+          </button>
+          <button onClick={handleExportCSV} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
             <Download size={15} /> Export CSV
           </button>
           <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-700">
@@ -156,6 +276,13 @@ export default function OrdersPage() {
             <option value="Semua">All Payment</option>
             {PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}
           </select>
+          <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-violet-300">
+            <option value="Semua">Semua Bulan</option>
+            {availableMonths.map((m) => {
+              const [y, mo] = m.split("-");
+              return <option key={m} value={m}>{MONTH_NAMES[parseInt(mo) - 1]} {y}</option>;
+            })}
+          </select>
           <button
             onClick={() => setCompactMode((v) => !v)}
             className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
@@ -169,63 +296,66 @@ export default function OrdersPage() {
           <table className="min-w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-[0.13em] text-slate-500">
-                <th className="px-5 py-3">Project</th>
-                <th className="px-5 py-3">Klien</th>
-                <th className="px-5 py-3">Order ID</th>
-                <th className="px-5 py-3">Value</th>
-                <th className="px-5 py-3">Deadline</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Payment</th>
-                <th className="px-5 py-3">Action</th>
+                <th className="px-4 py-3">Project</th>
+                <th className="px-4 py-3">Klien</th>
+                <th className="px-4 py-3">Kode Folder</th>
+                <th className="px-4 py-3">Value</th>
+                {!compactMode && <th className="px-4 py-3">Artist</th>}
+                <th className="px-4 py-3">Deadline</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Payment</th>
+                <th className="px-4 py-3">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {visibleOrders.map((order) => {
                 const sc = STATUS_COLORS[normalizeStatus(order.status)] || { bg: "#f1f5f9", text: "#64748b" };
-                const pc = PAYMENT_COLORS[order.payment_status] || { bg: "#f1f5f9", text: "#64748b" };
+                const isDone = normalizeStatus(order.status) === "Done" || normalizeStatus(order.status) === "Cancel";
+                const deadlineDiff = order.deadline ? Math.ceil((new Date(order.deadline) - new Date()) / 86400000) : null;
                 return (
-                  <tr key={order.id} className="hover:bg-slate-50 transition">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-sm font-bold text-violet-600">
-                          {order.project?.charAt(0)?.toUpperCase() || "?"}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="max-w-[180px] truncate font-semibold text-slate-900">{order.project}</p>
-                          <p className="text-xs text-slate-400">{order.work_type || order.platform || "Direct"}</p>
-                        </div>
+                  <tr key={order.id} className={`hover:bg-slate-50 transition ${isDone ? "opacity-60" : ""}`}>
+                    <td className="px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
+                        <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
-                          {order.client?.charAt(0)?.toUpperCase() || "?"}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-slate-800">{order.client}</p>
-                          <p className="text-xs text-slate-400">{order.platform || "Direct"}</p>
-                        </div>
+                    <td className="px-4 py-3">
+                      <p className="text-sm font-medium text-slate-800">{order.client}</p>
+                      {!compactMode && <p className="text-xs text-slate-400">{order.platform || "Direct"}</p>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-indigo-600">{order.folder_code || "—"}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-900 whitespace-nowrap">{formatMoney(order.total)}</p>
+                    </td>
+                    {!compactMode && (
+                      <td className="px-4 py-3 text-sm text-slate-600">{(order.artists || []).join(", ") || "—"}</td>
+                    )}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        {deadlineDiff !== null && deadlineDiff < 0 && <span title="Overdue" className="text-rose-500">⚠</span>}
+                        {deadlineDiff !== null && deadlineDiff >= 0 && deadlineDiff <= 3 && <span title={`${deadlineDiff}h lagi`} className="text-amber-500">🔥</span>}
+                        {deadlineDiff !== null && deadlineDiff > 3 && <span className="text-slate-300">📅</span>}
+                        <span className={`text-sm ${deadlineDiff !== null && deadlineDiff < 0 ? "text-rose-600 font-semibold" : deadlineDiff !== null && deadlineDiff <= 3 ? "text-amber-600 font-semibold" : "text-slate-600"}`}>
+                          {order.deadline || "—"}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 font-mono text-xs text-slate-500">{order.order_id || "—"}</td>
-                    <td className="px-5 py-3.5">
-                      <p className="font-semibold text-slate-900">{formatMoney(order.total)}</p>
-                      {order.artists?.[0] && <p className="text-xs text-slate-400">{order.artists[0]}</p>}
+                    <td className="px-4 py-3">
+                      <select
+                        value={normalizeStatus(order.status)}
+                        onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)}
+                        className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
+                        style={{ background: sc.bg, color: sc.text }}
+                      >
+                        {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+                      </select>
                     </td>
-                    <td className={`px-5 py-3.5 text-sm whitespace-nowrap ${deadlineClass(order.deadline)}`}>{order.deadline || "—"}</td>
-                    <td className="px-5 py-3.5">
-                      <span className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: sc.bg, color: sc.text }}>
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: sc.text }} />
-                        {normalizeStatus(order.status)}
-                      </span>
+                    <td className="px-4 py-3">
+                      <PaymentSelect orderId={order.id} value={order.payment_status} onUpdate={handleInlineUpdate} />
                     </td>
-                    <td className="px-5 py-3.5">
-                      <span className="inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
-                        {order.payment_status || "Belum Lunas"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
                         <button onClick={() => setActiveOrder({ ...order, artists: (order.artists || []).join(", ") })} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
                           Details
                         </button>
@@ -256,18 +386,12 @@ export default function OrdersPage() {
       )}
 
       {activeOrder && (
-        <OrderFormModal
-          title="Edit Order"
-          initial={{
-            ...activeOrder,
-            artists: (activeOrder.artists || []).join(", "),
-            artist_contributions: activeOrder.artist_contributions?.length
-              ? activeOrder.artist_contributions
-              : [{ name: (activeOrder.artists || [])[0] || "", type: "Tim", percent: 100 }],
-          }}
+        <OrderDrawer
+          order={activeOrder}
           ordersOnDay={ordersOnDay}
           onClose={() => setActiveOrder(null)}
           onSave={handleSaveOrder}
+          onDelete={(id) => { setConfirmDelete(activeOrder); setActiveOrder(null); }}
         />
       )}
 
@@ -283,7 +407,280 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
+
+      {showImport && (
+        <ImportCSVModal
+          rows={importRows}
+          onClose={() => { setShowImport(false); setImportRows([]); }}
+          onImport={handleImport}
+          formatMoney={formatMoney}
+        />
+      )}
     </div>
+  );
+}
+
+function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
+  const { exchangeRate, formatMoney } = useCurrency();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    ...order,
+    artist_contributions: order.artist_contributions?.length
+      ? order.artist_contributions
+      : [{ name: (order.artists || [])[0] || "", type: "Tim", percent: 100 }],
+  });
+  const [manualFolder, setManualFolder] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
+  const setContrib = (idx, field, value) => setForm((p) => {
+    const next = [...(p.artist_contributions || [])];
+    next[idx] = { ...next[idx], [field]: value };
+    return { ...p, artist_contributions: next };
+  });
+  const addContrib = () => setForm((p) => ({ ...p, artist_contributions: [...(p.artist_contributions || []), { name: "", type: "Tim", percent: 0 }] }));
+  const removeContrib = (idx) => setForm((p) => ({ ...p, artist_contributions: (p.artist_contributions || []).filter((_, i) => i !== idx) }));
+
+  const orderDate = form.order_date || new Date().toISOString().slice(0, 10);
+  const orderNumToday = (ordersOnDay ? ordersOnDay(orderDate) : 0) + 1;
+  const autoFolderCode = generateFolderCode(form.platform, form.client, form.project, orderDate, orderNumToday);
+  const totalIdr = (Number(form.total) || 0) * exchangeRate;
+  const feeIdr = Number(form.fee_freelance) || 0;
+  const netUsd = (Number(form.total) || 0) - feeIdr / exchangeRate;
+  const hasFreelance = form.artist_contributions?.some((c) => c.type === "Freelance");
+  const totalPct = (form.artist_contributions || []).reduce((s, c) => s + (Number(c.percent) || 0), 0);
+  const sc = STATUS_COLORS[normalizeStatus(order.status)] || { bg: "#f1f5f9", text: "#64748b" };
+  const pc = PAYMENT_COLORS[order.payment_status] || { bg: "#f1f5f9", text: "#64748b" };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await onSave({ ...form, folder_code: manualFolder ? form.folder_code : autoFolderCode });
+      setEditing(false);
+    } catch {
+      toast.error("Gagal menyimpan order");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inp = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-violet-300 focus:bg-white transition";
+  const Row = ({ label, value, className = "" }) => (
+    <div className="flex items-start justify-between gap-4 py-2.5 border-b border-slate-50 last:border-0">
+      <span className="shrink-0 text-xs text-slate-400 w-32">{label}</span>
+      <span className={`text-sm font-medium text-slate-800 text-right flex-1 ${className}`}>{value || "—"}</span>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Overlay */}
+      <div className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Drawer */}
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[500px] flex-col bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-5">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: sc.bg, color: sc.text }}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: sc.text }} />
+                {normalizeStatus(order.status)}
+              </span>
+              <span className="inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
+                {order.payment_status || "Belum Lunas"}
+              </span>
+            </div>
+            <h2 className="mt-2 truncate text-lg font-bold text-slate-900">{order.project}</h2>
+            <p className="text-sm text-slate-400">{order.client} · {order.platform}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {!editing && (
+              <button onClick={() => setEditing(true)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm flex items-center gap-1.5">
+                <Edit3 size={13} /> Edit
+              </button>
+            )}
+            <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          {!editing ? (
+            /* VIEW MODE */
+            <div className="space-y-0 divide-y divide-slate-100">
+              {/* Order Info */}
+              <div className="px-6 py-4">
+                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Info Order</p>
+                <Row label="Order ID" value={order.order_id} />
+                <Row label="Tanggal Order" value={order.order_date} />
+                <Row label="Deadline" value={<span className={order.deadline && Math.ceil((new Date(order.deadline) - new Date()) / 86400000) < 0 ? "text-rose-600" : order.deadline && Math.ceil((new Date(order.deadline) - new Date()) / 86400000) <= 3 ? "text-amber-600" : ""}>{order.deadline}</span>} />
+                <Row label="Platform" value={order.platform} />
+                <Row label="Marketer" value={order.marketer} />
+                <Row label="Jenis Pekerjaan" value={order.work_type} />
+              </div>
+
+              {/* Folder Code */}
+              <div className="px-6 py-4">
+                <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Kode Folder</p>
+                <div className="rounded-xl bg-indigo-50 border border-indigo-100 px-4 py-3">
+                  <p className="font-mono text-sm font-semibold text-indigo-800">{order.folder_code || autoFolderCode}</p>
+                </div>
+              </div>
+
+              {/* Tim Artist */}
+              <div className="px-6 py-4">
+                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
+                <div className="space-y-2">
+                  {(order.artist_contributions?.length ? order.artist_contributions : (order.artists || []).map((a) => ({ name: a, type: "Tim", percent: 100 }))).map((c, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-600">{c.name?.charAt(0)?.toUpperCase() || "?"}</div>
+                        <span className="text-sm font-medium text-slate-800">{c.name || "—"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${c.type === "Freelance" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{c.type}</span>
+                        <span className="text-xs font-semibold text-slate-500">{c.percent}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Keuangan */}
+              <div className="px-6 py-4">
+                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Keuangan</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-slate-100 bg-white p-3">
+                    <p className="text-xs text-slate-400">Nilai Order</p>
+                    <p className="mt-1 text-base font-bold text-slate-900">${order.total}</p>
+                    <p className="text-xs text-slate-400">{formatMoney(order.total)}</p>
+                  </div>
+                  {order.fee_freelance > 0 && (
+                    <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+                      <p className="text-xs text-amber-600">Fee Freelance</p>
+                      <p className="mt-1 text-base font-bold text-amber-700">Rp{Number(order.fee_freelance).toLocaleString("id-ID")}</p>
+                      <p className="text-xs text-amber-500">{Number(order.total) > 0 ? Math.round((order.fee_freelance / exchangeRate / Number(order.total)) * 100) : 0}% dari order</p>
+                    </div>
+                  )}
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 col-span-2">
+                    <p className="text-xs text-emerald-600">Net</p>
+                    <p className="mt-1 text-base font-bold text-emerald-700">${((Number(order.total) || 0) - (Number(order.fee_freelance) || 0) / exchangeRate).toFixed(2)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Catatan */}
+              {order.notes && (
+                <div className="px-6 py-4">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Catatan</p>
+                  <p className="text-sm text-slate-600 whitespace-pre-wrap">{order.notes}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* EDIT MODE */
+            <form id="drawer-edit-form" onSubmit={handleSave} className="space-y-0 divide-y divide-slate-100">
+              <div className="px-6 py-4">
+                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Info Dasar</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Tanggal Order<input type="date" value={form.order_date || ""} onChange={set("order_date")} className={inp} /></label>
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Deadline<input type="date" value={form.deadline || ""} onChange={set("deadline")} className={inp} /></label>
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Platform<select value={form.platform} onChange={set("platform")} className={inp}>{PLATFORM_OPTIONS.map((p) => <option key={p}>{p}</option>)}</select></label>
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Marketer<select value={form.marketer || ""} onChange={set("marketer")} className={inp}><option value="">-</option>{MARKETER_OPTIONS.map((m) => <option key={m}>{m}</option>)}</select></label>
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Order ID<input value={form.order_id || ""} onChange={set("order_id")} className={inp} /></label>
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Klien<input value={form.client} onChange={set("client")} required className={inp} /></label>
+                </div>
+              </div>
+              <div className="px-6 py-4">
+                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Detail Project</p>
+                <label className="mb-3 block space-y-1 text-xs font-medium text-slate-500">Nama Project<input value={form.project} onChange={set("project")} required className={inp} /></label>
+                <div className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-indigo-700">Kode Folder</span>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer"><input type="checkbox" checked={manualFolder} onChange={(e) => setManualFolder(e.target.checked)} className="rounded" /> Edit manual</label>
+                  </div>
+                  {manualFolder ? <input value={form.folder_code || ""} onChange={set("folder_code")} className="w-full rounded-lg border border-indigo-200 bg-white px-3 py-1.5 font-mono text-sm text-indigo-800 outline-none" /> : <p className="font-mono text-sm font-semibold text-indigo-800">{autoFolderCode}</p>}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Jenis Pekerjaan<select value={form.work_type} onChange={set("work_type")} className={inp}>{WORK_TYPE_OPTIONS.map((w) => <option key={w}>{w}</option>)}</select></label>
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Status<select value={form.status} onChange={set("status")} className={inp}>{STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}</select></label>
+                </div>
+              </div>
+              <div className="px-6 py-4">
+                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
+                <div className="space-y-2">
+                  {(form.artist_contributions || []).map((contrib, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">{idx + 1}</span>
+                      <input value={contrib.name} onChange={(e) => setContrib(idx, "name", e.target.value)} placeholder="Nama artist" className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-300" />
+                      <select value={contrib.type} onChange={(e) => setContrib(idx, "type", e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-sm outline-none">
+                        <option>Tim</option><option>Solo</option><option>Freelance</option>
+                      </select>
+                      <input type="number" min="0" max="100" value={contrib.percent} onChange={(e) => setContrib(idx, "percent", Number(e.target.value))} className="w-14 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-center text-sm outline-none" />
+                      <span className="text-xs text-slate-400">%</span>
+                      {(form.artist_contributions || []).length > 1 && <button type="button" onClick={() => removeContrib(idx)} className="rounded-full p-1 text-slate-300 hover:text-rose-500"><X size={13} /></button>}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="h-1.5 w-full rounded-full bg-slate-100"><div className={`h-1.5 rounded-full ${totalPct === 100 ? "bg-emerald-500" : totalPct > 100 ? "bg-rose-500" : "bg-amber-400"}`} style={{ width: `${Math.min(totalPct, 100)}%` }} /></div>
+                    <p className="mt-0.5 text-xs text-slate-400">Total: <span className={totalPct === 100 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>{totalPct}%</span></p>
+                  </div>
+                  <button type="button" onClick={addContrib} className="rounded-full border border-dashed border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:border-indigo-400 hover:text-indigo-600">+ Tambah</button>
+                </div>
+              </div>
+              <div className="px-6 py-4">
+                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Keuangan</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">Nilai Order (USD)</p>
+                    <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">$</span><input type="number" min="0" value={form.total} onChange={set("total")} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-7 pr-3 text-sm outline-none focus:border-indigo-300" /></div>
+                    <p className="text-xs text-slate-400">= Rp{totalIdr.toLocaleString("id-ID")}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">Fee Freelance (Rp)</p>
+                    <input type="number" min="0" value={form.fee_freelance || ""} onChange={set("fee_freelance")} disabled={!hasFreelance} placeholder="0" className={`w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none ${hasFreelance ? "focus:border-indigo-300" : "opacity-40 cursor-not-allowed"}`} />
+                    {hasFreelance && feeIdr > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">{Number(form.total) > 0 ? Math.round((feeIdr / exchangeRate / Number(form.total)) * 100) : 0}% dari order</span>}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">Net</p>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">${netUsd.toFixed(2)}</div>
+                  </div>
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Payment<select value={form.payment_status} onChange={set("payment_status")} className={inp}>{PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}</select></label>
+                </div>
+                <label className="mt-3 block space-y-1 text-xs font-medium text-slate-500">Catatan<textarea value={form.notes || ""} onChange={set("notes")} rows={3} className={inp} /></label>
+              </div>
+            </form>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 px-6 py-4">
+          {editing ? (
+            <div className="flex justify-between gap-3">
+              <button type="button" onClick={() => setEditing(false)} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
+              <button type="submit" form="drawer-edit-form" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60">
+                {saving ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
+          ) : (
+            <div className="flex justify-between gap-3">
+              <button onClick={() => onDelete(order.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50">
+                <Trash2 size={14} /> Hapus
+              </button>
+              <button onClick={() => setEditing(true)} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700">
+                <Edit3 size={14} /> Edit Order
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -470,7 +867,6 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
                     className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-300"
                   >
                     <option>Tim</option>
-                    <option>Solo</option>
                     <option>Freelance</option>
                   </select>
                   <div className="flex items-center gap-1">
@@ -591,6 +987,90 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function PaymentSelect({ orderId, value, onUpdate }) {
+  const pc = PAYMENT_COLORS[value] || { bg: "#f1f5f9", text: "#64748b" };
+  return (
+    <select
+      value={value || "Belum Lunas"}
+      onChange={(e) => onUpdate(orderId, "payment_status", e.target.value)}
+      className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
+      style={{ background: pc.bg, color: pc.text }}
+    >
+      {PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}
+    </select>
+  );
+}
+
+function ImportCSVModal({ rows, onClose, onImport, formatMoney }) {
+  const [importing, setImporting] = useState(false);
+  const handleImport = async () => {
+    setImporting(true);
+    await onImport();
+    setImporting(false);
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4 py-6">
+      <div className="flex w-full max-w-3xl flex-col rounded-3xl bg-white shadow-2xl" style={{ maxHeight: "85vh" }}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-7 py-5">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Import CSV</h2>
+            <p className="mt-0.5 text-sm text-slate-500">{rows.length} order ditemukan — periksa sebelum import</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+
+        {/* Template download */}
+        <div className="border-b border-slate-100 bg-slate-50 px-7 py-3 flex items-center gap-3">
+          <AlertCircle size={14} className="text-amber-500 shrink-0" />
+          <p className="text-xs text-slate-500">Kolom yang dikenali: <span className="font-mono text-xs text-slate-700">project, client, total, status, deadline, order_date, platform, order_id, work_type, payment_status, folder_code, marketer, notes, fee_freelance, artists</span></p>
+        </div>
+
+        <div className="flex-1 overflow-auto px-7 py-4">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                <th className="pb-2 pr-4 text-left">#</th>
+                <th className="pb-2 pr-4 text-left">Project</th>
+                <th className="pb-2 pr-4 text-left">Client</th>
+                <th className="pb-2 pr-4 text-left">Total</th>
+                <th className="pb-2 pr-4 text-left">Status</th>
+                <th className="pb-2 pr-4 text-left">Deadline</th>
+                <th className="pb-2 text-left">Platform</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {rows.map((r, i) => (
+                <tr key={i} className="hover:bg-slate-50">
+                  <td className="py-2 pr-4 text-xs text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-4 font-medium text-slate-900">{r.project || r.nama_project || "—"}</td>
+                  <td className="py-2 pr-4 text-slate-600">{r.client || r.klien || "—"}</td>
+                  <td className="py-2 pr-4 text-slate-600">${r.total || r.nilai || "0"}</td>
+                  <td className="py-2 pr-4 text-slate-600">{r.status || "Pending"}</td>
+                  <td className="py-2 pr-4 text-slate-600">{r.deadline || r.batas_waktu || "—"}</td>
+                  <td className="py-2 text-slate-600">{r.platform || "Direct"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-slate-100 px-7 py-5">
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <CheckCircle2 size={16} className="text-emerald-500" />
+            {rows.length} order siap diimport
+          </div>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="rounded-full border border-slate-200 px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
+            <button onClick={handleImport} disabled={importing} className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60">
+              {importing ? "Mengimport..." : `Import ${rows.length} Order`}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

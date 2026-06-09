@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  CheckCircle2, ClipboardList, GripVertical, Pause, Pencil, Play,
-  Plus, Search, Timer, X, Zap,
+  CheckCircle2, ClipboardList, GripVertical, Kanban, Pause, Pencil, Play,
+  Plus, Search, X, Zap, Clock, Send,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
@@ -26,9 +26,10 @@ const fmtDateLabel = (dateStr) => {
   if (dateStr === shiftDate(today, -1)) return "Kemarin";
   if (dateStr === shiftDate(today, 1)) return "Besok";
   const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString("id-ID", { day: "numeric", month: "long" });
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 };
 const fmtElapsed = (seconds) => {
+  if (!seconds || seconds <= 0) return "0d";
   if (seconds < 60) return `${seconds}d`;
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -36,6 +37,13 @@ const fmtElapsed = (seconds) => {
   const h = Math.floor(m / 60);
   const rm = m % 60;
   return `${h}j ${rm}m`;
+};
+const fmtClock = (seconds) => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
 const avatarColors = ["bg-indigo-500","bg-emerald-500","bg-amber-500","bg-rose-500","bg-purple-500","bg-cyan-500"];
 const avatarColor = (name) => {
@@ -51,6 +59,13 @@ const STATUS_META = {
   failed:        { label: "Gagal",       bg: "bg-rose-100",    text: "text-rose-700",    dot: "bg-rose-500"    },
 };
 
+const KANBAN_COLS = [
+  { key: "pending",     label: "Pending",     color: "border-t-amber-400"   },
+  { key: "in progress", label: "In Progress", color: "border-t-sky-400"     },
+  { key: "done",        label: "Done",        color: "border-t-emerald-400" },
+  { key: "failed",      label: "Gagal",       color: "border-t-rose-400"    },
+];
+
 /* ─── global 1-second tick ─────────────────────────────────────── */
 function useNow() {
   const [now, setNow] = useState(Date.now());
@@ -61,13 +76,20 @@ function useNow() {
   return now;
 }
 
-/* compute live elapsed seconds */
+// Guard: jika task dari hari kemarin dan timer_started masih set,
+// cap elapsed di akhir hari itu (auto-fail harusnya sudah clear, tapi jaga-jaga)
 const getElapsed = (task, now) => {
   let base = task.time_elapsed || 0;
   if (task.timer_started) {
-    base += Math.floor((now - new Date(task.timer_started).getTime()) / 1000);
+    const started = new Date(task.timer_started).getTime();
+    if (task.date && task.date < todayStr()) {
+      const endOfDay = new Date(task.date + "T23:59:59").getTime();
+      base += Math.floor((Math.min(endOfDay, now) - started) / 1000);
+    } else {
+      base += Math.floor((now - started) / 1000);
+    }
   }
-  return base;
+  return Math.max(0, base);
 };
 
 /* ─── main page ─────────────────────────────────────────────────── */
@@ -78,21 +100,22 @@ export default function Todo() {
   const now = useNow();
 
   const [date, setDate] = useState(todayStr());
+  const [viewMode, setViewMode] = useState("list");
   const [showAdd, setShowAdd] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [confirmDone, setConfirmDone] = useState(null);
+  const [detailTaskId, setDetailTaskId] = useState(null);
   const [taskInput, setTaskInput] = useState({
     title: "", assignee: "", assignee_type: "tim", status: "pending", date: todayStr(), notes: "",
   });
 
-  // per-assignee ordered task lists for drag state
-  const [dragState, setDragState] = useState({});   // assignee -> task id array
+  const [dragState, setDragState] = useState({});
   const dragIdRef = useRef(null);
   const dragOverRef = useRef(null);
 
   useEffect(() => { if (user) fetchTasks(date); }, [date, fetchTasks, user]);
 
-  // rebuild dragState when tasks or date changes
   const visibleTasks = useMemo(() => tasks.filter((t) => t.date === date), [tasks, date]);
 
   const grouped = useMemo(() => {
@@ -104,7 +127,6 @@ export default function Todo() {
     }, { tim: {}, freelance: {} });
   }, [visibleTasks]);
 
-  // initialise per-assignee order from order_num
   useEffect(() => {
     const next = {};
     const all = { ...grouped.tim, ...grouped.freelance };
@@ -113,9 +135,21 @@ export default function Todo() {
       next[assignee] = sorted.map((t) => t.id);
     }
     setDragState(next);
-  }, [visibleTasks]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visibleTasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const taskMap = useMemo(() => Object.fromEntries(tasks.map((t) => [t.id, t])), [tasks]);
+
+  // Live detail task — selalu ambil dari context terbaru, bukan snapshot stale
+  const liveDetailTask = useMemo(() => {
+    if (!detailTaskId) return null;
+    return tasks.find((t) => t.id === detailTaskId) || null;
+  }, [detailTaskId, tasks]);
+
+  // Semua nama assignee yang sudah pernah ada (untuk autocomplete)
+  const knownAssignees = useMemo(() => {
+    const names = new Set(tasks.map((t) => t.assignee).filter(Boolean));
+    return [...names].sort();
+  }, [tasks]);
 
   const stats = useMemo(() => ({
     total: visibleTasks.length,
@@ -129,19 +163,14 @@ export default function Todo() {
   const handleAutoGenerate = async () => {
     setGenerating(true);
     try {
-      const res = await api.post("/tasks/auto-generate");
+      const res = await api.post("/tasks/auto-generate", { date });
       const { created = 0, skipped = 0, error } = res.data || {};
       if (error) toast.error(`Generate error: ${error}`);
-      else if (created === 0 && skipped > 0)
-        toast.info(`${skipped} task sudah ada, tidak ada yang baru dibuat.`);
-      else
-        toast.success(`${created} task dibuat, ${skipped} sudah ada.`);
+      else if (created === 0 && skipped > 0) toast.info(`${skipped} task sudah ada.`);
+      else toast.success(`${created} task dibuat, ${skipped} sudah ada.`);
       await fetchTasks(date);
-    } catch {
-      toast.error("Gagal generate task — pastikan ada order aktif.");
-    } finally {
-      setGenerating(false);
-    }
+    } catch { toast.error("Gagal generate task — pastikan ada order aktif."); }
+    finally { setGenerating(false); }
   };
 
   /* ── add task ──────────── */
@@ -153,44 +182,59 @@ export default function Todo() {
     fetchTasks(date);
   };
 
-  /* ── status change ─────── */
-  const handleStatus = useCallback(async (taskId, newStatus) => {
-    await updateTask(taskId, { status: newStatus });
+  /* ── status change — selalu clear timer saat done/failed ── */
+  const handleStatus = useCallback(async (task, newStatus) => {
+    const payload = { status: newStatus };
+    if (newStatus === "done" || newStatus === "failed") {
+      if (task.timer_started) {
+        payload.time_elapsed = getElapsed(task, Date.now());
+      }
+      payload.timer_started = null; // selalu clear
+    }
+    await updateTask(task.id, payload);
   }, [updateTask]);
 
-  /* ── timer toggle ──────── */
+  /* ── complete dengan konfirmasi Telegram ── */
+  const handleComplete = useCallback((task) => { setConfirmDone(task); }, []);
+
+  // Gunakan live task dari context saat konfirmasi — hindari snapshot stale
+  const handleConfirmDone = useCallback(async () => {
+    if (!confirmDone) return;
+    const liveTask = tasks.find((t) => t.id === confirmDone.id) || confirmDone;
+    await handleStatus(liveTask, "done");
+    setConfirmDone(null);
+  }, [confirmDone, tasks, handleStatus]);
+
+  /* ── timer toggle ── */
   const handleTimer = useCallback(async (task) => {
     if (task.timer_started) {
-      // pause: save elapsed + clear started
       const elapsed = getElapsed(task, Date.now());
       await updateTask(task.id, { time_elapsed: elapsed, timer_started: null });
     } else {
-      // start
       await updateTask(task.id, { timer_started: new Date().toISOString() });
     }
-    fetchTasks(date);
-  }, [updateTask, fetchTasks, date]);
+  }, [updateTask]);
 
   /* ── delete ─────────────── */
-  const handleDelete = useCallback(async (taskId) => {
-    await deleteTask(taskId);
-  }, [deleteTask]);
+  const handleDelete = useCallback(async (taskId) => { await deleteTask(taskId); }, [deleteTask]);
 
   /* ── edit save ──────────── */
   const handleEditSave = async (e) => {
     e.preventDefault();
-    await updateTask(editTask.id, {
-      title: editTask.title,
-      notes: editTask.notes,
-      assignee: editTask.assignee,
-      assignee_type: editTask.assignee_type,
-      status: editTask.status,
-    });
+    const payload = {
+      title: editTask.title, notes: editTask.notes,
+      assignee: editTask.assignee, assignee_type: editTask.assignee_type, status: editTask.status,
+    };
+    if ((editTask.status === "done" || editTask.status === "failed") && editTask.timer_started) {
+      payload.time_elapsed = getElapsed(editTask, Date.now());
+      payload.timer_started = null;
+    }
+    await updateTask(editTask.id, payload);
     setEditTask(null);
     fetchTasks(date);
   };
 
-  /* ── drag reorder ───────── */
+  /* ── drag reorder + cross-assignee ── */
   const onDragStart = (e, taskId) => {
     dragIdRef.current = taskId;
     e.dataTransfer.effectAllowed = "move";
@@ -199,154 +243,194 @@ export default function Todo() {
     e.preventDefault();
     dragOverRef.current = { assignee, overTaskId };
   };
-  const onDrop = async (e, assignee) => {
+
+  const onDrop = useCallback(async (e, targetAssignee, targetAssigneeType) => {
     e.preventDefault();
     const fromId = dragIdRef.current;
-    const { assignee: toAssignee, overTaskId } = dragOverRef.current || {};
-    if (!fromId || toAssignee !== assignee) return;
+    dragIdRef.current = null;
+    if (!fromId) return;
+
+    const fromTask = taskMap[fromId];
+    if (!fromTask) return;
+
+    // Pindah ke assignee berbeda — update field assignee
+    if (fromTask.assignee !== targetAssignee) {
+      dragOverRef.current = null;
+      await updateTask(fromId, { assignee: targetAssignee, assignee_type: targetAssigneeType });
+      await fetchTasks(date);
+      return;
+    }
+
+    // Reorder dalam assignee yang sama
+    const { overTaskId } = dragOverRef.current || {};
+    dragOverRef.current = null;
+    if (!overTaskId || overTaskId === fromId) return;
+
     setDragState((prev) => {
-      const ids = [...(prev[assignee] || [])];
+      const ids = [...(prev[targetAssignee] || [])];
       const fromIdx = ids.indexOf(fromId);
       const toIdx = ids.indexOf(overTaskId);
       if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return prev;
       ids.splice(fromIdx, 1);
       ids.splice(toIdx, 0, fromId);
-      // async persist
-      ids.forEach((id, idx) => {
-        if (taskMap[id]?.order_num !== idx) updateTask(id, { order_num: idx });
-      });
-      return { ...prev, [assignee]: ids };
+      ids.forEach((id, idx) => { if (taskMap[id]?.order_num !== idx) updateTask(id, { order_num: idx }); });
+      return { ...prev, [targetAssignee]: ids };
     });
-    dragIdRef.current = null;
-    dragOverRef.current = null;
-  };
+  }, [taskMap, updateTask, fetchTasks, date]);
 
   /* ── render ─────────────── */
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-              <ClipboardList size={16} /> To Do
-            </div>
-            <h1 className="text-3xl font-bold text-slate-900">To Do</h1>
-            <p className="mt-1 text-sm text-slate-500">Task harian tim — auto-generate dari order aktif</p>
+            <h1 className="text-2xl font-bold text-slate-900">To Do</h1>
+            <p className="mt-0.5 text-sm text-slate-500">{fmtDateLabel(date)}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1.5">
-              <button onClick={() => setDate(shiftDate(date, -1))} className="rounded-full p-1.5 hover:bg-slate-200 text-slate-600">‹</button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <button onClick={() => setDate(shiftDate(date, -1))} className="rounded-lg p-1.5 hover:bg-slate-200 text-slate-600">‹</button>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-none bg-transparent text-sm font-semibold text-slate-800 outline-none" />
-              <button onClick={() => setDate(shiftDate(date, 1))} className="rounded-full p-1.5 hover:bg-slate-200 text-slate-600">›</button>
+              <button onClick={() => setDate(shiftDate(date, 1))} className="rounded-lg p-1.5 hover:bg-slate-200 text-slate-600">›</button>
             </div>
-            <button
-              onClick={handleAutoGenerate}
-              disabled={generating}
-              className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition"
-            >
-              <Zap size={15} /> {generating ? "Generating..." : "Auto Generate"}
+            <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
+              <button onClick={() => setViewMode("list")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${viewMode === "list" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                <ClipboardList size={14} className="inline mr-1" />List
+              </button>
+              <button onClick={() => setViewMode("kanban")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${viewMode === "kanban" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                <Kanban size={14} className="inline mr-1" />Kanban
+              </button>
+            </div>
+            <button onClick={handleAutoGenerate} disabled={generating} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
+              <Zap size={14} /> {generating ? "Generating..." : "Auto Generate"}
             </button>
-            <button
-              onClick={() => setShowAdd(true)}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
-            >
-              <Plus size={15} /> Task
+            <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+              <Plus size={14} /> Task
             </button>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-5">
+        {/* Stats */}
+        <div className="mt-4 flex flex-wrap gap-3">
           {[
-            { label: "TOTAL",       value: stats.total,      color: "text-indigo-600"  },
-            { label: "PENDING",     value: stats.pending,    color: "text-amber-600"   },
-            { label: "IN PROGRESS", value: stats.inProgress, color: "text-sky-600"     },
-            { label: "DONE",        value: stats.done,       color: "text-emerald-600" },
-            { label: "GAGAL",       value: stats.failed,     color: "text-rose-600"    },
+            { label: "Total",       value: stats.total,      color: "text-slate-700",   bg: "bg-slate-100"  },
+            { label: "Pending",     value: stats.pending,    color: "text-amber-700",   bg: "bg-amber-50"   },
+            { label: "In Progress", value: stats.inProgress, color: "text-sky-700",     bg: "bg-sky-50"     },
+            { label: "Done",        value: stats.done,       color: "text-emerald-700", bg: "bg-emerald-50" },
+            { label: "Gagal",       value: stats.failed,     color: "text-rose-700",    bg: "bg-rose-50"    },
           ].map((s) => (
-            <div key={s.label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{s.label}</p>
-              <p className={`mt-2 text-3xl font-bold ${s.color}`}>{s.value}</p>
+            <div key={s.label} className={`flex items-center gap-2 rounded-xl px-3 py-2 ${s.bg}`}>
+              <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+              <p className="text-xs text-slate-500">{s.label}</p>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Task columns */}
+      {/* Content */}
       {loading ? (
-        <div className="rounded-[2rem] border border-slate-200 bg-white py-16 text-center text-sm text-slate-400">Memuat task...</div>
+        <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-400">Memuat task...</div>
       ) : visibleTasks.length === 0 ? (
-        <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white py-16 text-center">
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
           <ClipboardList size={32} className="mx-auto mb-3 text-slate-300" />
           <p className="font-semibold text-slate-500">Tidak ada task untuk {fmtDateLabel(date)}</p>
           <p className="mt-1 text-sm text-slate-400">Klik "Auto Generate" untuk buat task dari order aktif</p>
         </div>
+      ) : viewMode === "kanban" ? (
+        <KanbanView
+          tasks={visibleTasks} now={now}
+          onStatus={handleStatus} onComplete={handleComplete} onTimer={handleTimer}
+          onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)} onDelete={handleDelete}
+        />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           <TaskGroup
-            title="Tim Internal" icon="👥"
-            groups={grouped.tim}
-            dragState={dragState}
-            taskMap={taskMap}
-            now={now}
-            onStatus={handleStatus}
-            onDelete={handleDelete}
-            onTimer={handleTimer}
-            onEdit={setEditTask}
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
+            title="Tim Internal" icon="👥" groups={grouped.tim} assigneeType="tim"
+            dragState={dragState} taskMap={taskMap} now={now}
+            onStatus={handleStatus} onComplete={handleComplete} onDelete={handleDelete}
+            onTimer={handleTimer} onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
+            onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
           />
           <TaskGroup
-            title="Freelance" icon="🎨"
-            groups={grouped.freelance}
-            dragState={dragState}
-            taskMap={taskMap}
-            now={now}
-            onStatus={handleStatus}
-            onDelete={handleDelete}
-            onTimer={handleTimer}
-            onEdit={setEditTask}
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
+            title="Freelance" icon="🎨" groups={grouped.freelance} assigneeType="freelance"
+            dragState={dragState} taskMap={taskMap} now={now}
+            onStatus={handleStatus} onComplete={handleComplete} onDelete={handleDelete}
+            onTimer={handleTimer} onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
+            onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
           />
         </div>
       )}
 
-      {/* Add task modal */}
       {showAdd && (
         <TaskModal
-          title="Tambah Task"
-          data={taskInput}
-          onChange={setTaskInput}
-          onSubmit={handleCreateTask}
-          onClose={() => setShowAdd(false)}
-          orders={orders}
-          isAdd
+          title="Tambah Task" data={taskInput} onChange={setTaskInput}
+          onSubmit={handleCreateTask} onClose={() => setShowAdd(false)}
+          orders={orders} knownAssignees={knownAssignees} isAdd
         />
       )}
-
-      {/* Edit task modal */}
       {editTask && (
         <TaskModal
-          title="Edit Task"
-          data={editTask}
-          onChange={setEditTask}
-          onSubmit={handleEditSave}
-          onClose={() => setEditTask(null)}
+          title="Edit Task" data={editTask} onChange={setEditTask}
+          onSubmit={handleEditSave} onClose={() => setEditTask(null)}
+          knownAssignees={knownAssignees}
+        />
+      )}
+      {confirmDone && (
+        <TelegramConfirmModal
+          task={confirmDone}
+          onConfirm={handleConfirmDone}
+          onCancel={() => setConfirmDone(null)}
+        />
+      )}
+      {liveDetailTask && (
+        <TaskDetailModal
+          task={liveDetailTask}
+          orders={orders}
+          now={now}
+          onClose={() => setDetailTaskId(null)}
+          onEdit={(t) => { setDetailTaskId(null); setEditTask({ ...t }); }}
         />
       )}
     </div>
   );
 }
 
+/* ─── KanbanView ────────────────────────────────────────────────── */
+function KanbanView({ tasks, now, onStatus, onComplete, onTimer, onEdit, onDetail, onDelete }) {
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-4">
+      {KANBAN_COLS.map(({ key, label, color }) => {
+        const colTasks = tasks.filter((t) => t.status === key);
+        const sm = STATUS_META[key];
+        return (
+          <div key={key} className={`flex-shrink-0 w-72 rounded-2xl border-t-4 border border-slate-200 bg-white p-4 ${color}`}>
+            <div className="mb-3 flex items-center justify-between">
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${sm.bg} ${sm.text}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${sm.dot}`} />{label}
+              </span>
+              <span className="text-xs font-semibold text-slate-400">{colTasks.length}</span>
+            </div>
+            <div className="space-y-2 min-h-[80px]">
+              {colTasks.length === 0
+                ? <div className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-xs text-slate-400">Kosong</div>
+                : colTasks.map((task) => (
+                  <TaskCard key={task.id} task={task} now={now} onStatus={onStatus} onComplete={onComplete} onDelete={onDelete} onTimer={onTimer} onEdit={onEdit} onDetail={onDetail} onDragStart={() => {}} onDragOver={() => {}} compact />
+                ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── TaskGroup ─────────────────────────────────────────────────── */
-function TaskGroup({ title, icon, groups, dragState, taskMap, now, onStatus, onDelete, onTimer, onEdit, onDragStart, onDragOver, onDrop }) {
+function TaskGroup({ title, icon, groups, assigneeType, dragState, taskMap, now, onStatus, onComplete, onDelete, onTimer, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const entries = Object.entries(groups);
   const totalTasks = entries.reduce((s, [, t]) => s + t.length, 0);
   return (
-    <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center gap-2 border-b border-slate-100 pb-4">
         <span className="text-lg">{icon}</span>
         <div>
@@ -355,9 +439,7 @@ function TaskGroup({ title, icon, groups, dragState, taskMap, now, onStatus, onD
         </div>
       </div>
       {entries.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
-          Tidak ada task.
-        </div>
+        <div className="rounded-2xl border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">Tidak ada task.</div>
       ) : (
         <div className="space-y-4">
           {entries.map(([assignee, aTasks]) => {
@@ -365,17 +447,12 @@ function TaskGroup({ title, icon, groups, dragState, taskMap, now, onStatus, onD
             const ordered = orderedIds.map((id) => taskMap[id]).filter(Boolean);
             return (
               <ArtistSection
-                key={assignee}
-                assignee={assignee}
-                tasks={ordered}
-                now={now}
-                onStatus={onStatus}
-                onDelete={onDelete}
-                onTimer={onTimer}
-                onEdit={onEdit}
+                key={assignee} assignee={assignee} tasks={ordered} now={now}
+                onStatus={onStatus} onComplete={onComplete} onDelete={onDelete}
+                onTimer={onTimer} onEdit={onEdit} onDetail={onDetail}
                 onDragStart={onDragStart}
                 onDragOver={(e, overId) => onDragOver(e, assignee, overId)}
-                onDrop={(e) => onDrop(e, assignee)}
+                onDrop={(e) => onDrop(e, assignee, assigneeType)}
               />
             );
           })}
@@ -386,16 +463,25 @@ function TaskGroup({ title, icon, groups, dragState, taskMap, now, onStatus, onD
 }
 
 /* ─── ArtistSection ─────────────────────────────────────────────── */
-function ArtistSection({ assignee, tasks, now, onStatus, onDelete, onTimer, onEdit, onDragStart, onDragOver, onDrop }) {
-  const initial = assignee?.charAt(0)?.toUpperCase() || "?";
+function ArtistSection({ assignee, tasks, now, onStatus, onComplete, onDelete, onTimer, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const bgColor = avatarColor(assignee);
   const totalElapsed = tasks.reduce((s, t) => s + getElapsed(t, now), 0);
+
+  // Done/failed selalu ke bawah, urutan lain tetap
+  const sortedTasks = useMemo(() => {
+    return [...tasks].sort((a, b) => {
+      const aFinished = a.status === "done" || a.status === "failed";
+      const bFinished = b.status === "done" || b.status === "failed";
+      if (aFinished !== bFinished) return aFinished ? 1 : -1;
+      return 0;
+    });
+  }, [tasks]);
 
   return (
     <div>
       <div className="mb-2 flex items-center gap-2.5">
         <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${bgColor}`}>
-          {initial}
+          {assignee?.charAt(0)?.toUpperCase() || "?"}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-900">{assignee}</p>
@@ -405,22 +491,13 @@ function ArtistSection({ assignee, tasks, now, onStatus, onDelete, onTimer, onEd
           </p>
         </div>
       </div>
-      <div
-        className="ml-10 space-y-2"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={onDrop}
-      >
-        {tasks.map((task) => (
+      <div className="ml-10 space-y-2" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+        {sortedTasks.map((task) => (
           <TaskCard
-            key={task.id}
-            task={task}
-            now={now}
-            onStatus={onStatus}
-            onDelete={onDelete}
-            onTimer={onTimer}
-            onEdit={onEdit}
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
+            key={task.id} task={task} now={now}
+            onStatus={onStatus} onComplete={onComplete} onDelete={onDelete}
+            onTimer={onTimer} onEdit={onEdit} onDetail={onDetail}
+            onDragStart={onDragStart} onDragOver={onDragOver}
           />
         ))}
       </div>
@@ -429,82 +506,260 @@ function ArtistSection({ assignee, tasks, now, onStatus, onDelete, onTimer, onEd
 }
 
 /* ─── TaskCard ──────────────────────────────────────────────────── */
-function TaskCard({ task, now, onStatus, onDelete, onTimer, onEdit, onDragStart, onDragOver }) {
+function TaskCard({ task, now, onStatus, onComplete, onDelete, onTimer, onEdit, onDetail, onDragStart, onDragOver, compact = false }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
-  const isRunning = !!task.timer_started;
+  const isDone = task.status === "done";
+  const isFailed = task.status === "failed";
+  const isFinished = isDone || isFailed;
+  // Timer dianggap jalan hanya jika hari ini (past date: auto-fail harusnya sudah bersihkan)
+  const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
 
   return (
     <div
-      draggable
-      onDragStart={(e) => onDragStart(e, task.id)}
-      onDragOver={(e) => onDragOver(e, task.id)}
-      className="group rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 hover:border-slate-200 transition cursor-grab active:cursor-grabbing"
+      draggable={!compact}
+      onDragStart={compact ? undefined : (e) => onDragStart(e, task.id)}
+      onDragOver={compact ? undefined : (e) => onDragOver(e, task.id)}
+      className={`rounded-2xl border transition ${
+        isRunning
+          ? "border-sky-300 bg-sky-50"
+          : isDone
+          ? "border-emerald-300 bg-emerald-50"
+          : isFailed
+          ? "border-rose-200 bg-rose-50/50"
+          : "border-slate-200 bg-white hover:border-slate-300"
+      } ${isFinished ? "opacity-70" : ""} ${!compact ? "cursor-grab active:cursor-grabbing" : ""}`}
     >
-      <div className="flex items-start gap-2">
-        {/* drag handle */}
-        <GripVertical size={14} className="mt-1 shrink-0 text-slate-300 group-hover:text-slate-400" />
+      {/* Status stripe di atas */}
+      {isDone  && <div className="h-1 rounded-t-2xl bg-emerald-400" />}
+      {isFailed && <div className="h-1 rounded-t-2xl bg-rose-400" />}
 
-        <div className="flex-1 min-w-0">
-          {/* title row */}
+      {/* Top row */}
+      <div className="flex items-start gap-2 px-4 pt-3">
+        {!compact && <GripVertical size={14} className="mt-1 shrink-0 text-slate-300" />}
+        <div className="flex-1 min-w-0 overflow-hidden">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 overflow-hidden">
               <div className="flex items-center gap-1.5">
                 <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${sm.dot}`} />
-                <p className="truncate text-sm font-semibold text-slate-900">{task.title}</p>
+                {isDone && <span className="text-emerald-500 text-xs font-bold shrink-0">✓</span>}
+                <p
+                  onClick={(e) => { e.stopPropagation(); onDetail(task); }}
+                  className={`text-sm font-semibold cursor-pointer hover:underline break-words min-w-0 ${
+                    isDone ? "line-through text-slate-400" :
+                    isFailed ? "line-through text-slate-400" :
+                    "text-slate-900 hover:text-indigo-600"
+                  }`}
+                >
+                  {task.title}
+                </p>
               </div>
               {task.notes && (
-                <p className="mt-0.5 truncate text-xs text-slate-400 font-mono">{task.notes}</p>
+                <p className="mt-1 text-xs text-slate-500 font-mono whitespace-pre-wrap break-words break-all leading-relaxed">
+                  {task.notes}
+                </p>
               )}
             </div>
-            {/* action buttons — show on hover */}
-            <div className="flex items-center gap-1 shrink-0 opacity-0 transition group-hover:opacity-100">
-              <button
-                onClick={() => onTimer(task)}
-                title={isRunning ? "Pause timer" : "Start timer"}
-                className={`rounded-full p-1.5 transition ${isRunning ? "text-amber-500 hover:bg-amber-50" : "text-sky-500 hover:bg-sky-50"}`}
-              >
-                {isRunning ? <Pause size={13} /> : <Play size={13} />}
-              </button>
-              {task.status !== "done" && (
-                <button onClick={() => onStatus(task.id, "done")} title="Selesai" className="rounded-full p-1.5 text-emerald-500 hover:bg-emerald-50 transition">
-                  <CheckCircle2 size={13} />
-                </button>
-              )}
-              <button onClick={() => onEdit({ ...task })} title="Edit" className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 transition">
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => onEdit({ ...task })} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
                 <Pencil size={13} />
               </button>
-              <button onClick={() => onDelete(task.id)} title="Hapus" className="rounded-full p-1.5 text-rose-400 hover:bg-rose-50 transition">
+              <button onClick={() => onDelete(task.id)} title="Hapus" className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
                 <X size={13} />
               </button>
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* status + timer row */}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${sm.bg} ${sm.text}`}>{sm.label}</span>
-            {/* timer display */}
-            {elapsed > 0 && (
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-mono font-semibold ${isRunning ? "bg-sky-50 text-sky-600" : "bg-slate-100 text-slate-500"}`}>
-                <Timer size={10} />
-                {fmtElapsed(elapsed)}
-                {isRunning && <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse" />}
-              </span>
-            )}
-            {elapsed === 0 && !isRunning && task.status === "pending" && (
-              <button onClick={() => onTimer(task)} className="text-xs text-slate-400 hover:text-sky-600 transition">
-                ▷ Mulai timer
-              </button>
-            )}
-          </div>
+      {/* Timer + status row */}
+      <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          {!isFinished && (
+            <button
+              onClick={() => onTimer(task)}
+              title={isRunning ? "Pause timer" : "Mulai timer"}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                isRunning
+                  ? "bg-sky-500 text-white hover:bg-sky-600"
+                  : "bg-slate-100 text-slate-600 hover:bg-sky-50 hover:text-sky-600"
+              }`}
+            >
+              {isRunning ? <Pause size={12} /> : <Play size={12} />}
+              {isRunning ? (
+                <span className="font-mono tracking-tight">{fmtClock(elapsed)}</span>
+              ) : elapsed > 0 ? (
+                <span className="font-mono tracking-tight">{fmtElapsed(elapsed)}</span>
+              ) : (
+                <span>Mulai</span>
+              )}
+              {isRunning && <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />}
+            </button>
+          )}
+          {isFinished && elapsed > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-mono font-semibold text-slate-600">
+              <Clock size={12} /> {fmtElapsed(elapsed)}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1">
+          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${sm.bg} ${sm.text}`}>{sm.label}</span>
+          {task.status === "pending" && (
+            <button onClick={() => onStatus(task, "in progress")} title="Mulai pengerjaan" className="rounded-lg p-1.5 text-sky-500 hover:bg-sky-50 transition">
+              <Play size={13} />
+            </button>
+          )}
+          {task.status === "in progress" && (
+            <button onClick={() => onComplete(task)} title="Selesai — konfirmasi Telegram" className="rounded-lg p-1.5 text-emerald-500 hover:bg-emerald-50 transition">
+              <CheckCircle2 size={15} />
+            </button>
+          )}
+          {task.status === "pending" && (
+            <button onClick={() => onComplete(task)} title="Tandai selesai" className="rounded-lg p-1.5 text-slate-300 hover:bg-emerald-50 hover:text-emerald-500 transition">
+              <CheckCircle2 size={13} />
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-/* ─── TaskModal (add + edit) ────────────────────────────────────── */
-function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], isAdd = false }) {
+/* ─── TaskDetailModal ───────────────────────────────────────────── */
+function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
+  const sm = STATUS_META[task.status] || STATUS_META.pending;
+  const elapsed = getElapsed(task, now);
+  const linkedOrder = orders.find((o) => o.id === task.order_id);
+  const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
+
+  // Total akumulasi jam semua hari untuk kode folder ini
+  const [orderTotal, setOrderTotal] = useState(null);
+  useEffect(() => {
+    if (!task.order_id) { setOrderTotal(null); return; }
+    api.get("/tasks/order-total", { params: { order_id: task.order_id } })
+      .then((r) => setOrderTotal(r.data?.total_seconds ?? null))
+      .catch(() => setOrderTotal(null));
+  }, [task.order_id]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/50 backdrop-blur-sm px-0 sm:px-4">
+      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl">
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="h-1 w-10 rounded-full bg-slate-200" />
+        </div>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-slate-100">
+          <div className="min-w-0 flex-1">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${sm.bg} ${sm.text}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${sm.dot}`} /> {sm.label}
+            </span>
+            <h2 className={`mt-2 text-base font-bold leading-snug break-words ${task.status === "done" ? "line-through text-slate-400" : "text-slate-900"}`}>
+              {task.title}
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-400">{task.assignee} · {task.date}</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 shrink-0 mt-1">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
+          {task.notes && (
+            <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Catatan</p>
+              <p className="text-sm text-slate-700 whitespace-pre-wrap break-words break-all leading-relaxed font-mono">{task.notes}</p>
+            </div>
+          )}
+          {linkedOrder && (
+            <div className="rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-3">
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-indigo-400">Order Terkait</p>
+              <p className="text-sm font-semibold text-indigo-900">{linkedOrder.project}</p>
+              <p className="text-xs text-indigo-500 font-mono">{linkedOrder.folder_code || linkedOrder.client}</p>
+            </div>
+          )}
+
+          {/* Waktu kerja */}
+          <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Clock size={14} className="text-slate-400 shrink-0" />
+              <div className="flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Waktu Kerja Hari Ini</p>
+                <p className={`text-sm font-mono font-semibold ${isRunning ? "text-sky-600" : "text-slate-700"}`}>
+                  {elapsed > 0 ? fmtElapsed(elapsed) : "Belum dimulai"}
+                  {isRunning && <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse" />}
+                </p>
+              </div>
+            </div>
+            {/* Total lintas hari per kode folder */}
+            {orderTotal !== null && orderTotal > 0 && (
+              <div className="mt-3 border-t border-slate-200 pt-3 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Total Akumulasi (semua hari)</p>
+                  <p className="text-base font-mono font-bold text-indigo-700">{fmtElapsed(orderTotal)}</p>
+                </div>
+                <span className="text-xs text-indigo-300 font-mono">{linkedOrder?.folder_code || task.order_id?.slice(-6)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+            Tutup
+          </button>
+          <button onClick={() => onEdit(task)} className="flex-1 rounded-2xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">
+            Edit Task
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── TelegramConfirmModal ──────────────────────────────────────── */
+function TelegramConfirmModal({ task, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm px-4">
+      <div className="w-full max-w-sm rounded-3xl bg-white shadow-2xl overflow-hidden">
+        <div className="bg-gradient-to-r from-sky-500 to-indigo-500 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
+              <Send size={20} className="text-white" />
+            </div>
+            <div>
+              <p className="font-bold text-white text-base">Konfirmasi Selesai</p>
+              <p className="text-xs text-sky-100">Cek sebelum tandai done</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-5">
+          <p className="text-sm text-slate-700 leading-relaxed">
+            Sudah kirim file ke <span className="font-bold text-sky-600">Telegram group</span> untuk:
+          </p>
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="font-semibold text-slate-900 text-sm">{task.title}</p>
+            {task.notes && <p className="mt-0.5 text-xs text-slate-400 font-mono break-words">{task.notes}</p>}
+          </div>
+          <p className="mt-3 text-xs text-slate-400">Task hanya bisa ditandai selesai setelah file dikirim ke Telegram.</p>
+        </div>
+        <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+          <button onClick={onCancel} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">
+            Belum, nanti
+          </button>
+          <button onClick={onConfirm} className="flex-1 rounded-2xl bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-600 transition">
+            ✓ Sudah kirim
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── TaskModal ─────────────────────────────────────────────────── */
+function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], knownAssignees = [], isAdd = false }) {
   const [orderSearch, setOrderSearch] = useState("");
   const [showOrderList, setShowOrderList] = useState(false);
 
@@ -519,34 +774,25 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], isAd
   }, [orders, orderSearch]);
 
   const selectedOrder = orders.find((o) => o.id === data.order_id);
-
   const pickOrder = (order) => {
-    onChange((p) => ({
-      ...p,
-      order_id: order.id,
-      notes: order.folder_code || p.notes,
-    }));
-    setOrderSearch("");
-    setShowOrderList(false);
+    onChange((p) => ({ ...p, order_id: order.id, notes: order.folder_code || p.notes }));
+    setOrderSearch(""); setShowOrderList(false);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
-      <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+      <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5 sticky top-0 bg-white rounded-t-3xl z-10">
           <div>
             <h2 className="text-xl font-bold text-slate-900">{title}</h2>
             {data.date && <p className="text-xs text-slate-400 mt-0.5">· {data.date}</p>}
           </div>
-          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100">
-            <X size={18} />
-          </button>
+          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
         <form className="space-y-4 p-6" onSubmit={onSubmit}>
-          {/* Order link (only for add) */}
           {isAdd && (
             <div className="space-y-1.5">
-              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">Link ke Order (opsional)</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Link ke Order (opsional)</p>
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
@@ -559,26 +805,13 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], isAd
                 {showOrderList && (
                   <div className="absolute z-10 mt-1 w-full rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
                     {filteredOrders.map((o) => (
-                      <button
-                        key={o.id}
-                        type="button"
-                        onClick={() => pickOrder(o)}
-                        className="w-full px-4 py-3 text-left hover:bg-indigo-50 transition border-b border-slate-50 last:border-0"
-                      >
+                      <button key={o.id} type="button" onClick={() => pickOrder(o)} className="w-full px-4 py-3 text-left hover:bg-indigo-50 transition border-b border-slate-50 last:border-0">
                         <p className="text-sm font-semibold text-slate-900">{o.project}</p>
                         <p className="text-xs text-indigo-500 font-mono">{o.client} · {o.folder_code}</p>
                       </button>
                     ))}
-                    {filteredOrders.length === 0 && (
-                      <p className="px-4 py-3 text-xs text-slate-400">Tidak ditemukan.</p>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowOrderList(false)}
-                      className="w-full py-2 text-xs text-slate-400 hover:bg-slate-50"
-                    >
-                      Tutup
-                    </button>
+                    {filteredOrders.length === 0 && <p className="px-4 py-3 text-xs text-slate-400">Tidak ditemukan.</p>}
+                    <button type="button" onClick={() => setShowOrderList(false)} className="w-full py-2 text-xs text-slate-400 hover:bg-slate-50">Tutup</button>
                   </div>
                 )}
               </div>
@@ -596,28 +829,31 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], isAd
             </div>
           )}
 
-          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
             Title
             <input
               value={data.title}
               onChange={(e) => onChange((p) => ({ ...p, title: e.target.value }))}
-              required
-              placeholder="Mis: Modeling chest rig"
+              required placeholder="Mis: Modeling chest rig"
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
             />
           </label>
+
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
               Assignee
               <input
+                list="assignee-suggestions"
                 value={data.assignee}
                 onChange={(e) => onChange((p) => ({ ...p, assignee: e.target.value }))}
-                required
-                placeholder="Nama"
+                required placeholder="Nama"
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
               />
+              <datalist id="assignee-suggestions">
+                {knownAssignees.map((name) => <option key={name} value={name} />)}
+              </datalist>
             </label>
-            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
               Tipe
               <select
                 value={data.assignee_type}
@@ -629,8 +865,9 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], isAd
               </select>
             </label>
           </div>
+
           {!isAdd && (
-            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
               Status
               <select
                 value={data.status}
@@ -644,22 +881,21 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], isAd
               </select>
             </label>
           )}
-          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+
+          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
             Catatan
             <textarea
               value={data.notes || ""}
               onChange={(e) => onChange((p) => ({ ...p, notes: e.target.value }))}
-              rows={2}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal font-mono"
+              rows={3}
+              placeholder="Kode folder, instruksi, atau catatan lain..."
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal font-mono resize-y"
             />
           </label>
+
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-              Batal
-            </button>
-            <button type="submit" className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition">
-              Simpan
-            </button>
+            <button type="button" onClick={onClose} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
+            <button type="submit" className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Simpan</button>
           </div>
         </form>
       </div>

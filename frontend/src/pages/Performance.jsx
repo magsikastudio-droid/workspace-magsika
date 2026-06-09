@@ -1,18 +1,508 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
-import { Activity, BarChart3, Star, Users, TrendingUp } from "lucide-react";
-import { getArtistColor, WORK_TYPE_OPTIONS } from "../lib/constants";
+import { api } from "../lib/api";
+import {
+  Activity, BarChart3, ChevronLeft, ChevronRight, Clock, Star,
+  TrendingUp, Users, Zap, FolderOpen,
+} from "lucide-react";
+import { getArtistColor, normalizeStatus } from "../lib/constants";
 import { monthKey, monthLabel } from "../lib/format";
 
+/* ─── helpers ─────────────────────────────────────────────────────── */
+const MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+
+const fmtTime = (s) => {
+  if (!s || s <= 0) return "—";
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}j ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${s}d`;
+};
+
+const avatarColors = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#84cc16"];
+const getColor = (name) => {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return avatarColors[Math.abs(h) % avatarColors.length];
+};
+
+/* ─── main ─────────────────────────────────────────────────────────── */
 export default function Performance() {
   const { orders } = useOrders();
   const { formatMoney } = useCurrency();
 
-  const completed = orders.filter((o) => o.status === "Done");
-  const revenue = orders.reduce((s, o) => s + (o.total || 0), 0);
-  const avgOrder = orders.length ? Math.round(revenue / orders.length) : 0;
-  const completionRate = orders.length ? Math.round((completed.length / orders.length) * 100) : 0;
+  // Month selection
+  const today = new Date();
+  const [selYear, setSelYear]   = useState(today.getFullYear());
+  const [selMonth, setSelMonth] = useState(today.getMonth()); // 0-indexed
+  const monthStr = `${selYear}-${String(selMonth + 1).padStart(2, "0")}`;
+
+  // Task summary from backend
+  const [summary, setSummary] = useState({ artists: [], orders: [], total_tasks: 0, total_time: 0 });
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  useEffect(() => {
+    setLoadingTasks(true);
+    api.get("/tasks/summary", { params: { month: monthStr } })
+      .then((r) => setSummary(r.data || { artists: [], orders: [], total_tasks: 0, total_time: 0 }))
+      .catch(() => {})
+      .finally(() => setLoadingTasks(false));
+  }, [monthStr]);
+
+  // Orders filtered to selected month
+  const monthOrders = useMemo(() =>
+    orders.filter((o) => {
+      const d = o.order_date || o.created_at?.slice(0, 10) || "";
+      return d.startsWith(monthStr);
+    }), [orders, monthStr]);
+
+  const revenue     = monthOrders.reduce((s, o) => s + (o.total || 0), 0);
+  const doneOrders  = monthOrders.filter((o) => normalizeStatus(o.status) === "Done").length;
+  const activeOrds  = monthOrders.filter((o) => {
+    const s = normalizeStatus(o.status);
+    return s !== "Done" && s !== "Cancel";
+  }).length;
+
+  // Order map for joining with task summary
+  const orderById = useMemo(() => {
+    const m = {};
+    orders.forEach((o) => { m[o.id] = o; });
+    return m;
+  }, [orders]);
+
+  // ── Pipeline & Health — current snapshot (tidak filter bulan) ──
+  const pipeline = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const active = orders.filter((o) => {
+      const s = normalizeStatus(o.status);
+      return s !== "Done" && s !== "Cancel";
+    });
+    const overdue = active.filter((o) => o.deadline && new Date(o.deadline) < now);
+    const stuck = active.filter((o) => {
+      if (normalizeStatus(o.status) !== "Pending") return false;
+      const start = new Date(o.order_date || o.created_at || Date.now());
+      return (now - start) / 86400000 > 3;
+    });
+    // Backlog per artist: count active orders per artist
+    const backlogMap = {};
+    active.forEach((o) => {
+      (o.artists || []).forEach((a) => {
+        if (a) backlogMap[a] = (backlogMap[a] || 0) + 1;
+      });
+    });
+    const backlog = Object.entries(backlogMap).sort((a, b) => b[1] - a[1]);
+    return { active: active.length, overdue: overdue.length, stuck: stuck.length, overdueList: overdue, stuckList: stuck, backlog };
+  }, [orders]);
+
+  // ── Per-artist order-based metrics (bulan ini) ──
+  const artistOrderStats = useMemo(() => {
+    const map = {};
+    monthOrders.forEach((o) => {
+      (o.artists || []).forEach((a) => {
+        if (!a) return;
+        if (!map[a]) map[a] = { totalTurnaround: 0, turnaroundCount: 0, onTime: 0, onTimeTotal: 0, totalRevisions: 0, orderCount: 0 };
+        map[a].orderCount++;
+        map[a].totalRevisions += (o.revision_count || 0);
+        // Turnaround: deadline - order_date untuk Done orders
+        if (normalizeStatus(o.status) === "Done" && o.deadline && o.order_date) {
+          const days = Math.ceil((new Date(o.deadline) - new Date(o.order_date)) / 86400000);
+          if (days > 0) { map[a].totalTurnaround += days; map[a].turnaroundCount++; }
+        }
+        // On-time: Done orders where completed_at <= deadline
+        if (normalizeStatus(o.status) === "Done" && o.deadline) {
+          map[a].onTimeTotal++;
+          const completedAt = o.completed_at ? new Date(o.completed_at) : null;
+          if (completedAt && completedAt <= new Date(o.deadline)) map[a].onTime++;
+        }
+      });
+    });
+    return map;
+  }, [monthOrders]);
+
+  // Order stats enriched with order info
+  const orderTaskStats = useMemo(() =>
+    summary.orders
+      .map((os) => ({ ...os, order: orderById[os.order_id] || null }))
+      .filter((os) => os.order)
+      .sort((a, b) => b.time - a.time),
+    [summary.orders, orderById]
+  );
+
+  // Revenue chart — last 6 months up to selected month
+  const revenueChart = useMemo(() => {
+    const map = {};
+    orders.forEach((o) => {
+      const mk = monthKey(o.created_at || o.order_date);
+      if (mk) map[mk] = (map[mk] || 0) + (o.total || 0);
+    });
+    // build 6-month window ending at current selMonth
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(selYear, selMonth - i, 1);
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      months.push({ key: k, label: monthLabel(k)?.slice(0, 3) || "", revenue: map[k] || 0 });
+    }
+    return months;
+  }, [orders, selYear, selMonth]);
+
+  const maxRevenue = Math.max(...revenueChart.map((m) => m.revenue), 1);
+
+  const prevMonth = () => {
+    if (selMonth === 0) { setSelYear((y) => y - 1); setSelMonth(11); }
+    else setSelMonth((m) => m - 1);
+  };
+  const nextMonth = () => {
+    if (selMonth === 11) { setSelYear((y) => y + 1); setSelMonth(0); }
+    else setSelMonth((m) => m + 1);
+  };
+
+  const artistsSorted = [...summary.artists].sort((a, b) => b.tasks - a.tasks);
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Performance</h1>
+          <p className="mt-0.5 text-sm text-slate-500">Tracking progress tim bulanan — {MONTH_NAMES[selMonth]} {selYear}</p>
+        </div>
+        {/* Month nav */}
+        <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+          <button onClick={prevMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
+            <ChevronLeft size={16} />
+          </button>
+          <div className="flex items-center gap-2 min-w-[160px] justify-center">
+            <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))}
+              className="rounded-lg bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+              {[selYear - 2, selYear - 1, selYear, selYear + 1].map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))}
+              className="rounded-lg bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+              {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+            </select>
+          </div>
+          <button onClick={nextMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Metrics */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetCard icon={FolderOpen}  label="Orders Masuk"   value={monthOrders.length} sub={`${doneOrders} selesai · ${activeOrds} aktif`}  accent="border-l-violet-500" iconBg="bg-violet-50 text-violet-600" />
+        <MetCard icon={Activity}    label="Tasks Selesai"  value={summary.artists.reduce((s,a)=>s+a.done,0)} sub={`dari ${summary.total_tasks} task total`} accent="border-l-emerald-500" iconBg="bg-emerald-50 text-emerald-600" />
+        <MetCard icon={Clock}       label="Total Waktu"    value={fmtTime(summary.total_time)} sub="akumulasi timer semua artist" accent="border-l-sky-500" iconBg="bg-sky-50 text-sky-600" />
+        <MetCard icon={TrendingUp}  label="Revenue"        value={formatMoney(revenue)} sub="order masuk bulan ini" accent="border-l-amber-500" iconBg="bg-amber-50 text-amber-600" />
+      </div>
+
+      {/* Main grid */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        {/* Per Artist */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <div>
+              <p className="font-bold text-slate-900">Performa Artist</p>
+              <p className="text-xs text-slate-400">{MONTH_NAMES[selMonth]} {selYear} · {artistsSorted.length} artist aktif</p>
+            </div>
+            <Users size={16} className="text-slate-300" />
+          </div>
+          {loadingTasks ? (
+            <div className="py-10 text-center text-sm text-slate-400">Memuat data task...</div>
+          ) : artistsSorted.length === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-400">Belum ada task di bulan ini.</div>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {artistsSorted.map((artist) => {
+                const rate = artist.tasks > 0 ? Math.round((artist.done / artist.tasks) * 100) : 0;
+                const color = getColor(artist.name);
+                const oas = artistOrderStats[artist.name] || {};
+                const avgTurnaround = oas.turnaroundCount > 0 ? Math.round(oas.totalTurnaround / oas.turnaroundCount) : null;
+                const onTimeRate = oas.onTimeTotal > 0 ? Math.round((oas.onTime / oas.onTimeTotal) * 100) : null;
+                const avgRevision = oas.orderCount > 0 ? (oas.totalRevisions / oas.orderCount).toFixed(1) : null;
+                return (
+                  <div key={artist.name} className="px-6 py-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white" style={{ background: color }}>
+                        {artist.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div>
+                            <p className="font-semibold text-slate-900">{artist.name}</p>
+                            <p className="text-xs text-slate-400 capitalize">{artist.assignee_type}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-lg font-bold text-slate-900">{rate}%</p>
+                            <p className="text-xs text-slate-400">task done</p>
+                          </div>
+                        </div>
+                        {/* Task chips */}
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{artist.tasks} task</span>
+                          {artist.done > 0 && <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">✓ {artist.done} done</span>}
+                          {artist.failed > 0 && <span className="inline-flex items-center rounded-lg bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">✗ {artist.failed} gagal</span>}
+                          {artist.in_progress > 0 && <span className="inline-flex items-center rounded-lg bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">◌ {artist.in_progress} jalan</span>}
+                          {artist.time > 0 && <span className="inline-flex items-center rounded-lg bg-indigo-50 px-2 py-1 text-xs font-mono font-semibold text-indigo-700">⏱ {fmtTime(artist.time)}</span>}
+                        </div>
+                        {/* Order-based metrics */}
+                        {(avgTurnaround !== null || onTimeRate !== null || avgRevision !== null) && (
+                          <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 px-3 py-2">
+                            {avgTurnaround !== null && (
+                              <div className="text-center">
+                                <p className="text-sm font-bold text-slate-800">{avgTurnaround}h</p>
+                                <p className="text-[10px] text-slate-400">turnaround</p>
+                              </div>
+                            )}
+                            {onTimeRate !== null && (
+                              <div className="text-center">
+                                <p className={`text-sm font-bold ${onTimeRate >= 80 ? "text-emerald-600" : onTimeRate >= 50 ? "text-amber-600" : "text-rose-600"}`}>{onTimeRate}%</p>
+                                <p className="text-[10px] text-slate-400">on-time</p>
+                              </div>
+                            )}
+                            {avgRevision !== null && (
+                              <div className="text-center">
+                                <p className={`text-sm font-bold ${Number(avgRevision) === 0 ? "text-emerald-600" : Number(avgRevision) <= 1 ? "text-amber-600" : "text-rose-600"}`}>{avgRevision}x</p>
+                                <p className="text-[10px] text-slate-400">revisi/order</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {/* Progress bar */}
+                        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${rate}%`, background: `linear-gradient(90deg, ${color}aa, ${color})` }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Revenue chart */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-6 py-4">
+            <p className="font-bold text-slate-900">Tren Revenue</p>
+            <p className="text-xs text-slate-400">6 bulan terakhir</p>
+          </div>
+          <div className="px-6 py-5">
+            <div className="flex items-end gap-2 h-36">
+              {revenueChart.map((m) => {
+                const pct = Math.round((m.revenue / maxRevenue) * 100);
+                const isCurrent = m.key === monthStr;
+                return (
+                  <div key={m.key} className="flex flex-1 flex-col items-center gap-1 group">
+                    {m.revenue > 0 && (
+                      <span className="text-[9px] text-slate-400 font-semibold group-hover:text-slate-600 hidden group-hover:block">
+                        {formatMoney(m.revenue)}
+                      </span>
+                    )}
+                    <div
+                      className="w-full rounded-t-lg transition-all"
+                      style={{
+                        height: `${Math.max(pct, 4)}%`,
+                        minHeight: "6px",
+                        background: isCurrent
+                          ? "linear-gradient(to top, #7c3aed, #6366f1)"
+                          : "linear-gradient(to top, #cbd5e1, #e2e8f0)",
+                      }}
+                    />
+                    <span className={`text-[10px] font-semibold ${isCurrent ? "text-violet-700" : "text-slate-400"}`}>
+                      {m.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* Summary */}
+          <div className="border-t border-slate-100 px-6 py-4 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">Total revenue</span>
+              <span className="font-bold text-slate-900">{formatMoney(revenue)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">Order masuk</span>
+              <span className="font-semibold text-slate-800">{monthOrders.length}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">Selesai</span>
+              <span className="font-semibold text-emerald-700">{doneOrders}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Aktivitas detail — tasks per order */}
+      {orderTaskStats.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <div>
+              <p className="font-bold text-slate-900">Aktivitas per Order</p>
+              <p className="text-xs text-slate-400">Waktu kerja dan progress task {MONTH_NAMES[selMonth]} {selYear}</p>
+            </div>
+            <Zap size={16} className="text-slate-300" />
+          </div>
+          <div className="divide-y divide-slate-50">
+            {orderTaskStats.map((os) => {
+              const o = os.order;
+              const rate = os.tasks > 0 ? Math.round((os.done / os.tasks) * 100) : 0;
+              return (
+                <div key={os.order_id} className="flex items-start gap-4 px-6 py-4">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-sm font-bold text-violet-700">
+                    {o.project?.charAt(0)?.toUpperCase() || "?"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 truncate">{o.project}</p>
+                        <p className="text-xs text-indigo-600 font-mono">{o.folder_code || o.client}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-bold text-slate-900">{fmtTime(os.time)}</p>
+                        <p className="text-xs text-slate-400">waktu kerja</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-500">{os.tasks} task</span>
+                      {os.done > 0 && <span className="text-xs text-emerald-600 font-semibold">✓ {os.done} done</span>}
+                      {os.failed > 0 && <span className="text-xs text-rose-500 font-semibold">✗ {os.failed} gagal</span>}
+                      <span className="text-xs text-slate-400">·</span>
+                      {os.assignees.map((a) => (
+                        <span key={a} className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: getColor(a) }} title={a}>
+                          {a.charAt(0).toUpperCase()}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${rate}%` }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Pipeline & Health */}
+      <PipelineHealth pipeline={pipeline} />
+
+      {/* All-time artist stats */}
+      <AllTimeSection orders={orders} formatMoney={formatMoney} />
+    </div>
+  );
+}
+
+/* ─── PipelineHealth ─────────────────────────────────────────────── */
+function PipelineHealth({ pipeline }) {
+  const [showOverdue, setShowOverdue] = useState(false);
+  const [showStuck, setShowStuck]     = useState(false);
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-6 py-4">
+        <p className="font-bold text-slate-900">Pipeline & Health</p>
+        <p className="text-xs text-slate-400">Snapshot kondisi order saat ini (realtime, tidak difilter bulan)</p>
+      </div>
+      <div className="p-6 space-y-5">
+        {/* 4 metric tiles */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl bg-sky-50 border border-sky-100 px-4 py-3 text-center">
+            <p className="text-2xl font-bold text-sky-700">{pipeline.active}</p>
+            <p className="mt-0.5 text-xs text-sky-500 font-semibold">Order Aktif</p>
+          </div>
+          <button onClick={() => setShowOverdue((v) => !v)} className="rounded-2xl bg-rose-50 border border-rose-100 px-4 py-3 text-center hover:bg-rose-100 transition">
+            <p className="text-2xl font-bold text-rose-600">{pipeline.overdue}</p>
+            <p className="mt-0.5 text-xs text-rose-400 font-semibold">Overdue ⚠</p>
+          </button>
+          <button onClick={() => setShowStuck((v) => !v)} className="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3 text-center hover:bg-amber-100 transition">
+            <p className="text-2xl font-bold text-amber-600">{pipeline.stuck}</p>
+            <p className="mt-0.5 text-xs text-amber-500 font-semibold">Stuck &gt;3h</p>
+          </button>
+          <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3 text-center">
+            <p className="text-2xl font-bold text-slate-700">{pipeline.backlog.length}</p>
+            <p className="mt-0.5 text-xs text-slate-400 font-semibold">Artist Backlog</p>
+          </div>
+        </div>
+
+        {/* Overdue list */}
+        {showOverdue && pipeline.overdueList.length > 0 && (
+          <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-rose-500">Order Overdue</p>
+            <div className="space-y-1.5">
+              {pipeline.overdueList.map((o) => (
+                <div key={o.id} className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{o.project}</p>
+                    <p className="text-xs text-slate-400">{(o.artists || []).join(", ") || "—"}</p>
+                  </div>
+                  <span className="text-xs font-mono text-rose-600 font-semibold">{o.deadline}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Stuck list */}
+        {showStuck && pipeline.stuckList.length > 0 && (
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-amber-500">Order Pending &gt; 3 Hari</p>
+            <div className="space-y-1.5">
+              {pipeline.stuckList.map((o) => {
+                const age = Math.floor((new Date() - new Date(o.order_date || o.created_at || Date.now())) / 86400000);
+                return (
+                  <div key={o.id} className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{o.project}</p>
+                      <p className="text-xs text-slate-400">{o.client}</p>
+                    </div>
+                    <span className="text-xs font-semibold text-amber-600">{age}h tanpa progress</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Backlog per artist */}
+        {pipeline.backlog.length > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Backlog per Artist</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {pipeline.backlog.map(([artist, count]) => {
+                const color = getColor(artist);
+                const maxCount = pipeline.backlog[0]?.[1] || 1;
+                return (
+                  <div key={artist} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: color }}>
+                      {artist.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{artist}</p>
+                        <span className="text-xs font-bold text-slate-700">{count}</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                        <div className="h-full rounded-full" style={{ width: `${Math.round((count / maxCount) * 100)}%`, background: color }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── AllTimeSection ─────────────────────────────────────────────── */
+function AllTimeSection({ orders, formatMoney }) {
+  const [open, setOpen] = useState(false);
 
   const artistStats = useMemo(() => {
     const map = {};
@@ -27,144 +517,66 @@ export default function Performance() {
     });
     return Object.entries(map)
       .sort((a, b) => b[1].orders - a[1].orders)
-      .map(([name, data]) => ({ name, ...data, rate: data.orders ? Math.round((data.done / data.orders) * 100) : 0 }));
+      .map(([name, d]) => ({ name, ...d, rate: d.orders ? Math.round((d.done / d.orders) * 100) : 0 }));
   }, [orders]);
-
-  const workTypeStats = useMemo(() => {
-    const map = {};
-    orders.forEach((o) => {
-      const wt = o.work_type || "Modeling";
-      if (!map[wt]) map[wt] = { count: 0, revenue: 0, done: 0 };
-      map[wt].count++;
-      map[wt].revenue += (o.total || 0);
-      if (o.status === "Done") map[wt].done++;
-    });
-    return Object.entries(map).sort((a, b) => b[1].count - a[1].count);
-  }, [orders]);
-
-  const monthlyStats = useMemo(() => {
-    const map = {};
-    orders.forEach((o) => {
-      const mk = monthKey(o.created_at);
-      if (!mk) return;
-      if (!map[mk]) map[mk] = { revenue: 0, count: 0, done: 0 };
-      map[mk].revenue += (o.total || 0);
-      map[mk].count++;
-      if (o.status === "Done") map[mk].done++;
-    });
-    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).slice(-6);
-  }, [orders]);
-
-  const maxRevenue = Math.max(...monthlyStats.map(([, d]) => d.revenue), 1);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Performance</h1>
-        <p className="mt-2 text-sm text-slate-500">Analisa performa tim, jenis pekerjaan, dan tren keuangan.</p>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-4">
-        <MetCard icon={Activity} label="Order Selesai" value={completed.length} sub="Total done" />
-        <MetCard icon={BarChart3} label="Total Revenue" value={formatMoney(revenue)} sub="Semua order" />
-        <MetCard icon={Star} label="Rata-rata Order" value={formatMoney(avgOrder)} sub="Per order" />
-        <MetCard icon={TrendingUp} label="Completion Rate" value={`${completionRate}%`} sub="Done / total" />
-      </div>
-
-      {monthlyStats.length > 0 && (
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-5 border-b border-slate-200 pb-4">
-            <h2 className="text-xl font-semibold">Tren Revenue Bulanan</h2>
-            <p className="text-sm text-slate-500">6 bulan terakhir berdasarkan order masuk.</p>
-          </div>
-          <div className="flex items-end gap-3 h-40">
-            {monthlyStats.map(([mk, data]) => {
-              const pct = Math.round((data.revenue / maxRevenue) * 100);
-              return (
-                <div key={mk} className="flex flex-1 flex-col items-center gap-1">
-                  <span className="text-xs text-slate-500 font-semibold">{formatMoney(data.revenue)}</span>
-                  <div className="w-full rounded-t-xl bg-gradient-to-t from-sky-500 to-violet-500 transition-all" style={{ height: `${Math.max(pct, 4)}%`, minHeight: "4px" }} />
-                  <span className="text-xs text-slate-400">{monthLabel(mk)?.slice(0, 3)}</span>
-                  <span className="text-xs text-slate-500">{data.count} order</span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-5 border-b border-slate-200 pb-4">
-            <h2 className="text-xl font-semibold">Per Artist</h2>
-            <p className="text-sm text-slate-500">Performa berdasarkan artist yang mengerjakan.</p>
-          </div>
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-6 py-4 text-left"
+      >
+        <div>
+          <p className="font-bold text-slate-900">Statistik All-Time per Artist</p>
+          <p className="text-xs text-slate-400">Berdasarkan seluruh riwayat order</p>
+        </div>
+        <span className="text-slate-400 text-sm">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-slate-100">
           {artistStats.length === 0 ? (
-            <p className="text-sm text-slate-500">Belum ada data artist.</p>
+            <p className="px-6 py-8 text-center text-sm text-slate-400">Belum ada data artist.</p>
           ) : (
-            <div className="space-y-4">
+            <div className="divide-y divide-slate-50">
               {artistStats.map((a) => (
-                <div key={a.name} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: getArtistColor(a.name) }}>
-                      {a.name.slice(0, 1).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-900">{a.name}</p>
-                      <p className="text-xs text-slate-500">{a.orders} order · {a.done} selesai</p>
-                    </div>
+                <div key={a.name} className="flex items-center gap-4 px-6 py-3.5">
+                  <div
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white"
+                    style={{ background: getColor(a.name) }}
+                  >
+                    {a.name.charAt(0).toUpperCase()}
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-slate-900">{a.rate}%</p>
-                    <p className="text-xs text-slate-500">{formatMoney(a.revenue)}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-slate-900">{a.name}</p>
+                      <p className="text-sm font-bold text-slate-700">{a.rate}%</p>
+                    </div>
+                    <p className="text-xs text-slate-400">{a.orders} order · {a.done} selesai · {formatMoney(a.revenue)}</p>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </section>
-
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-5 border-b border-slate-200 pb-4">
-            <h2 className="text-xl font-semibold">Per Jenis Pekerjaan</h2>
-            <p className="text-sm text-slate-500">Volume dan revenue per work type.</p>
-          </div>
-          {workTypeStats.length === 0 ? (
-            <p className="text-sm text-slate-500">Belum ada data.</p>
-          ) : (
-            <div className="space-y-3">
-              {workTypeStats.map(([wt, data]) => {
-                const totalCount = orders.length || 1;
-                const pct = Math.round((data.count / totalCount) * 100);
-                return (
-                  <div key={wt}>
-                    <div className="mb-1 flex justify-between text-sm">
-                      <span className="font-medium text-slate-700">{wt}</span>
-                      <span className="text-slate-500">{data.count} order · {formatMoney(data.revenue)}</span>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-slate-100">
-                      <div className="h-2 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function MetCard({ icon: Icon, label, value, sub }) {
+/* ─── MetCard ─────────────────────────────────────────────────────── */
+function MetCard({ icon: Icon, label, value, sub, accent, iconBg }) {
   return (
-    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center gap-3 text-slate-500 mb-3">
-        <Icon size={18} />
-        <p className="text-sm uppercase tracking-[0.18em]">{label}</p>
+    <div className={`rounded-2xl border-l-4 border border-slate-200 bg-white px-5 py-4 shadow-sm ${accent}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">{label}</p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+          <p className="mt-1 text-xs text-slate-400">{sub}</p>
+        </div>
+        <div className={`rounded-xl p-2.5 ${iconBg}`}>
+          <Icon size={18} />
+        </div>
       </div>
-      <p className="text-3xl font-bold text-slate-900">{value}</p>
-      <p className="mt-1 text-sm text-slate-500">{sub}</p>
     </div>
   );
 }
