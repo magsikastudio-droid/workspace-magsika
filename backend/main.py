@@ -9,7 +9,11 @@ except ImportError:
 from bson import ObjectId
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
+
+# Biar ObjectId MongoDB bisa di-serialize ke JSON tanpa error
+ENCODERS_BY_TYPE[ObjectId] = str
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
@@ -94,6 +98,8 @@ def format_order(record: dict) -> dict:
         "fee_freelance": record.get("fee_freelance", 0),
         "order_date": record.get("order_date", record.get("created_at", "")[:10] if record.get("created_at") else ""),
         "created_at": record.get("created_at"),
+        "completed_at": record.get("completed_at"),
+        "revision_count": record.get("revision_count", 0),
     }
 
 
@@ -199,6 +205,8 @@ class OrderCreate(BaseModel):
     marketer: Optional[str] = None
     notes: Optional[str] = None
     fee_freelance: Optional[float] = 0
+    revision_count: Optional[int] = 0
+    completed_at: Optional[str] = None
 
 
 class OrderUpdate(BaseModel):
@@ -219,6 +227,8 @@ class OrderUpdate(BaseModel):
     marketer: Optional[str] = None
     notes: Optional[str] = None
     fee_freelance: Optional[float] = None
+    revision_count: Optional[int] = None
+    completed_at: Optional[str] = None
 
 
 class ChatEntryCreate(BaseModel):
@@ -327,6 +337,63 @@ app.add_middleware(
 scheduler = AsyncIOScheduler() if SCHEDULER_AVAILABLE else None
 
 
+async def auto_fail_tasks():
+    """Jam 23:59 WIB — task pending/in-progress otomatis jadi failed, hentikan timer."""
+    from datetime import timedelta
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    today = jkt_now.strftime("%Y-%m-%d")
+    try:
+        await db.tasks.update_many(
+            {"date": today, "status": {"$in": ["pending", "in progress"]}},
+            {"$set": {"status": "failed", "timer_started": None}},
+        )
+    except Exception as e:
+        print(f"[auto_fail] Error: {e}")
+
+
+async def carry_forward_tasks():
+    """Jam 00:01 WIB — task gagal kemarin dibawa ke hari ini (skip weekend)."""
+    from datetime import datetime, timezone, timedelta
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_wday = jkt_now.weekday()  # 0=Senin ... 6=Minggu
+    # Jika hari ini weekend (Sabtu/Minggu), tidak buat task
+    if today_wday in (5, 6):
+        return
+    today_str = jkt_now.strftime("%Y-%m-%d")
+    yesterday = (jkt_now - timedelta(days=1)).strftime("%Y-%m-%d")
+    # Cari task gagal kemarin
+    try:
+        failed_tasks = await db.tasks.find({"date": yesterday, "status": "failed"}).to_list(500)
+        created = 0
+        for t in failed_tasks:
+            order_id_str = str(t.get("order_id", ""))
+            assignee = t.get("assignee", "")
+            existing = await db.tasks.find_one({
+                "date": today_str, "assignee": assignee,
+                "order_id": order_id_str if order_id_str else None,
+                "title": t.get("title"),
+            })
+            if existing:
+                continue
+            count = await db.tasks.count_documents({"assignee": assignee, "date": today_str})
+            await db.tasks.insert_one({
+                "title": t.get("title", ""),
+                "assignee": assignee,
+                "assignee_type": t.get("assignee_type", "tim"),
+                "status": "pending",
+                "date": today_str,
+                "notes": t.get("notes", ""),
+                "order_id": order_id_str or None,
+                "time_elapsed": 0,
+                "timer_started": None,
+                "order_num": count,
+            })
+            created += 1
+        print(f"[carry_forward] {created} task dibawa ke {today_str}")
+    except Exception as e:
+        print(f"[carry_forward] Error: {e}")
+
+
 async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
     today = target_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     created = 0
@@ -375,6 +442,8 @@ async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
 async def on_startup():
     if scheduler:
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
+        scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
+        scheduler.add_job(carry_forward_tasks, CronTrigger(hour=0, minute=1, timezone="Asia/Jakarta"))
         scheduler.start()
 
 
@@ -418,13 +487,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     username = payload.get("sub")
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    # Fast path: default admin never touches the database
+    if username == "admin":
+        return {"username": DEFAULT_USER["username"], "full_name": DEFAULT_USER["full_name"], "email": DEFAULT_USER["email"], "role": DEFAULT_USER["role"], "status": DEFAULT_USER["status"]}
     try:
         user = await db.users.find_one({"username": username})
     except Exception:
         user = None
     if not user:
-        if username == "admin":
-            return {"username": DEFAULT_USER["username"], "full_name": DEFAULT_USER["full_name"], "email": DEFAULT_USER["email"], "role": DEFAULT_USER["role"], "status": DEFAULT_USER["status"]}
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "admin"), "status": user.get("status", "active")}
 
@@ -477,9 +547,12 @@ async def get_order(order_id: str, current_user: dict = Depends(get_current_user
 
 @app.patch("/orders/{order_id}")
 async def update_order(order_id: str, order: OrderUpdate, current_user: dict = Depends(get_current_user)):
-    payload = {k: v for k, v in order.dict().items() if v is not None}
+    payload = {k: v for k, v in order.dict(exclude_unset=True).items()}
     if not payload:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
+    # Auto-set completed_at ketika status berubah ke Done
+    if payload.get("status") == "Done" and not payload.get("completed_at"):
+        payload["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     object_id = to_object_id(order_id)
     try:
         await db.orders.update_one({"_id": object_id}, {"$set": payload})
@@ -591,12 +664,14 @@ async def delete_freelance_project(project_id: str, current_user: dict = Depends
 
 
 @app.get("/tasks")
-async def list_tasks(date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+async def list_tasks(date: Optional[str] = None, month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     try:
         query = {}
         if date:
             query["date"] = date
-        records = await db.tasks.find(query).to_list(200)
+        elif month:
+            query["date"] = {"$regex": f"^{month}"}
+        records = await db.tasks.find(query).to_list(2000)
         return {"tasks": [format_task(record) for record in records]}
     except Exception:
         return {"tasks": []}
@@ -640,10 +715,69 @@ async def delete_task(task_id: str, current_user: dict = Depends(get_current_use
     return {"deleted": True}
 
 
+class AutoGenerateRequest(BaseModel):
+    date: Optional[str] = None
+
+
 @app.post("/tasks/auto-generate")
-async def manual_auto_generate(current_user: dict = Depends(get_current_user)):
-    result = await auto_generate_daily_tasks()
+async def manual_auto_generate(req: AutoGenerateRequest = None, current_user: dict = Depends(get_current_user)):
+    target = req.date if req else None
+    result = await auto_generate_daily_tasks(target)
     return result
+
+
+@app.get("/tasks/order-total")
+async def tasks_order_total(order_id: str, current_user: dict = Depends(get_current_user)):
+    """Total akumulasi time_elapsed semua task dengan order_id yang sama (lintas hari)."""
+    try:
+        pipeline = [
+            {"$match": {"order_id": order_id}},
+            {"$group": {"_id": None, "total": {"$sum": "$time_elapsed"}}}
+        ]
+        result = await db.tasks.aggregate(pipeline).to_list(1)
+        total = result[0]["total"] if result else 0
+        return {"total_seconds": int(total)}
+    except Exception:
+        return {"total_seconds": 0}
+
+
+@app.get("/tasks/summary")
+async def tasks_summary(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Agregasi task per bulan: per-artist dan per-order."""
+    try:
+        query = {"date": {"$regex": f"^{month}"}} if month else {}
+        records = await db.tasks.find(query).to_list(2000)
+    except Exception:
+        records = []
+    artist_map: Dict[str, Any] = {}
+    order_map: Dict[str, Any] = {}
+    for t in records:
+        a = t.get("assignee", "?")
+        if a not in artist_map:
+            artist_map[a] = {"tasks": 0, "done": 0, "failed": 0, "in_progress": 0, "pending": 0, "time": 0, "assignee_type": t.get("assignee_type", "tim")}
+        artist_map[a]["tasks"] += 1
+        st = t.get("status", "pending")
+        if st == "done":        artist_map[a]["done"] += 1
+        elif st == "failed":    artist_map[a]["failed"] += 1
+        elif st == "in progress": artist_map[a]["in_progress"] += 1
+        else:                   artist_map[a]["pending"] += 1
+        artist_map[a]["time"] += t.get("time_elapsed", 0) or 0
+        oid = t.get("order_id")
+        if oid:
+            if oid not in order_map:
+                order_map[oid] = {"tasks": 0, "done": 0, "failed": 0, "time": 0, "assignees": []}
+            order_map[oid]["tasks"] += 1
+            if st == "done":   order_map[oid]["done"] += 1
+            if st == "failed": order_map[oid]["failed"] += 1
+            order_map[oid]["time"] += t.get("time_elapsed", 0) or 0
+            if a not in order_map[oid]["assignees"]:
+                order_map[oid]["assignees"].append(a)
+    return {
+        "artists": [{"name": k, **v} for k, v in artist_map.items()],
+        "orders": [{"order_id": k, **v} for k, v in order_map.items()],
+        "total_tasks": len(records),
+        "total_time": sum(t.get("time_elapsed", 0) or 0 for t in records),
+    }
 
 
 @app.get("/chat-entries")
