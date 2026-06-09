@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { api } from "../lib/api";
 import { mockOrders } from "../lib/mockData";
 import { useAuth } from "./AuthContext";
+import { subscribe } from "../lib/ws";
 
 const OrdersContext = createContext(null);
 
@@ -57,6 +58,8 @@ export function OrdersProvider({ children }) {
   useEffect(() => {
     if (!user) return;
     fetchOrders();
+    const unsub = subscribe("orders_updated", fetchOrders);
+    return unsub;
   }, [user, fetchOrders]);
 
   return (

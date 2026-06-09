@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "./AuthContext";
+import { subscribe } from "../lib/ws";
 
 const TasksContext = createContext(null);
 
@@ -48,6 +49,8 @@ export function TasksProvider({ children }) {
       return;
     }
     fetchTasks();
+    const unsub = subscribe("tasks_updated", () => fetchTasks());
+    return unsub;
   }, [user, fetchTasks]);
 
   return (

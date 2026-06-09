@@ -1,0 +1,10 @@
+{
+  "appId": "com.magsika.workspace",
+  "appName": "Magsika Workspace",
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}
