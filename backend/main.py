@@ -8,7 +8,7 @@ except ImportError:
     certifi = None
 from bson import ObjectId
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -326,6 +326,34 @@ class TaskUpdate(BaseModel):
 
 app = FastAPI(title="Admin Dashboard API")
 
+
+class ConnectionManager:
+    def __init__(self):
+        self.active: list[WebSocket] = []
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.active.append(ws)
+
+    def disconnect(self, ws: WebSocket):
+        if ws in self.active:
+            self.active.remove(ws)
+
+    async def broadcast(self, message: dict):
+        import json
+        data = json.dumps(message)
+        dead = []
+        for ws in self.active:
+            try:
+                await ws.send_text(data)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+
+
+manager = ConnectionManager()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=BACKEND_ORIGINS,
@@ -453,6 +481,27 @@ async def on_shutdown():
         scheduler.shutdown(wait=False)
 
 
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket, token: str = Query(None)):
+    if not token:
+        await websocket.close(code=4001)
+        return
+    try:
+        payload = decode_token(token)
+        if not payload.get("sub"):
+            await websocket.close(code=4001)
+            return
+    except Exception:
+        await websocket.close(code=4001)
+        return
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+
 def verify_default_admin(username: str, password: str) -> Optional[dict]:
     if username == "admin" and password == "password":
         return {
@@ -530,9 +579,11 @@ async def create_order(order: OrderCreate, current_user: dict = Depends(get_curr
     payload["created_at"] = datetime.now(timezone.utc).isoformat()
     try:
         result = await db.orders.insert_one(payload)
-        return {"order": format_order({**payload, "_id": result.inserted_id})}
+        result_order = format_order({**payload, "_id": result.inserted_id})
     except Exception:
-        return {"order": format_order({**payload, "id": f"mock-{len(mock_orders) + 1}"})}
+        result_order = format_order({**payload, "id": f"mock-{len(mock_orders) + 1}"})
+    await manager.broadcast({"type": "orders_updated"})
+    return {"order": result_order}
 
 
 @app.get("/orders/{order_id}")
@@ -552,7 +603,6 @@ async def update_order(order_id: str, order: OrderUpdate, current_user: dict = D
     payload = {k: v for k, v in order.dict(exclude_unset=True).items()}
     if not payload:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
-    # Auto-set completed_at ketika status berubah ke Done
     if payload.get("status") == "Done" and not payload.get("completed_at"):
         payload["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     object_id = to_object_id(order_id)
@@ -563,6 +613,7 @@ async def update_order(order_id: str, order: OrderUpdate, current_user: dict = D
         updated = None
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    await manager.broadcast({"type": "orders_updated"})
     return {"order": format_order(updated)}
 
 
@@ -577,6 +628,7 @@ async def delete_order(order_id: str, current_user: dict = Depends(get_current_u
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete order")
+    await manager.broadcast({"type": "orders_updated"})
     return {"deleted": True}
 
 
@@ -684,9 +736,11 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
     payload = task.dict()
     try:
         result = await db.tasks.insert_one(payload)
-        return {"task": format_task({**payload, "_id": result.inserted_id})}
+        result_task = format_task({**payload, "_id": result.inserted_id})
     except Exception:
-        return {"task": {**payload, "id": f"task-mock-{datetime.now(timezone.utc).timestamp()}"}}
+        result_task = {**payload, "id": f"task-mock-{datetime.now(timezone.utc).timestamp()}"}
+    await manager.broadcast({"type": "tasks_updated"})
+    return {"task": result_task}
 
 
 @app.patch("/tasks/{task_id}")
@@ -704,7 +758,7 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
     new_status = payload.get("status")
-    # Talent kirim ke review → buat notifikasi
+    # Talent kirim ke review → buat notifikasi + broadcast alarm
     if new_status == "menunggu_review":
         try:
             await db.notifications.insert_one({
@@ -720,6 +774,11 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
             })
         except Exception:
             pass
+        await manager.broadcast({
+            "type": "task_alert",
+            "task_title": updated.get("title", ""),
+            "assignee": updated.get("assignee", ""),
+        })
     # Keluar dari review (approved/rejected) → tandai notifikasi terkait sebagai dibaca
     elif new_status in ["done", "in progress", "failed"]:
         try:
@@ -730,6 +789,7 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
         except Exception:
             pass
 
+    await manager.broadcast({"type": "tasks_updated"})
     return {"task": format_task(updated)}
 
 
@@ -742,6 +802,7 @@ async def delete_task(task_id: str, current_user: dict = Depends(get_current_use
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete task")
+    await manager.broadcast({"type": "tasks_updated"})
     return {"deleted": True}
 
 
@@ -1103,6 +1164,7 @@ async def create_announcement(data: AnnouncementCreate, current_user: dict = Dep
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     result = await db.announcements.insert_one(doc)
+    await manager.broadcast({"type": "announcements_updated"})
     return {"announcement": format_announcement({**doc, "_id": result.inserted_id})}
 
 
@@ -1116,6 +1178,7 @@ async def update_announcement(ann_id: str, data: AnnouncementUpdate, current_use
     try:
         await db.announcements.update_one({"_id": object_id}, {"$set": payload})
         updated = await db.announcements.find_one({"_id": object_id})
+        await manager.broadcast({"type": "announcements_updated"})
         return {"announcement": format_announcement(updated)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1130,6 +1193,7 @@ async def delete_announcement(ann_id: str, current_user: dict = Depends(get_curr
         await db.announcements.delete_one({"_id": object_id})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    await manager.broadcast({"type": "announcements_updated"})
     return {"deleted": True}
 
 
@@ -1186,6 +1250,7 @@ async def create_schedule_event(data: ScheduleEventCreate, current_user: dict = 
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     result = await db.schedule.insert_one(doc)
+    await manager.broadcast({"type": "schedule_updated"})
     return {"event": format_schedule_event({**doc, "_id": result.inserted_id})}
 
 
@@ -1200,6 +1265,7 @@ async def update_schedule_event(event_id: str, data: ScheduleEventUpdate, curren
     try:
         await db.schedule.update_one({"_id": object_id}, {"$set": payload})
         updated = await db.schedule.find_one({"_id": object_id})
+        await manager.broadcast({"type": "schedule_updated"})
         return {"event": format_schedule_event(updated)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1214,6 +1280,7 @@ async def delete_schedule_event(event_id: str, current_user: dict = Depends(get_
         await db.schedule.delete_one({"_id": object_id})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    await manager.broadcast({"type": "schedule_updated"})
     return {"deleted": True}
 
 
