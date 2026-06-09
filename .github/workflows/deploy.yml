@@ -29,19 +29,26 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            User root
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
 
       - name: Copy frontend build to VPS
         run: |
-          ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} "rm -rf /root/admin-dashboard/frontend/dist && mkdir -p /root/admin-dashboard/frontend/dist"
-          scp -i ~/.ssh/deploy_key -r frontend/dist/* root@${{ secrets.VPS_HOST }}:/root/admin-dashboard/frontend/dist/
+          ssh vps "rm -rf /root/admin-dashboard/frontend/dist && mkdir -p /root/admin-dashboard/frontend/dist"
+          scp -r frontend/dist/* vps:/root/admin-dashboard/frontend/dist/
 
       - name: Copy backend to VPS
         run: |
-          scp -i ~/.ssh/deploy_key backend/main.py root@${{ secrets.VPS_HOST }}:/root/admin-dashboard/backend/
+          scp backend/main.py vps:/root/admin-dashboard/backend/
 
       - name: Restart service
         run: |
-          ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} "systemctl restart admin-dashboard"
+          ssh vps "systemctl restart admin-dashboard"
