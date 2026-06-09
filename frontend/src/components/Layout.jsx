@@ -4,6 +4,7 @@ import {
   LayoutDashboard, ClipboardList, Kanban, MessageSquare,
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
+  Megaphone, CalendarDays,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -12,31 +13,31 @@ const NAV_SECTIONS = [
   {
     label: "Main Menu",
     items: [
-      { to: "/dashboard",  label: "Dashboard",  icon: LayoutDashboard },
-      { to: "/daily-chat", label: "Daily Chat",  icon: MessageSquare },
-      { to: "/orders",     label: "Orders",      icon: ClipboardList },
-      { to: "/board",      label: "Board",       icon: Kanban },
-      { to: "/todo",       label: "To Do",       icon: CheckSquare },
+      { to: "/dashboard",    label: "Dashboard",    icon: LayoutDashboard, roles: ["admin", "pm"] },
+      { to: "/daily-chat",   label: "Daily Chat",   icon: MessageSquare,   roles: ["admin", "pm"] },
+      { to: "/orders",       label: "Orders",       icon: ClipboardList,   roles: ["admin", "pm"] },
+      { to: "/board",        label: "Board",        icon: Kanban,          roles: ["admin", "pm", "talent"] },
+      { to: "/todo",         label: "To Do",        icon: CheckSquare,     roles: ["admin", "pm", "talent"] },
     ],
   },
   {
     label: "Keuangan",
     items: [
-      { to: "/invoice",    label: "Invoice",     icon: FileText },
-      { to: "/earnings",   label: "Earnings",    icon: DollarSign },
-      { to: "/performance",label: "Performance", icon: TrendingUp },
+      { to: "/invoice",      label: "Invoice",      icon: FileText,        roles: ["admin", "pm"] },
+      { to: "/earnings",     label: "Earnings",     icon: DollarSign,      roles: ["admin", "pm"] },
+      { to: "/performance",  label: "Performance",  icon: TrendingUp,      roles: ["admin", "pm", "talent"] },
     ],
   },
   {
     label: "Tim",
     items: [
-      { to: "/freelance",  label: "Freelance",   icon: Users },
-      { to: "/settings",   label: "Settings",    icon: SettingsIcon },
+      { to: "/pengumuman",   label: "Pengumuman",   icon: Megaphone,       roles: ["admin", "pm", "talent"] },
+      { to: "/schedule",     label: "Schedule",     icon: CalendarDays,    roles: ["admin", "pm", "talent"] },
+      { to: "/freelance",    label: "Freelance",    icon: Users,           roles: ["admin", "pm"] },
+      { to: "/settings",     label: "Settings",     icon: SettingsIcon,    roles: ["admin", "pm"] },
     ],
   },
 ];
-
-const ALL_ITEMS = NAV_SECTIONS.flatMap((s) => s.items);
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
@@ -46,22 +47,28 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const role = user?.role || "talent";
+
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
-  const currentPage = ALL_ITEMS.find((i) => location.pathname.startsWith(i.to));
+  const visibleSections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => item.roles.includes(role)),
+  })).filter((section) => section.items.length > 0);
+
+  const allVisibleItems = visibleSections.flatMap((s) => s.items);
+  const currentPage = allVisibleItems.find((i) => location.pathname.startsWith(i.to));
 
   const filteredItems = search
-    ? ALL_ITEMS.filter((i) => i.label.toLowerCase().includes(search.toLowerCase()))
+    ? allVisibleItems.filter((i) => i.label.toLowerCase().includes(search.toLowerCase()))
     : null;
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col">
-      {/* Logo */}
       <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
         <img src="/logo.png" alt="Magsika Studio" className="h-8 w-auto object-contain" />
       </div>
 
-      {/* Search */}
       <div className="px-4 py-3">
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -74,7 +81,6 @@ export default function Layout({ children }) {
         </div>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-1">
         {filteredItems ? (
           <div className="space-y-0.5">
@@ -82,7 +88,7 @@ export default function Layout({ children }) {
             {filteredItems.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">Tidak ditemukan.</p>}
           </div>
         ) : (
-          NAV_SECTIONS.map((section) => (
+          visibleSections.map((section) => (
             <div key={section.label} className="mb-4">
               <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{section.label}</p>
               <div className="space-y-0.5">
@@ -93,7 +99,6 @@ export default function Layout({ children }) {
         )}
       </nav>
 
-      {/* Currency toggle */}
       <div className="border-t border-slate-100 px-4 py-3">
         <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
           <span className="text-xs font-semibold text-slate-500">Tampilkan harga</span>
@@ -106,7 +111,6 @@ export default function Layout({ children }) {
         </div>
       </div>
 
-      {/* User */}
       <div className="border-t border-slate-100 px-4 py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -128,12 +132,10 @@ export default function Layout({ children }) {
 
   return (
     <div className="flex overflow-hidden bg-slate-50" style={{ height: "125vh" }}>
-      {/* Desktop sidebar */}
       <aside className="hidden w-56 shrink-0 overflow-hidden border-r border-slate-200 bg-white lg:flex lg:flex-col">
         <SidebarContent />
       </aside>
 
-      {/* Mobile sidebar overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
@@ -148,9 +150,7 @@ export default function Layout({ children }) {
         </div>
       )}
 
-      {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top bar */}
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3.5 shadow-sm">
           <div className="flex items-center gap-3">
             <button onClick={() => setMobileOpen(true)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 lg:hidden">
@@ -171,7 +171,6 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 overflow-y-auto p-5 lg:p-6">
           {children}
         </main>

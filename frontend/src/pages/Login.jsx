@@ -1,13 +1,13 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ShieldCheck } from "lucide-react";
 
 export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("password");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -16,10 +16,15 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      await login({ username, password });
-      navigate("/dashboard", { replace: true });
+      const result = await login({ username, password });
+      const role = result.user?.role;
+      navigate(role === "talent" ? "/todo" : "/dashboard", { replace: true });
     } catch (err) {
-      setError("Login gagal. Coba username/password yang benar.");
+      if (err.response?.status === 403) {
+        setError("Akun kamu sedang menunggu persetujuan admin.");
+      } else {
+        setError("Username atau password salah.");
+      }
     } finally {
       setLoading(false);
     }
@@ -34,29 +39,37 @@ export default function Login() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold">Masuk ke Dashboard</h1>
-            <p className="text-sm text-slate-500">Gunakan akun mock untuk melanjutkan.</p>
+            <p className="text-sm text-slate-500">Magsika Studio Admin.</p>
           </div>
         </div>
 
         <form className="space-y-5" onSubmit={handleSubmit}>
-          <label className="block text-sm font-medium text-slate-700">Username</label>
-          <input
-            autoComplete="username"
-            className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+            <input
+              autoComplete="username"
+              className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+          </div>
 
-          <label className="block text-sm font-medium text-slate-700">Password</label>
-          <input
-            type="password"
-            autoComplete="current-password"
-            className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <input
+              type="password"
+              autoComplete="current-password"
+              className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
 
-          {error && <p className="text-sm text-rose-600">{error}</p>}
+          {error && (
+            <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{error}</p>
+          )}
 
           <button
             type="submit"
@@ -67,11 +80,12 @@ export default function Login() {
           </button>
         </form>
 
-        <div className="mt-6 rounded-3xl bg-slate-50 px-4 py-4 text-sm text-slate-600">
-          <p className="font-medium">Akun demo:</p>
-          <p>username: <span className="font-semibold">admin</span></p>
-          <p>password: <span className="font-semibold">password</span></p>
-        </div>
+        <p className="mt-6 text-center text-sm text-slate-500">
+          Belum punya akun?{" "}
+          <Link to="/register" className="font-semibold text-violet-600 hover:underline">
+            Daftar sekarang
+          </Link>
+        </p>
       </div>
     </div>
   );
