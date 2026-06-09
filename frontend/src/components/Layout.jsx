@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ClipboardList, Kanban, MessageSquare,
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
-  Megaphone, CalendarDays, Bell,
+  Megaphone, CalendarDays, Bell, Zap, Target,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -19,6 +19,7 @@ const NAV_SECTIONS = [
       { to: "/orders",       label: "Orders",       icon: ClipboardList,   roles: ["admin", "pm"] },
       { to: "/board",        label: "Board",        icon: Kanban,          roles: ["admin", "pm", "talent"] },
       { to: "/todo",         label: "To Do",        icon: CheckSquare,     roles: ["admin", "pm", "talent"] },
+      { to: "/performance",  label: "Performance",  icon: TrendingUp,      roles: ["admin", "pm", "talent"] },
     ],
   },
   {
@@ -26,17 +27,23 @@ const NAV_SECTIONS = [
     items: [
       { to: "/invoice",      label: "Invoice",      icon: FileText,        roles: ["admin", "pm"] },
       { to: "/earnings",     label: "Earnings",     icon: DollarSign,      roles: ["admin", "pm"] },
-      { to: "/performance",  label: "Performance",  icon: TrendingUp,      roles: ["admin", "pm", "talent"] },
     ],
   },
   {
     label: "Tim",
     items: [
       { to: "/pengumuman",   label: "Pengumuman",   icon: Megaphone,       roles: ["admin", "pm", "talent"] },
-      { to: "/schedule",       label: "Schedule",       icon: CalendarDays,    roles: ["admin", "pm", "talent"] },
-      { to: "/notifications",  label: "Notifikasi",     icon: Bell,            roles: ["admin", "pm"] },
-      { to: "/freelance",      label: "Freelance",      icon: Users,           roles: ["admin", "pm"] },
+      { to: "/schedule",     label: "Schedule",     icon: CalendarDays,    roles: ["admin", "pm", "talent"] },
+      { to: "/notifications",label: "Notifikasi",   icon: Bell,            roles: ["admin", "pm"] },
+      { to: "/freelance",    label: "Freelance",    icon: Users,           roles: ["admin", "pm"] },
       { to: "/settings",     label: "Settings",     icon: SettingsIcon,    roles: ["admin", "pm"] },
+    ],
+  },
+  {
+    label: "Strategi",
+    items: [
+      { to: "/rencana/teknis", label: "Rencana Teknis",  icon: Zap,     roles: ["admin", "pm"] },
+      { to: "/rencana/market", label: "Rencana Market",  icon: Target,  roles: ["admin", "pm"] },
     ],
   },
 ];
@@ -100,7 +107,7 @@ export default function Layout({ children }) {
       <nav className="flex-1 overflow-y-auto px-3 py-1">
         {filteredItems ? (
           <div className="space-y-0.5">
-            {filteredItems.map((item) => <NavItem key={item.to} item={item} />)}
+            {filteredItems.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : 0} />)}
             {filteredItems.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">Tidak ditemukan.</p>}
           </div>
         ) : (
@@ -108,7 +115,7 @@ export default function Layout({ children }) {
             <div key={section.label} className="mb-4">
               <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{section.label}</p>
               <div className="space-y-0.5">
-                {section.items.map((item) => <NavItem key={item.to} item={item} />)}
+                {section.items.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : 0} />)}
               </div>
             </div>
           ))
@@ -209,7 +216,7 @@ export default function Layout({ children }) {
   );
 }
 
-function NavItem({ item }) {
+function NavItem({ item, badge = 0 }) {
   return (
     <NavLink
       to={item.to}
@@ -224,7 +231,12 @@ function NavItem({ item }) {
       {({ isActive }) => (
         <>
           <item.icon size={16} className={isActive ? "text-violet-600" : "text-slate-400"} />
-          {item.label}
+          <span className="flex-1">{item.label}</span>
+          {badge > 0 && (
+            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">
+              {badge > 99 ? "99+" : badge}
+            </span>
+          )}
         </>
       )}
     </NavLink>

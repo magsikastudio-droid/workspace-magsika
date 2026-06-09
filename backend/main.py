@@ -1281,3 +1281,45 @@ async def mark_notification_read(notif_id: str, current_user: dict = Depends(get
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True}
+
+
+# ─── Strategic Plans ──────────────────────────────────────────────────────────
+
+@app.get("/strategic-plan/{plan_type}")
+async def get_strategic_plan(plan_type: str, current_user: dict = Depends(get_current_user)):
+    if plan_type not in ["teknis", "market"]:
+        raise HTTPException(status_code=400, detail="Invalid plan type")
+    try:
+        doc = await db.strategic_plans.find_one({"type": plan_type})
+        if not doc:
+            return {"plan": None}
+        return {"plan": {
+            "type": doc["type"],
+            "sections": doc.get("sections", []),
+            "updated_at": doc.get("updated_at", ""),
+            "updated_by": doc.get("updated_by", ""),
+        }}
+    except Exception:
+        return {"plan": None}
+
+
+@app.put("/strategic-plan/{plan_type}")
+async def save_strategic_plan(plan_type: str, data: dict, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if plan_type not in ["teknis", "market"]:
+        raise HTTPException(status_code=400, detail="Invalid plan type")
+    try:
+        await db.strategic_plans.update_one(
+            {"type": plan_type},
+            {"$set": {
+                "type": plan_type,
+                "sections": data.get("sections", []),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_by": current_user.get("full_name", ""),
+            }},
+            upsert=True,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}

@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
+import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import {
   Activity, BarChart3, ChevronLeft, ChevronRight, Clock, Star,
-  TrendingUp, Users, Zap, FolderOpen,
+  TrendingUp, Users, Zap, FolderOpen, CheckCircle2, Timer,
 } from "lucide-react";
-import { getArtistColor, normalizeStatus } from "../lib/constants";
+import { normalizeStatus } from "../lib/constants";
 import { monthKey, monthLabel } from "../lib/format";
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
@@ -24,22 +25,276 @@ const fmtTime = (s) => {
 const avatarColors = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899","#84cc16"];
 const getColor = (name) => {
   let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  for (let i = 0; i < (name || "").length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
   return avatarColors[Math.abs(h) % avatarColors.length];
 };
 
-/* ─── main ─────────────────────────────────────────────────────────── */
+/* ─── root ─────────────────────────────────────────────────────────── */
 export default function Performance() {
+  const { user } = useAuth();
+  const role = user?.role || "talent";
+  const isAdminOrPM = role === "admin" || role === "pm";
+
+  if (isAdminOrPM) return <AdminPerformance />;
+  return <TalentPerformance user={user} />;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   TALENT VIEW
+══════════════════════════════════════════════════════════════════ */
+function TalentPerformance({ user }) {
+  const { orders } = useOrders();
+  const myName = user?.full_name || user?.name || "";
+
+  const today = new Date();
+  const [selYear, setSelYear] = useState(today.getFullYear());
+  const [selMonth, setSelMonth] = useState(today.getMonth());
+  const monthStr = `${selYear}-${String(selMonth + 1).padStart(2, "0")}`;
+
+  const [summary, setSummary] = useState({ artists: [], orders: [] });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get("/tasks/summary", { params: { month: monthStr } })
+      .then((r) => setSummary(r.data || { artists: [], orders: [] }))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [monthStr]);
+
+  const prevMonth = () => {
+    if (selMonth === 0) { setSelYear((y) => y - 1); setSelMonth(11); }
+    else setSelMonth((m) => m - 1);
+  };
+  const nextMonth = () => {
+    if (selMonth === 11) { setSelYear((y) => y + 1); setSelMonth(0); }
+    else setSelMonth((m) => m + 1);
+  };
+
+  const myStats = useMemo(() =>
+    summary.artists.find((a) => a.name === myName) || { tasks: 0, done: 0, failed: 0, in_progress: 0, time: 0 },
+    [summary.artists, myName]
+  );
+
+  const orderById = useMemo(() => {
+    const m = {};
+    orders.forEach((o) => { m[o.id] = o; });
+    return m;
+  }, [orders]);
+
+  const myOrders = useMemo(() =>
+    summary.orders
+      .filter((os) => (os.assignees || []).includes(myName))
+      .map((os) => ({ ...os, order: orderById[os.order_id] || null }))
+      .filter((os) => os.order)
+      .sort((a, b) => b.time - a.time),
+    [summary.orders, myName, orderById]
+  );
+
+  const doneRate = myStats.tasks > 0 ? Math.round((myStats.done / myStats.tasks) * 100) : 0;
+  const color = getColor(myName);
+
+  // Riwayat per bulan — last 6 months
+  const [historyData, setHistoryData] = useState([]);
+  useEffect(() => {
+    const fetchAll = async () => {
+      const months = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(selYear, selMonth - i, 1);
+        const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        months.push(k);
+      }
+      const results = await Promise.all(
+        months.map((m) =>
+          api.get("/tasks/summary", { params: { month: m } })
+            .then((r) => ({ month: m, data: r.data }))
+            .catch(() => ({ month: m, data: null }))
+        )
+      );
+      setHistoryData(results.map(({ month, data }) => {
+        const artist = data?.artists?.find((a) => a.name === myName);
+        const myOrdCount = (data?.orders || []).filter((os) => (os.assignees || []).includes(myName)).length;
+        return {
+          month,
+          label: monthLabel(month)?.slice(0, 3) || month,
+          tasks: artist?.tasks || 0,
+          done: artist?.done || 0,
+          time: artist?.time || 0,
+          orders: myOrdCount,
+        };
+      }));
+    };
+    fetchAll();
+  }, [selYear, selMonth, myName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const maxTasks = Math.max(...historyData.map((h) => h.done), 1);
+
+  return (
+    <div className="space-y-5 max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-bold text-white shrink-0" style={{ background: color }}>
+            {myName?.charAt(0)?.toUpperCase() || "?"}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">{myName || "Saya"}</h1>
+            <p className="text-sm text-slate-400">Performa saya — {MONTH_NAMES[selMonth]} {selYear}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+          <button onClick={prevMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><ChevronLeft size={16} /></button>
+          <div className="flex items-center gap-2 min-w-[150px] justify-center">
+            <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))} className="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+              {[selYear - 1, selYear, selYear + 1].map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))} className="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+              {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+            </select>
+          </div>
+          <button onClick={nextMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><ChevronRight size={16} /></button>
+        </div>
+      </div>
+
+      {/* Stats kartu */}
+      {loading ? (
+        <div className="rounded-2xl border border-slate-200 bg-white py-12 text-center text-sm text-slate-400">Memuat data...</div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-emerald-500">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Task Done</p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">{myStats.done}</p>
+            <p className="mt-1 text-xs text-slate-400">dari {myStats.tasks} total</p>
+          </div>
+          <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-violet-500">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Done Rate</p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">{doneRate}%</p>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full transition-all" style={{ width: `${doneRate}%`, background: color }} />
+            </div>
+          </div>
+          <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-sky-500">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Waktu Kerja</p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">{fmtTime(myStats.time) === "—" ? "0" : fmtTime(myStats.time)}</p>
+            <p className="mt-1 text-xs text-slate-400">akumulasi timer</p>
+          </div>
+          <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-amber-500">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Project</p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">{myOrders.length}</p>
+            <p className="mt-1 text-xs text-slate-400">dikerjakan bulan ini</p>
+          </div>
+        </div>
+      )}
+
+      {/* Riwayat 6 bulan chart */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-4">
+          <p className="font-bold text-slate-900">Aktivitas 6 Bulan Terakhir</p>
+          <p className="text-xs text-slate-400">Task diselesaikan per bulan</p>
+        </div>
+        <div className="px-6 py-5">
+          <div className="flex items-end gap-2 h-32">
+            {historyData.map((h) => {
+              const pct = Math.round((h.done / maxTasks) * 100);
+              const isCurrent = h.month === monthStr;
+              return (
+                <div key={h.month} className="flex flex-1 flex-col items-center gap-1 group">
+                  {h.done > 0 && (
+                    <span className="text-[9px] text-slate-400 font-semibold hidden group-hover:block">{h.done} task</span>
+                  )}
+                  <div
+                    className="w-full rounded-t-xl transition-all"
+                    style={{
+                      height: `${Math.max(pct, 4)}%`,
+                      minHeight: "6px",
+                      background: isCurrent
+                        ? `linear-gradient(to top, ${color}cc, ${color})`
+                        : "linear-gradient(to top, #cbd5e1, #e2e8f0)",
+                    }}
+                  />
+                  <span className={`text-[10px] font-semibold ${isCurrent ? "text-violet-700" : "text-slate-400"}`}>
+                    {h.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Riwayat project bulan ini */}
+      {myOrders.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-6 py-4">
+            <p className="font-bold text-slate-900">Project yang Dikerjakan</p>
+            <p className="text-xs text-slate-400">{MONTH_NAMES[selMonth]} {selYear}</p>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {myOrders.map((os) => {
+              const o = os.order;
+              const myDone = os.done_by_assignee?.[myName] ?? os.done;
+              const myTasks = os.tasks_by_assignee?.[myName] ?? os.tasks;
+              const rate = myTasks > 0 ? Math.round((myDone / myTasks) * 100) : 0;
+              return (
+                <div key={os.order_id} className="flex items-start gap-4 px-6 py-4">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white" style={{ background: color }}>
+                    {o.project?.charAt(0)?.toUpperCase() || "?"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 truncate">{o.project}</p>
+                        <p className="text-xs text-indigo-500 font-mono">{o.folder_code || o.client}</p>
+                      </div>
+                      {os.time > 0 && (
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-bold text-slate-700 font-mono">{fmtTime(os.time)}</p>
+                          <p className="text-xs text-slate-400">waktu kerja</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {os.tasks > 0 && <span className="text-xs rounded-lg bg-slate-100 px-2 py-0.5 text-slate-500">{os.tasks} task</span>}
+                      {os.done > 0 && <span className="text-xs rounded-lg bg-emerald-50 px-2 py-0.5 text-emerald-700 font-semibold">✓ {os.done} done</span>}
+                      {normalizeStatus(o.status) === "Done" && (
+                        <span className="text-xs rounded-lg bg-emerald-100 px-2 py-0.5 text-emerald-800 font-semibold">Project Selesai</span>
+                      )}
+                    </div>
+                    {os.tasks > 0 && (
+                      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${rate}%` }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {myOrders.length === 0 && !loading && (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-12 text-center">
+          <CheckCircle2 size={32} className="mx-auto mb-3 text-slate-200" />
+          <p className="font-semibold text-slate-400">Belum ada project di {MONTH_NAMES[selMonth]} {selYear}.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ADMIN / PM VIEW  (same as before, extracted here)
+══════════════════════════════════════════════════════════════════ */
+function AdminPerformance() {
   const { orders } = useOrders();
   const { formatMoney } = useCurrency();
 
-  // Month selection
   const today = new Date();
   const [selYear, setSelYear]   = useState(today.getFullYear());
-  const [selMonth, setSelMonth] = useState(today.getMonth()); // 0-indexed
+  const [selMonth, setSelMonth] = useState(today.getMonth());
   const monthStr = `${selYear}-${String(selMonth + 1).padStart(2, "0")}`;
 
-  // Task summary from backend
   const [summary, setSummary] = useState({ artists: [], orders: [], total_tasks: 0, total_time: 0 });
   const [loadingTasks, setLoadingTasks] = useState(false);
   useEffect(() => {
@@ -50,28 +305,25 @@ export default function Performance() {
       .finally(() => setLoadingTasks(false));
   }, [monthStr]);
 
-  // Orders filtered to selected month
   const monthOrders = useMemo(() =>
     orders.filter((o) => {
       const d = o.order_date || o.created_at?.slice(0, 10) || "";
       return d.startsWith(monthStr);
     }), [orders, monthStr]);
 
-  const revenue     = monthOrders.reduce((s, o) => s + (o.total || 0), 0);
-  const doneOrders  = monthOrders.filter((o) => normalizeStatus(o.status) === "Done").length;
-  const activeOrds  = monthOrders.filter((o) => {
+  const revenue    = monthOrders.reduce((s, o) => s + (o.total || 0), 0);
+  const doneOrders = monthOrders.filter((o) => normalizeStatus(o.status) === "Done").length;
+  const activeOrds = monthOrders.filter((o) => {
     const s = normalizeStatus(o.status);
     return s !== "Done" && s !== "Cancel";
   }).length;
 
-  // Order map for joining with task summary
   const orderById = useMemo(() => {
     const m = {};
     orders.forEach((o) => { m[o.id] = o; });
     return m;
   }, [orders]);
 
-  // ── Pipeline & Health — current snapshot (tidak filter bulan) ──
   const pipeline = useMemo(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -85,7 +337,6 @@ export default function Performance() {
       const start = new Date(o.order_date || o.created_at || Date.now());
       return (now - start) / 86400000 > 3;
     });
-    // Backlog per artist: count active orders per artist
     const backlogMap = {};
     active.forEach((o) => {
       (o.artists || []).forEach((a) => {
@@ -96,7 +347,6 @@ export default function Performance() {
     return { active: active.length, overdue: overdue.length, stuck: stuck.length, overdueList: overdue, stuckList: stuck, backlog };
   }, [orders]);
 
-  // ── Per-artist order-based metrics (bulan ini) ──
   const artistOrderStats = useMemo(() => {
     const map = {};
     monthOrders.forEach((o) => {
@@ -105,12 +355,10 @@ export default function Performance() {
         if (!map[a]) map[a] = { totalTurnaround: 0, turnaroundCount: 0, onTime: 0, onTimeTotal: 0, totalRevisions: 0, orderCount: 0 };
         map[a].orderCount++;
         map[a].totalRevisions += (o.revision_count || 0);
-        // Turnaround: deadline - order_date untuk Done orders
         if (normalizeStatus(o.status) === "Done" && o.deadline && o.order_date) {
           const days = Math.ceil((new Date(o.deadline) - new Date(o.order_date)) / 86400000);
           if (days > 0) { map[a].totalTurnaround += days; map[a].turnaroundCount++; }
         }
-        // On-time: Done orders where completed_at <= deadline
         if (normalizeStatus(o.status) === "Done" && o.deadline) {
           map[a].onTimeTotal++;
           const completedAt = o.completed_at ? new Date(o.completed_at) : null;
@@ -121,7 +369,6 @@ export default function Performance() {
     return map;
   }, [monthOrders]);
 
-  // Order stats enriched with order info
   const orderTaskStats = useMemo(() =>
     summary.orders
       .map((os) => ({ ...os, order: orderById[os.order_id] || null }))
@@ -130,14 +377,12 @@ export default function Performance() {
     [summary.orders, orderById]
   );
 
-  // Revenue chart — last 6 months up to selected month
   const revenueChart = useMemo(() => {
     const map = {};
     orders.forEach((o) => {
       const mk = monthKey(o.created_at || o.order_date);
       if (mk) map[mk] = (map[mk] || 0) + (o.total || 0);
     });
-    // build 6-month window ending at current selMonth
     const months = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(selYear, selMonth - i, 1);
@@ -165,10 +410,9 @@ export default function Performance() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Performance</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Performance Tim</h1>
           <p className="mt-0.5 text-sm text-slate-500">Tracking progress tim bulanan — {MONTH_NAMES[selMonth]} {selYear}</p>
         </div>
-        {/* Month nav */}
         <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
           <button onClick={prevMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
             <ChevronLeft size={16} />
@@ -238,7 +482,6 @@ export default function Performance() {
                             <p className="text-xs text-slate-400">task done</p>
                           </div>
                         </div>
-                        {/* Task chips */}
                         <div className="flex flex-wrap gap-1.5 mb-2">
                           <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{artist.tasks} task</span>
                           {artist.done > 0 && <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">✓ {artist.done} done</span>}
@@ -246,7 +489,6 @@ export default function Performance() {
                           {artist.in_progress > 0 && <span className="inline-flex items-center rounded-lg bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">◌ {artist.in_progress} jalan</span>}
                           {artist.time > 0 && <span className="inline-flex items-center rounded-lg bg-indigo-50 px-2 py-1 text-xs font-mono font-semibold text-indigo-700">⏱ {fmtTime(artist.time)}</span>}
                         </div>
-                        {/* Order-based metrics */}
                         {(avgTurnaround !== null || onTimeRate !== null || avgRevision !== null) && (
                           <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 px-3 py-2">
                             {avgTurnaround !== null && (
@@ -269,7 +511,6 @@ export default function Performance() {
                             )}
                           </div>
                         )}
-                        {/* Progress bar */}
                         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                           <div className="h-full rounded-full transition-all" style={{ width: `${rate}%`, background: `linear-gradient(90deg, ${color}aa, ${color})` }} />
                         </div>
@@ -318,7 +559,6 @@ export default function Performance() {
               })}
             </div>
           </div>
-          {/* Summary */}
           <div className="border-t border-slate-100 px-6 py-4 space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Total revenue</span>
@@ -336,7 +576,6 @@ export default function Performance() {
         </div>
       </div>
 
-      {/* Aktivitas detail — tasks per order */}
       {orderTaskStats.length > 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
@@ -388,10 +627,7 @@ export default function Performance() {
         </div>
       )}
 
-      {/* Pipeline & Health */}
       <PipelineHealth pipeline={pipeline} />
-
-      {/* All-time artist stats */}
       <AllTimeSection orders={orders} formatMoney={formatMoney} />
     </div>
   );
@@ -405,10 +641,9 @@ function PipelineHealth({ pipeline }) {
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 px-6 py-4">
         <p className="font-bold text-slate-900">Pipeline & Health</p>
-        <p className="text-xs text-slate-400">Snapshot kondisi order saat ini (realtime, tidak difilter bulan)</p>
+        <p className="text-xs text-slate-400">Snapshot kondisi order saat ini</p>
       </div>
       <div className="p-6 space-y-5">
-        {/* 4 metric tiles */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-2xl bg-sky-50 border border-sky-100 px-4 py-3 text-center">
             <p className="text-2xl font-bold text-sky-700">{pipeline.active}</p>
@@ -427,8 +662,6 @@ function PipelineHealth({ pipeline }) {
             <p className="mt-0.5 text-xs text-slate-400 font-semibold">Artist Backlog</p>
           </div>
         </div>
-
-        {/* Overdue list */}
         {showOverdue && pipeline.overdueList.length > 0 && (
           <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-rose-500">Order Overdue</p>
@@ -445,8 +678,6 @@ function PipelineHealth({ pipeline }) {
             </div>
           </div>
         )}
-
-        {/* Stuck list */}
         {showStuck && pipeline.stuckList.length > 0 && (
           <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-amber-500">Order Pending &gt; 3 Hari</p>
@@ -466,8 +697,6 @@ function PipelineHealth({ pipeline }) {
             </div>
           </div>
         )}
-
-        {/* Backlog per artist */}
         {pipeline.backlog.length > 0 && (
           <div>
             <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Backlog per Artist</p>
@@ -503,7 +732,6 @@ function PipelineHealth({ pipeline }) {
 /* ─── AllTimeSection ─────────────────────────────────────────────── */
 function AllTimeSection({ orders, formatMoney }) {
   const [open, setOpen] = useState(false);
-
   const artistStats = useMemo(() => {
     const map = {};
     orders.forEach((o) => {
@@ -519,13 +747,9 @@ function AllTimeSection({ orders, formatMoney }) {
       .sort((a, b) => b[1].orders - a[1].orders)
       .map(([name, d]) => ({ name, ...d, rate: d.orders ? Math.round((d.done / d.orders) * 100) : 0 }));
   }, [orders]);
-
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-6 py-4 text-left"
-      >
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between px-6 py-4 text-left">
         <div>
           <p className="font-bold text-slate-900">Statistik All-Time per Artist</p>
           <p className="text-xs text-slate-400">Berdasarkan seluruh riwayat order</p>
@@ -540,10 +764,7 @@ function AllTimeSection({ orders, formatMoney }) {
             <div className="divide-y divide-slate-50">
               {artistStats.map((a) => (
                 <div key={a.name} className="flex items-center gap-4 px-6 py-3.5">
-                  <div
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white"
-                    style={{ background: getColor(a.name) }}
-                  >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white" style={{ background: getColor(a.name) }}>
                     {a.name.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">

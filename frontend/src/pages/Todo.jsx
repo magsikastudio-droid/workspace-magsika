@@ -200,7 +200,9 @@ export default function Todo() {
   const handleTimer = useCallback(async (task) => {
     if (task.timer_started) {
       const elapsed = getElapsed(task, Date.now());
-      await updateTask(task.id, { time_elapsed: elapsed, timer_started: null });
+      const payload = { time_elapsed: elapsed, timer_started: null };
+      if (task.status === "in progress") payload.status = "pending";
+      await updateTask(task.id, payload);
     } else {
       const payload = { timer_started: new Date().toISOString() };
       if (task.status === "pending") payload.status = "in progress";
@@ -736,7 +738,7 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
             {/* Total lintas hari + lintas assignee, per order */}
             {orderTotal !== null && (
               <div className="mt-3 border-t border-slate-200 pt-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Total Akumulasi Semua Tim (semua hari)</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Total Waktu Pengerjaan</p>
                 <p className="text-base font-mono font-bold text-indigo-700">
                   {orderTotal > 0 ? fmtElapsed(orderTotal) : "Belum ada waktu tercatat"}
                 </p>

@@ -23,6 +23,7 @@ import Earnings from "./pages/Earnings";
 import Pengumuman from "./pages/Pengumuman";
 import Schedule from "./pages/Schedule";
 import Notifications from "./pages/Notifications";
+import RencanaStrategis from "./pages/RencanaStrategis";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "./context/AuthContext";
 
@@ -66,6 +67,8 @@ function App() {
                             <Route path="/pengumuman" element={<Pengumuman />} />
                             <Route path="/schedule" element={<Schedule />} />
                             <Route path="/notifications" element={<RoleGuard allowedRoles={["admin","pm"]}><Notifications /></RoleGuard>} />
+                            <Route path="/rencana/:type" element={<RoleGuard allowedRoles={["admin","pm"]}><RencanaStrategis /></RoleGuard>} />
+                            <Route path="/rencana" element={<Navigate to="/rencana/teknis" replace />} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </Layout>
