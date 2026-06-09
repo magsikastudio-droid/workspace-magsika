@@ -3,8 +3,7 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ClipboardList, Kanban, MessageSquare,
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
-  Settings as SettingsIcon, LogOut, Search, Bell, ChevronDown,
-  Menu, X,
+  Settings as SettingsIcon, LogOut, Search, Menu, X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
