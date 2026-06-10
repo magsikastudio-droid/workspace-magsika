@@ -695,7 +695,7 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
   }, [task.order_id]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/50 backdrop-blur-sm px-0 sm:px-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-slate-950/50 backdrop-blur-sm px-0 sm:px-4" onClick={onClose}>
       <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className="h-1 w-10 rounded-full bg-slate-200" />
@@ -770,7 +770,7 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
 /* ─── TelegramConfirmModal ──────────────────────────────────────── */
 function TelegramConfirmModal({ task, onConfirm, onCancel }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm px-4">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm px-4">
       <div className="w-full max-w-sm rounded-3xl bg-white shadow-2xl overflow-hidden">
         <div className="bg-gradient-to-r from-sky-500 to-indigo-500 px-6 py-5">
           <div className="flex items-center gap-3">
@@ -828,7 +828,7 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
       <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5 sticky top-0 bg-white rounded-t-3xl z-10">
           <div>

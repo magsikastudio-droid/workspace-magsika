@@ -837,6 +837,32 @@ async def manual_auto_generate(req: AutoGenerateRequest = None, current_user: di
     return result
 
 
+@app.get("/tasks/contributions")
+async def tasks_order_contributions(order_id: str, current_user: dict = Depends(get_current_user)):
+    """Kontribusi aktual per artist untuk satu order berdasarkan task yang dikerjakan (lintas hari)."""
+    try:
+        records = await db.tasks.find({"order_id": order_id}).to_list(500)
+    except Exception:
+        records = []
+    amap: Dict[str, Any] = {}
+    for t in records:
+        a = t.get("assignee", "?")
+        if a not in amap:
+            amap[a] = {"tasks": 0, "done": 0, "time": 0, "type": t.get("assignee_type", "tim")}
+        amap[a]["tasks"] += 1
+        if t.get("status") == "done":
+            amap[a]["done"] += 1
+        amap[a]["time"] += t.get("time_elapsed", 0) or 0
+    total_time = sum(v["time"] for v in amap.values())
+    total_tasks = sum(v["tasks"] for v in amap.values())
+    contribs = []
+    for name, stats in amap.items():
+        pct = round(stats["time"] / total_time * 100) if total_time > 0 else (round(stats["tasks"] / total_tasks * 100) if total_tasks > 0 else 0)
+        contribs.append({"name": name, "type": stats["type"], "tasks": stats["tasks"], "done": stats["done"], "time": stats["time"], "percent": pct})
+    contribs.sort(key=lambda x: x["time"], reverse=True)
+    return {"contributions": contribs, "total_time": total_time, "total_tasks": total_tasks}
+
+
 @app.get("/tasks/order-total")
 async def tasks_order_total(order_id: str, current_user: dict = Depends(get_current_user)):
     """Total akumulasi time_elapsed semua task dengan order_id yang sama (lintas hari)."""

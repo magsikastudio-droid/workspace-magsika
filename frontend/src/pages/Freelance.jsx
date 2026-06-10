@@ -412,7 +412,7 @@ export default function Freelance() {
 
       {/* Artist Modal */}
       {showArtistModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-md rounded-[2rem] bg-white p-6 shadow-2xl">
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-lg font-semibold">{editArtist ? "Edit Artist" : "Tambah Artist"}</h2>
@@ -452,7 +452,7 @@ export default function Freelance() {
 
       {/* Project Modal */}
       {showProjectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-lg font-semibold">{editProject ? "Edit Project" : "Tambah Project Freelance"}</h2>
@@ -547,7 +547,7 @@ export default function Freelance() {
 
       {/* Confirm delete artist */}
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-sm rounded-[2rem] bg-white p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-slate-900">Hapus Artist?</h2>
             <p className="mt-2 text-sm text-slate-500">

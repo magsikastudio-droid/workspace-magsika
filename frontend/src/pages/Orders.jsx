@@ -1,8 +1,9 @@
-import React, { useRef, useMemo, useState } from "react";
+import React, { useRef, useMemo, useState, useEffect } from "react";
 import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X, Calendar, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
+import { api } from "../lib/api";
 import {
   STATUS_OPTIONS, STATUS_COLORS,
   PLATFORM_OPTIONS, PAYMENT_OPTIONS, PAYMENT_COLORS,
@@ -309,7 +310,7 @@ export default function OrdersPage() {
                 <th className="px-4 py-3">Klien</th>
                 <th className="px-4 py-3">Kode Folder</th>
                 <th className="px-4 py-3">Value</th>
-                {!compactMode && <th className="px-4 py-3">Artist</th>}
+                <th className="px-4 py-3">Talent</th>
                 <th className="px-4 py-3">Deadline</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Payment</th>
@@ -337,9 +338,17 @@ export default function OrdersPage() {
                     <td className="px-4 py-3">
                       <p className="font-semibold text-slate-900 whitespace-nowrap">{formatMoney(order.total)}</p>
                     </td>
-                    {!compactMode && (
-                      <td className="px-4 py-3 text-sm text-slate-600">{(order.artists || []).join(", ") || "—"}</td>
-                    )}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        {(order.artists || []).slice(0, 3).map((a, i) => (
+                          <div key={i} title={a} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6"][Math.abs(a.split("").reduce((h,c)=>c.charCodeAt(0)+((h<<5)-h),0))%5] }}>
+                            {a.charAt(0).toUpperCase()}
+                          </div>
+                        ))}
+                        {(order.artists || []).length > 3 && <span className="text-[10px] text-slate-400">+{order.artists.length - 3}</span>}
+                        {(!order.artists || order.artists.length === 0) && <span className="text-xs text-slate-300">—</span>}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         {!isDone && deadlineDiff !== null && deadlineDiff < 0 && <span title="Overdue" className="text-rose-500">⚠</span>}
@@ -376,7 +385,7 @@ export default function OrdersPage() {
                 );
               })}
               {visibleOrders.length === 0 && (
-                <tr><td colSpan={8} className="py-12 text-center text-sm text-slate-400">Tidak ada order yang cocok.</td></tr>
+                <tr><td colSpan={9} className="py-12 text-center text-sm text-slate-400">Tidak ada order yang cocok.</td></tr>
               )}
             </tbody>
           </table>
@@ -404,7 +413,7 @@ export default function OrdersPage() {
       )}
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-7 shadow-2xl">
             <h2 className="text-lg font-bold text-slate-900">Hapus Order?</h2>
             <p className="mt-2 text-sm text-slate-500">Order <span className="font-semibold text-slate-800">{confirmDelete.project}</span> akan dihapus permanen dan tidak bisa dikembalikan.</p>
@@ -428,6 +437,15 @@ export default function OrdersPage() {
   );
 }
 
+function fmtSec(s) {
+  if (!s || s <= 0) return null;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}j ${m}m`;
+  return `${m}m`;
+}
+const AVATAR_COLORS = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4"];
+const artistColor = (name) => AVATAR_COLORS[Math.abs((name||"").split("").reduce((h,c)=>c.charCodeAt(0)+((h<<5)-h),0)) % AVATAR_COLORS.length];
+
 function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
   const { exchangeRate, formatMoney } = useCurrency();
   const [editing, setEditing] = useState(false);
@@ -439,6 +457,14 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
   });
   const [manualFolder, setManualFolder] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [dynamicContribs, setDynamicContribs] = useState(null);
+
+  useEffect(() => {
+    if (!order.id) return;
+    api.get("/tasks/contributions", { params: { order_id: order.id } })
+      .then((r) => { if ((r.data.contributions || []).length > 0) setDynamicContribs(r.data); })
+      .catch(() => {});
+  }, [order.id]);
 
   const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
   const setContrib = (idx, field, value) => setForm((p) => {
@@ -484,10 +510,10 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
   return (
     <>
       {/* Overlay */}
-      <div className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-[200] bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Drawer */}
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[500px] flex-col bg-white shadow-2xl">
+      <div className="fixed right-0 top-0 z-[300] flex w-full max-w-[500px] flex-col bg-white shadow-2xl" style={{ height: "100dvh" }}>
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-5">
           <div className="min-w-0 flex-1">
@@ -541,21 +567,37 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
 
               {/* Tim Artist */}
               <div className="px-6 py-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
+                  {dynamicContribs && (
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">Aktual dari task</span>
+                  )}
+                </div>
                 <div className="space-y-2">
-                  {(order.artist_contributions?.length ? order.artist_contributions : (order.artists || []).map((a) => ({ name: a, type: "Tim", percent: 100 }))).map((c, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-600">{c.name?.charAt(0)?.toUpperCase() || "?"}</div>
-                        <span className="text-sm font-medium text-slate-800">{c.name || "—"}</span>
+                  {(dynamicContribs?.contributions || order.artist_contributions?.length ? (dynamicContribs?.contributions || order.artist_contributions) : (order.artists || []).map((a) => ({ name: a, type: "Tim", percent: 100 }))).map((c, i) => (
+                    <div key={i} className="rounded-xl bg-slate-50 px-3 py-2.5">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: artistColor(c.name) }}>{c.name?.charAt(0)?.toUpperCase() || "?"}</div>
+                          <span className="text-sm font-medium text-slate-800">{c.name || "—"}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${c.type === "Freelance" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{c.type}</span>
+                          <span className="text-sm font-bold text-slate-700">{c.percent}%</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${c.type === "Freelance" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>{c.type}</span>
-                        <span className="text-xs font-semibold text-slate-500">{c.percent}%</span>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${c.percent}%`, background: artistColor(c.name) }} />
                       </div>
+                      {c.time > 0 && (
+                        <p className="mt-0.5 text-[10px] text-slate-400">{fmtSec(c.time)} · {c.done}/{c.tasks} task done</p>
+                      )}
                     </div>
                   ))}
                 </div>
+                {!dynamicContribs && (
+                  <p className="mt-2 text-[10px] text-slate-400 italic">Persentase diperbarui otomatis saat task dikerjakan.</p>
+                )}
               </div>
 
               {/* Keuangan */}
@@ -762,7 +804,7 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 backdrop-blur-sm px-4 py-6">
+    <div className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-slate-950/50 backdrop-blur-sm px-4 py-6">
       <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-7 py-5">

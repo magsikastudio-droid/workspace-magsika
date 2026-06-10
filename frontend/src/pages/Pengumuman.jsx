@@ -81,7 +81,7 @@ function AnnouncementModal({ initial, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
       <div className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-2xl">
         <div className="mb-5 flex items-center justify-between">
           <h3 className="text-lg font-semibold">{isEdit ? "Edit Pengumuman" : "Pengumuman Baru"}</h3>
