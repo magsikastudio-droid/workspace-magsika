@@ -52,7 +52,7 @@ jobs:
 
       - name: Install Python dependencies on VPS
         run: |
-          ssh vps "curl -sS https://bootstrap.pypa.io/pip/3.7/get-pip.py -o /tmp/get-pip.py && python3 /tmp/get-pip.py -q; python3 -m pip install -r /root/admin-dashboard/backend/requirements.txt -q"
+          ssh vps "/root/admin-dashboard/backend/.venv/bin/pip install -r /root/admin-dashboard/backend/requirements.txt -q"
 
       - name: Restart service
         run: |
