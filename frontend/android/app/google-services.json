@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "512515646734",
+    "project_id": "magsika-workspace",
+    "storage_bucket": "magsika-workspace.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:512515646734:android:9779bf13516d1a704b635f",
+        "android_client_info": {
+          "package_name": "com.magsika.workspace"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDWI8D8ryStr0QeDHqWr1wiMgAZPBqgtME"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
