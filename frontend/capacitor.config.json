@@ -2,6 +2,10 @@
   "appId": "com.magsika.workspace",
   "appName": "Magsika Workspace",
   "webDir": "dist",
+  "server": {
+    "url": "https://workspace.magsikastudio.com",
+    "cleartext": false
+  },
   "plugins": {
     "CapacitorHttp": {
       "enabled": true
