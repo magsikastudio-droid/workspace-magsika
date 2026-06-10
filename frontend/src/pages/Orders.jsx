@@ -50,11 +50,14 @@ export default function OrdersPage() {
   const { orders, loading, createOrder, updateOrder, deleteOrder } = useOrders();
   const ordersOnDay = (date) => orders.filter((o) => (o.order_date || o.created_at?.slice(0, 10)) === date).length;
   const { formatMoney } = useCurrency();
+  const _today = new Date();
+  const _currentMonth = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, "0")}`;
+
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState("Semua");
   const [statusFilter, setStatusFilter] = useState("Semua");
   const [paymentFilter, setPaymentFilter] = useState("Semua");
-  const [monthFilter, setMonthFilter] = useState("Semua");
+  const [monthFilter, setMonthFilter] = useState(_currentMonth);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importRows, setImportRows] = useState([]);
@@ -77,7 +80,13 @@ export default function OrdersPage() {
     orders
       .filter((o) => {
         const d = o.order_date || o.created_at?.slice(0, 10) || "";
-        if (monthFilter !== "Semua" && !d.startsWith(monthFilter)) return false;
+        if (monthFilter !== "Semua") {
+          const inMonth = d.startsWith(monthFilter);
+          const st = normalizeStatus(o.status);
+          const isActive = st !== "Done" && st !== "Cancel";
+          const isOverdue = isActive && o.deadline && o.deadline < todayStr();
+          if (!inMonth && !isOverdue) return false;
+        }
         if (search && ![o.project, o.client, o.status, o.platform, o.folder_code].some((v) => v?.toLowerCase().includes(search.toLowerCase()))) return false;
         if (platformFilter !== "Semua" && o.platform !== platformFilter) return false;
         if (statusFilter !== "Semua" && o.status !== statusFilter) return false;

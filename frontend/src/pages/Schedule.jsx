@@ -11,10 +11,10 @@ import { toast } from "sonner";
 
 const COLOR_OPTIONS = [
   { value: "violet", label: "Ungu", bg: "bg-violet-500", light: "bg-violet-100 text-violet-700 border-violet-200" },
-  { value: "sky", label: "Biru", bg: "bg-sky-500", light: "bg-sky-100 text-sky-700 border-sky-200" },
-  { value: "emerald", label: "Hijau", bg: "bg-emerald-500", light: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  { value: "rose", label: "Merah", bg: "bg-rose-500", light: "bg-rose-100 text-rose-700 border-rose-200" },
-  { value: "amber", label: "Kuning", bg: "bg-amber-500", light: "bg-amber-100 text-amber-700 border-amber-200" },
+  { value: "sky",    label: "Biru",  bg: "bg-sky-500",    light: "bg-sky-100 text-sky-700 border-sky-200" },
+  { value: "emerald",label: "Hijau", bg: "bg-emerald-500",light: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { value: "rose",   label: "Merah", bg: "bg-rose-500",   light: "bg-rose-100 text-rose-700 border-rose-200" },
+  { value: "amber",  label: "Kuning",bg: "bg-amber-500",  light: "bg-amber-100 text-amber-700 border-amber-200" },
 ];
 
 function getColor(value) {
@@ -24,43 +24,16 @@ function getColor(value) {
 const DAYS = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 const MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
-/* Indonesia national holidays – approximate dates */
-const ID_HOLIDAYS = {
-  "2025-01-01": "Tahun Baru Masehi",
-  "2025-01-29": "Tahun Baru Imlek",
-  "2025-03-29": "Hari Raya Nyepi",
-  "2025-03-31": "Isra Mi'raj",
-  "2025-04-18": "Jumat Agung",
-  "2025-03-30": "Idul Fitri 1446 H",
-  "2025-03-31": "Idul Fitri 2",
-  "2025-05-01": "Hari Buruh",
-  "2025-05-12": "Hari Raya Waisak",
-  "2025-05-29": "Kenaikan Yesus",
-  "2025-06-01": "Hari Lahir Pancasila",
-  "2025-06-07": "Idul Adha 1446 H",
-  "2025-06-27": "Tahun Baru Islam",
-  "2025-08-17": "HUT RI ke-80",
-  "2025-09-05": "Maulid Nabi SAW",
-  "2025-12-25": "Hari Natal",
-  "2025-12-26": "Cuti Bersama Natal",
-  "2026-01-01": "Tahun Baru Masehi",
-  "2026-01-17": "Isra Mi'raj",
-  "2026-01-28": "Tahun Baru Imlek",
-  "2026-03-10": "Hari Raya Nyepi",
-  "2026-03-20": "Idul Fitri 1447 H",
-  "2026-03-21": "Idul Fitri 2",
-  "2026-04-03": "Jumat Agung",
-  "2026-05-01": "Hari Buruh",
-  "2026-05-21": "Kenaikan Yesus Kristus",
-  "2026-06-01": "Hari Lahir Pancasila",
-  "2026-06-01": "Hari Raya Waisak",
-  "2026-05-27": "Idul Adha 1447 H",
-  "2026-06-16": "Tahun Baru Islam 1448 H",
-  "2026-08-17": "HUT RI ke-81",
-  "2026-09-25": "Maulid Nabi SAW",
-  "2026-12-25": "Hari Natal",
-  "2027-01-01": "Tahun Baru Masehi",
-};
+/* Indonesia national holidays – angka = tanggal merah */
+const ID_HOLIDAYS = new Set([
+  "2025-01-01","2025-01-29","2025-03-29","2025-03-31","2025-04-18",
+  "2025-03-30","2025-05-01","2025-05-12","2025-05-29","2025-06-01",
+  "2025-06-07","2025-06-27","2025-08-17","2025-09-05","2025-12-25","2025-12-26",
+  "2026-01-01","2026-01-17","2026-01-28","2026-03-10","2026-03-20","2026-03-21",
+  "2026-04-03","2026-05-01","2026-05-21","2026-05-27","2026-06-01","2026-06-16",
+  "2026-08-17","2026-09-25","2026-12-25",
+  "2027-01-01","2027-08-17","2027-12-25",
+]);
 
 function EventModal({ initial, selectedDate, onClose, onSaved }) {
   const [form, setForm] = useState({
@@ -113,7 +86,7 @@ function EventModal({ initial, selectedDate, onClose, onSaved }) {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Deskripsi</label>
-            <textarea value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} rows={3}
+            <textarea value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} rows={2}
               placeholder="Keterangan tambahan..."
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400 resize-none" />
           </div>
@@ -129,19 +102,21 @@ function EventModal({ initial, selectedDate, onClose, onSaved }) {
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Waktu</label>
-            <input type="time" value={form.time} onChange={(e) => setForm((p) => ({ ...p, time: e.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-2">Warna</label>
-            <div className="flex gap-2">
-              {COLOR_OPTIONS.map((c) => (
-                <button key={c.value} type="button" onClick={() => setForm((p) => ({ ...p, color: c.value }))}
-                  className={`h-7 w-7 rounded-full ${c.bg} transition ring-2 ring-offset-2 ${form.color === c.value ? "ring-slate-400" : "ring-transparent"}`}
-                  title={c.label} />
-              ))}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Waktu</label>
+              <input type="time" value={form.time} onChange={(e) => setForm((p) => ({ ...p, time: e.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Warna</label>
+              <div className="flex gap-1.5 mt-1">
+                {COLOR_OPTIONS.map((c) => (
+                  <button key={c.value} type="button" onClick={() => setForm((p) => ({ ...p, color: c.value }))}
+                    className={`h-7 w-7 rounded-full ${c.bg} transition ring-2 ring-offset-1 ${form.color === c.value ? "ring-slate-400" : "ring-transparent"}`}
+                    title={c.label} />
+                ))}
+              </div>
             </div>
           </div>
           <div className="flex gap-2 justify-end pt-1">
@@ -162,6 +137,7 @@ export default function SchedulePage() {
   const { orders } = useOrders();
   const navigate = useNavigate();
   const isAdmin = user?.role === "admin";
+
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -189,7 +165,6 @@ export default function SchedulePage() {
     return map;
   }, [events]);
 
-  /* ── Order deadlines by date ── */
   const deadlinesByDate = useMemo(() => {
     const map = {};
     orders.forEach((o) => {
@@ -212,27 +187,25 @@ export default function SchedulePage() {
   }, [viewYear, viewMonth]);
 
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const dateStr = (d) => `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
-  const dateStr = (d) =>
-    `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const upcomingDeadlines = useMemo(() => {
+    return orders
+      .filter((o) => {
+        if (!o.deadline) return false;
+        const st = (o.status || "").toLowerCase();
+        return st !== "done" && st !== "cancel";
+      })
+      .sort((a, b) => a.deadline.localeCompare(b.deadline))
+      .slice(0, 12);
+  }, [orders]);
 
   const upcomingEvents = useMemo(() => {
     return events
       .filter((ev) => ev.date >= todayStr)
       .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(0, 10);
+      .slice(0, 12);
   }, [events, todayStr]);
-
-  const upcomingDeadlines = useMemo(() => {
-    return orders
-      .filter((o) => {
-        if (!o.deadline || o.deadline < todayStr) return false;
-        const st = (o.status || "").toLowerCase();
-        return st !== "done" && st !== "cancel";
-      })
-      .sort((a, b) => a.deadline.localeCompare(b.deadline))
-      .slice(0, 8);
-  }, [orders, todayStr]);
 
   const handleSaved = (item, action) => {
     if (action === "add") setEvents((prev) => [...prev, item]);
@@ -255,12 +228,7 @@ export default function SchedulePage() {
     setShowModal(true);
   };
 
-  const openEdit = (ev) => {
-    setEditItem(ev);
-    setSelectedDate(ev.date);
-    setShowModal(true);
-  };
-
+  const openEdit = (ev) => { setEditItem(ev); setSelectedDate(ev.date); setShowModal(true); };
   const closeModal = () => { setShowModal(false); setEditItem(null); setSelectedDate(null); };
 
   const prevMonth = () => {
@@ -273,7 +241,8 @@ export default function SchedulePage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-2">
@@ -290,49 +259,55 @@ export default function SchedulePage() {
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Calendar */}
-        <div className="lg:col-span-2 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+      {/* Main grid — kalender + sidebar */}
+      <div className="grid gap-5 lg:grid-cols-3" style={{ minHeight: "calc(100vh - 180px)" }}>
+
+        {/* ── Kalender (kiri, 2/3 lebar) ── */}
+        <div className="lg:col-span-2 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm flex flex-col">
+          {/* Nav bulan */}
           <div className="flex items-center justify-between mb-4">
             <button onClick={prevMonth} className="rounded-xl p-1.5 text-slate-500 hover:bg-slate-100 transition"><ChevronLeft size={18} /></button>
-            <h2 className="font-semibold text-slate-800">{MONTHS[viewMonth]} {viewYear}</h2>
+            <h2 className="font-semibold text-slate-800 text-base">{MONTHS[viewMonth]} {viewYear}</h2>
             <button onClick={nextMonth} className="rounded-xl p-1.5 text-slate-500 hover:bg-slate-100 transition"><ChevronRight size={18} /></button>
           </div>
 
+          {/* Header hari */}
           <div className="grid grid-cols-7 mb-1">
-            {DAYS.map((d) => (
-              <div key={d} className="text-center text-[11px] font-bold uppercase text-slate-400 py-1">{d}</div>
+            {DAYS.map((d, i) => (
+              <div key={d} className={`text-center text-[11px] font-bold uppercase py-1 ${i === 0 ? "text-rose-400" : "text-slate-400"}`}>{d}</div>
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-0.5">
+          {/* Grid hari — flex-1 supaya mengisi ruang */}
+          <div className="grid grid-cols-7 flex-1 auto-rows-fr gap-px">
             {calendarDays.map((d, idx) => {
-              if (!d) return <div key={`empty-${idx}`} />;
+              if (!d) return <div key={`empty-${idx}`} className="rounded-xl" />;
               const ds = dateStr(d);
               const dayEvents = eventsByDate[ds] || [];
               const dayDeadlines = deadlinesByDate[ds] || [];
-              const holiday = ID_HOLIDAYS[ds];
               const isToday = ds === todayStr;
               const isOverdue = ds < todayStr && dayDeadlines.length > 0;
+              const dayOfWeek = new Date(ds).getDay();
+              const isRed = dayOfWeek === 0 || ID_HOLIDAYS.has(ds);
+
               return (
                 <div
                   key={ds}
                   onClick={() => openAdd(d)}
-                  className={`min-h-[56px] rounded-xl p-1 flex flex-col cursor-pointer transition hover:bg-slate-50 ${
-                    isToday ? "bg-violet-50 ring-1 ring-violet-300" : holiday ? "bg-rose-50" : ""
+                  className={`rounded-xl p-1 flex flex-col cursor-pointer transition hover:bg-slate-50 min-h-[68px] ${
+                    isToday ? "bg-violet-50 ring-1 ring-violet-300" : ""
                   }`}
                 >
-                  <span className={`text-xs font-semibold mb-0.5 w-6 h-6 flex items-center justify-center rounded-full ${
-                    isToday ? "bg-violet-600 text-white" : holiday ? "text-rose-600" : "text-slate-700"
+                  <span className={`text-xs font-bold mb-0.5 w-6 h-6 flex items-center justify-center rounded-full shrink-0 ${
+                    isToday
+                      ? "bg-violet-600 text-white"
+                      : isRed
+                      ? "text-rose-500"
+                      : "text-slate-700"
                   }`}>
                     {d}
                   </span>
-                  <div className="flex flex-col gap-0.5 overflow-hidden">
-                    {holiday && (
-                      <span className="rounded px-1 text-[8px] font-semibold truncate bg-rose-100 text-rose-600 border border-rose-200" title={holiday}>
-                        {holiday.length > 10 ? holiday.slice(0, 10) + "…" : holiday}
-                      </span>
-                    )}
+                  <div className="flex flex-col gap-px overflow-hidden">
                     {dayDeadlines.slice(0, 1).map((o) => (
                       <span
                         key={o.id}
@@ -346,7 +321,7 @@ export default function SchedulePage() {
                       </span>
                     ))}
                     {dayDeadlines.length > 1 && (
-                      <span className="text-[8px] text-amber-500 pl-1">+{dayDeadlines.length - 1} deadline</span>
+                      <span className="text-[8px] text-amber-500 pl-1">+{dayDeadlines.length - 1}</span>
                     )}
                     {dayEvents.slice(0, dayDeadlines.length > 0 ? 1 : 2).map((ev) => {
                       const col = getColor(ev.color);
@@ -361,8 +336,8 @@ export default function SchedulePage() {
                         </span>
                       );
                     })}
-                    {(dayEvents.length + dayDeadlines.length) > 3 && (
-                      <span className="text-[8px] text-slate-400 pl-1">+{dayEvents.length + dayDeadlines.length - 3}</span>
+                    {(dayEvents.length + dayDeadlines.length) > 2 && (
+                      <span className="text-[8px] text-slate-400 pl-1">+{dayEvents.length + dayDeadlines.length - 2}</span>
                     )}
                   </div>
                 </div>
@@ -370,58 +345,58 @@ export default function SchedulePage() {
             })}
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+          {/* Legend */}
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-400 border-t border-slate-100 pt-3">
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-200" /> Deadline order</span>
-            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-rose-200" /> Hari libur</span>
+            <span className="flex items-center gap-1"><span className="text-rose-500 font-bold text-xs">31</span> Minggu / Libur</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-violet-200" /> Event tim</span>
-            {isAdmin && <span className="ml-auto">Klik tanggal untuk menambah event</span>}
+            {isAdmin && <span className="ml-auto italic">Klik tanggal untuk menambah event</span>}
           </div>
         </div>
 
-        {/* Sidebar */}
-        <div className="space-y-4">
-          {/* Upcoming deadlines */}
-          {upcomingDeadlines.length > 0 && (
-            <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                <Flag size={15} className="text-amber-500" />
-                Deadline Mendatang
-              </h3>
-              <div className="space-y-2">
-                {upcomingDeadlines.map((o) => {
-                  const diff = Math.ceil((new Date(o.deadline) - new Date()) / 86400000);
-                  return (
-                    <div key={o.id} onClick={() => navigate("/orders")}
-                      className="flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 p-2.5 cursor-pointer hover:border-amber-200 transition">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-900 truncate">{o.project}</p>
-                        <p className="text-[10px] text-slate-500">{o.deadline}</p>
-                      </div>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${diff <= 3 ? "bg-rose-100 text-rose-600" : "bg-amber-100 text-amber-600"}`}>
-                        {diff}h
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+        {/* ── Sidebar (kanan, 1/3 lebar) ── */}
+        <div className="flex flex-col gap-4 overflow-hidden">
 
-          {/* Upcoming events */}
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <Clock size={16} className="text-violet-500" />
-              Event Mendatang
+          {/* Deadline mendatang */}
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm flex flex-col min-h-0">
+            <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2 shrink-0">
+              <Flag size={15} className="text-amber-500" /> Deadline Mendatang
+            </h3>
+            <div className="overflow-y-auto space-y-2 flex-1" style={{ maxHeight: "220px" }}>
+              {upcomingDeadlines.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">Tidak ada deadline.</p>
+              ) : upcomingDeadlines.map((o) => {
+                const diff = Math.ceil((new Date(o.deadline) - new Date()) / 86400000);
+                return (
+                  <div key={o.id} onClick={() => navigate("/orders")}
+                    className="flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 p-2.5 cursor-pointer hover:border-amber-200 transition">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-900 truncate">{o.project}</p>
+                      <p className="text-[10px] text-slate-500">{o.deadline}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${diff < 0 ? "bg-rose-100 text-rose-600" : diff <= 3 ? "bg-orange-100 text-orange-600" : "bg-amber-100 text-amber-600"}`}>
+                      {diff < 0 ? `${Math.abs(diff)}h lalu` : `${diff}h`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Event mendatang */}
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm flex flex-col min-h-0 flex-1">
+            <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2 shrink-0">
+              <Clock size={16} className="text-violet-500" /> Event Mendatang
             </h3>
             {loading ? (
-              <div className="flex justify-center py-8">
+              <div className="flex justify-center py-6 flex-1">
                 <div className="h-6 w-6 animate-spin rounded-full border-4 border-slate-200 border-t-violet-600" />
               </div>
-            ) : upcomingEvents.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-6">Tidak ada event mendatang.</p>
             ) : (
-              <div className="space-y-2">
-                {upcomingEvents.map((ev) => {
+              <div className="overflow-y-auto space-y-2 flex-1">
+                {upcomingEvents.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-6">Tidak ada event mendatang.</p>
+                ) : upcomingEvents.map((ev) => {
                   const col = getColor(ev.color);
                   const [yr, mo, dy] = ev.date.split("-");
                   return (
