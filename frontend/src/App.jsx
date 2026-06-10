@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider } from "./context/AuthContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import { AlarmProvider } from "./context/AlarmContext";
 import { OrdersProvider } from "./context/OrdersContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
@@ -41,6 +42,7 @@ function RoleGuard({ allowedRoles, children }) {
 
 function App() {
   return (
+    <ThemeProvider>
     <AlarmProvider>
       <AuthProvider>
         <BrowserRouter>
@@ -91,6 +93,7 @@ function App() {
         </BrowserRouter>
       </AuthProvider>
     </AlarmProvider>
+    </ThemeProvider>
   );
 }
 

@@ -19,6 +19,15 @@ body {
   background: radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 25%), linear-gradient(180deg, #f8fafc 0%, #eff6ff 100%);
 }
 
+.dark body {
+  background: #0f0f0f;
+}
+
+.dark :root {
+  color-scheme: dark;
+  background-color: #0f0f0f;
+}
+
 * {
   box-sizing: border-box;
 }

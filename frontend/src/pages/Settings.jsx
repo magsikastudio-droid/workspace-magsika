@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useCurrency } from "../context/CurrencyContext";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import { api } from "../lib/api";
 import {
   Save, RefreshCw, Plus, X, Check, Pencil, Trash2,
   UserPlus, Mail, ShieldCheck, Clock, User, Phone, MapPin,
   CreditCard, Calendar, Briefcase, ChevronDown, ChevronUp,
+  Sun, Moon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -309,6 +311,7 @@ function InviteModal({ onClose, onInvited }) {
 export default function SettingsPage() {
   const { user } = useAuth();
   const { currency, setCurrency, exchangeRate, setExchangeRate } = useCurrency();
+  const { theme, setTheme } = useTheme();
   const isAdmin = user?.role === "admin";
   const isAdminOrPM = user?.role === "admin" || user?.role === "pm";
 
@@ -400,6 +403,7 @@ export default function SettingsPage() {
 
   const TABS = [
     { key: "profil", label: "Profil Saya" },
+    { key: "tampilan", label: "Tampilan" },
     ...(isAdminOrPM ? [{ key: "tim", label: "Manajemen Tim" }, { key: "umum", label: "Pengaturan" }] : []),
   ];
 
@@ -420,6 +424,85 @@ export default function SettingsPage() {
       </div>
 
       {activeTab === "profil" && <ProfileSection user={user} />}
+
+      {activeTab === "tampilan" && (
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-1">
+            <Sun size={18} className="text-violet-500" />
+            <h2 className="text-lg font-semibold">Tema Tampilan</h2>
+          </div>
+          <p className="text-sm text-slate-500 mb-6">Pilih tampilan yang nyaman untuk kamu.</p>
+          <div className="grid grid-cols-2 gap-4 max-w-sm">
+            {/* Light theme card */}
+            <button
+              onClick={() => setTheme("light")}
+              className={`relative rounded-2xl border-2 overflow-hidden transition-all ${
+                theme === "light"
+                  ? "border-violet-500 shadow-lg shadow-violet-100"
+                  : "border-slate-200 hover:border-slate-300"
+              }`}
+            >
+              {/* Mini preview */}
+              <div className="h-24 bg-slate-100 flex flex-col">
+                <div className="h-4 bg-white border-b border-slate-200 flex items-center px-2 gap-1">
+                  <div className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                  <div className="h-1 w-8 rounded bg-slate-200" />
+                </div>
+                <div className="flex flex-1 gap-1 p-1.5">
+                  <div className="w-8 bg-white rounded-lg" />
+                  <div className="flex-1 space-y-1">
+                    <div className="h-3 bg-white rounded" />
+                    <div className="h-3 bg-white rounded w-3/4" />
+                  </div>
+                </div>
+              </div>
+              <div className="px-3 py-2.5 text-left">
+                <p className="text-xs font-semibold text-slate-800">Terang</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Tampilan default</p>
+              </div>
+              {theme === "light" && (
+                <div className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500">
+                  <Check size={11} className="text-white" />
+                </div>
+              )}
+            </button>
+
+            {/* Dark theme card */}
+            <button
+              onClick={() => setTheme("dark")}
+              className={`relative rounded-2xl border-2 overflow-hidden transition-all ${
+                theme === "dark"
+                  ? "border-violet-500 shadow-lg shadow-violet-900/30"
+                  : "border-slate-200 hover:border-slate-300"
+              }`}
+            >
+              {/* Mini preview */}
+              <div className="h-24 bg-[#0f0f0f] flex flex-col">
+                <div className="h-4 bg-[#0d0d0d] border-b border-white/[0.06] flex items-center px-2 gap-1">
+                  <div className="h-1.5 w-1.5 rounded-full bg-white/20" />
+                  <div className="h-1 w-8 rounded bg-white/10" />
+                </div>
+                <div className="flex flex-1 gap-1 p-1.5">
+                  <div className="w-8 bg-[#0d0d0d] rounded-lg" />
+                  <div className="flex-1 space-y-1">
+                    <div className="h-3 bg-white/10 rounded" />
+                    <div className="h-3 bg-white/10 rounded w-3/4" />
+                  </div>
+                </div>
+              </div>
+              <div className="px-3 py-2.5 text-left bg-[#111111]">
+                <p className="text-xs font-semibold text-slate-200">Gelap</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Seperti referensi</p>
+              </div>
+              {theme === "dark" && (
+                <div className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500">
+                  <Check size={11} className="text-white" />
+                </div>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       {activeTab === "tim" && isAdminOrPM && (
         <div className="space-y-6">
