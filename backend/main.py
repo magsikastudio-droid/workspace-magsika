@@ -1350,7 +1350,7 @@ async def send_fcm(task_title: str, assignee: str):
             ),
             data={"type": "task_alert", "task_title": task_title, "assignee": assignee},
         )
-        result = fb_messaging.send_each_for_multicast(msg)
+        result = fb_messaging.send_multicast(msg)
         print(f"[FCM] Sent: success={result.success_count}, fail={result.failure_count}")
     except Exception as e:
         print(f"[FCM] Send error: {e}")
