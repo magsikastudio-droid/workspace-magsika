@@ -1098,11 +1098,21 @@ async def invite_user(req: InviteUserRequest, current_user: dict = Depends(get_c
 
 @app.get("/users/me")
 async def get_my_profile(current_user: dict = Depends(get_current_user)):
+    username = current_user.get("username")
+    if not username:
+        raise HTTPException(status_code=400, detail="Cannot determine user")
     try:
-        uid = current_user.get("id") or str(current_user.get("_id", ""))
-        record = await db.users.find_one({"_id": to_object_id(uid)})
+        record = await db.users.find_one({"username": username})
         if not record:
-            return {"user": format_user(current_user)}
+            return {"user": {
+                "id": "", "username": username,
+                "full_name": current_user.get("full_name", ""),
+                "email": current_user.get("email", ""),
+                "role": current_user.get("role", "admin"),
+                "status": "active",
+                "phone": "", "telegram": "", "gender": "", "birthdate": "",
+                "birthplace": "", "position": "", "address": "", "bank_account": "",
+            }}
         return {"user": format_user(record)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1110,7 +1120,9 @@ async def get_my_profile(current_user: dict = Depends(get_current_user)):
 
 @app.patch("/users/me")
 async def update_my_profile(data: UserProfileUpdate, current_user: dict = Depends(get_current_user)):
-    uid = current_user.get("id") or str(current_user.get("_id", ""))
+    username = current_user.get("username")
+    if not username or username == "admin":
+        raise HTTPException(status_code=403, detail="Akun ini tidak bisa diperbarui via endpoint ini")
     payload: dict = {}
     for field in ["full_name", "phone", "telegram", "gender", "birthdate", "birthplace", "position", "address", "bank_account"]:
         val = getattr(data, field, None)
@@ -1119,8 +1131,8 @@ async def update_my_profile(data: UserProfileUpdate, current_user: dict = Depend
     if not payload:
         raise HTTPException(status_code=400, detail="No update data")
     try:
-        await db.users.update_one({"_id": to_object_id(uid)}, {"$set": payload})
-        updated = await db.users.find_one({"_id": to_object_id(uid)})
+        await db.users.update_one({"username": username}, {"$set": payload})
+        updated = await db.users.find_one({"username": username})
         return {"user": format_user(updated)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
