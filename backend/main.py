@@ -1688,3 +1688,25 @@ async def upsert_earnings_target(data: EarningsTarget, current_user: dict = Depe
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Admin: Clear All Data ────────────────────────────────────────────────────
+
+@app.delete("/admin/clear-all-data")
+async def clear_all_data(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    collections = [
+        "orders", "tasks", "chat_entries",
+        "freelance_artists", "freelance_projects",
+        "notifications", "announcements", "strategic_plans",
+        "schedule_events", "earnings_weekly", "earnings_targets",
+    ]
+    deleted = {}
+    for col in collections:
+        try:
+            result = await db[col].delete_many({})
+            deleted[col] = result.deleted_count
+        except Exception as e:
+            deleted[col] = f"error: {e}"
+    return {"deleted": deleted}
