@@ -48,6 +48,11 @@ jobs:
       - name: Copy backend to VPS
         run: |
           scp backend/main.py vps:/root/admin-dashboard/backend/
+          scp backend/requirements.txt vps:/root/admin-dashboard/backend/
+
+      - name: Install Python dependencies on VPS
+        run: |
+          ssh vps "cd /root/admin-dashboard/backend && pip install -r requirements.txt -q"
 
       - name: Restart service
         run: |
