@@ -52,7 +52,7 @@ jobs:
 
       - name: Install Python dependencies on VPS
         run: |
-          ssh vps "cd /root/admin-dashboard/backend && pip install -r requirements.txt -q"
+          ssh vps "cd /root/admin-dashboard/backend && pip3 install -r requirements.txt -q"
 
       - name: Restart service
         run: |
