@@ -319,12 +319,16 @@ export default function Todo() {
                 <Kanban size={14} className="inline mr-1" />Kanban
               </button>
             </div>
-            <button onClick={handleAutoGenerate} disabled={generating} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
-              <Zap size={14} /> {generating ? "Generating..." : "Auto Generate"}
-            </button>
-            <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-              <Plus size={14} /> Task
-            </button>
+            {isAdminOrPM && (
+              <button onClick={handleAutoGenerate} disabled={generating} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
+                <Zap size={14} /> {generating ? "Generating..." : "Auto Generate"}
+              </button>
+            )}
+            {isAdminOrPM && (
+              <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+                <Plus size={14} /> Task
+              </button>
+            )}
           </div>
         </div>
 
@@ -546,8 +550,8 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
 
   return (
     <div
-      draggable={!compact}
-      onDragStart={compact ? undefined : (e) => { e.stopPropagation(); onDragStart(e, task.id); }}
+      draggable={!compact && isAdminOrPM}
+      onDragStart={!compact && isAdminOrPM ? (e) => { e.stopPropagation(); onDragStart(e, task.id); } : undefined}
       onDragOver={compact ? undefined : (e) => onDragOver(e, task.id)}
       onClick={() => onDetail(task)}
       className={`rounded-2xl border transition cursor-pointer ${
@@ -588,14 +592,16 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <button onClick={stopProp(() => onEdit({ ...task }))} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
-                <Pencil size={13} />
-              </button>
-              <button onClick={stopProp(() => onDelete(task.id))} title="Hapus" className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
-                <X size={13} />
-              </button>
-            </div>
+            {isAdminOrPM && (
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={stopProp(() => onEdit({ ...task }))} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
+                  <Pencil size={13} />
+                </button>
+                <button onClick={stopProp(() => onDelete(task.id))} title="Hapus" className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
+                  <X size={13} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

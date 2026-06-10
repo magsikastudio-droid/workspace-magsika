@@ -31,7 +31,7 @@ export default function Login() {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center bg-slate-50 px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8 overflow-y-auto">
       <div className="w-full max-w-md rounded-[2rem] border border-slate-200 bg-white p-8 shadow-xl">
         <div className="mb-8 flex items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-slate-900 text-white shadow-sm">

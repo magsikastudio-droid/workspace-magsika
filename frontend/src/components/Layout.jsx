@@ -36,7 +36,7 @@ const NAV_SECTIONS = [
       { to: "/schedule",     label: "Schedule",     icon: CalendarDays,    roles: ["admin", "pm", "talent"] },
       { to: "/notifications",label: "Notifikasi",   icon: Bell,            roles: ["admin", "pm"] },
       { to: "/freelance",    label: "Freelance",    icon: Users,           roles: ["admin", "pm"] },
-      { to: "/settings",     label: "Settings",     icon: SettingsIcon,    roles: ["admin", "pm"] },
+      { to: "/settings",     label: "Settings",     icon: SettingsIcon,    roles: ["admin", "pm", "talent"] },
     ],
   },
   {

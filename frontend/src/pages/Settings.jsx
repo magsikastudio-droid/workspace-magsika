@@ -4,7 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import {
   Save, RefreshCw, Plus, X, Check, Pencil, Trash2,
-  UserPlus, Mail, ShieldCheck, Clock,
+  UserPlus, Mail, ShieldCheck, Clock, User, Phone, MapPin,
+  CreditCard, Calendar, Briefcase, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,6 +22,147 @@ const STATUS_COLORS = {
   pending: "bg-orange-100 text-orange-700",
 };
 
+/* ─── ProfileSection ─────────────────────────────────────────────── */
+function ProfileSection({ user }) {
+  const [profile, setProfile] = useState({
+    full_name: "", phone: "", telegram: "", gender: "",
+    birthdate: "", birthplace: "", position: "", address: "", bank_account: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.get("/users/me").then((res) => {
+      const u = res.data.user || {};
+      setProfile({
+        full_name: u.full_name || "",
+        phone: u.phone || "",
+        telegram: u.telegram || "",
+        gender: u.gender || "",
+        birthdate: u.birthdate || "",
+        birthplace: u.birthplace || "",
+        position: u.position || "",
+        address: u.address || "",
+        bank_account: u.bank_account || "",
+      });
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload = {};
+      Object.entries(profile).forEach(([k, v]) => { if (v !== "") payload[k] = v; });
+      if (Object.keys(payload).length === 0) { toast.info("Tidak ada perubahan"); setSaving(false); return; }
+      await api.patch("/users/me", payload);
+      toast.success("Profil berhasil disimpan");
+    } catch {
+      toast.error("Gagal menyimpan profil");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const set = (key) => (e) => setProfile((p) => ({ ...p, [key]: e.target.value }));
+
+  if (!loaded) return <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm animate-pulse h-48" />;
+
+  const avatarLetter = (profile.full_name || user?.username || "?").charAt(0).toUpperCase();
+  const roleColor = ROLE_COLORS[user?.role] || "bg-slate-100 text-slate-600";
+
+  return (
+    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-xl font-bold text-white shadow">
+          {avatarLetter}
+        </div>
+        <div>
+          <p className="font-semibold text-slate-900 text-lg">{profile.full_name || user?.username}</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ${roleColor}`}>{user?.role}</span>
+            <span className="text-xs text-slate-400">{user?.email}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+            <User size={13} /> Nama Lengkap
+          </label>
+          <input value={profile.full_name} onChange={set("full_name")}
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+            <Briefcase size={13} /> Jabatan / Posisi
+          </label>
+          <input value={profile.position} onChange={set("position")} placeholder="cth. 3D Artist"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+            <Phone size={13} /> No. HP / WhatsApp
+          </label>
+          <input value={profile.phone} onChange={set("phone")} placeholder="cth. 081234567890"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1.5">
+            Telegram (username)
+          </label>
+          <input value={profile.telegram} onChange={set("telegram")} placeholder="cth. @username"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1.5">Jenis Kelamin</label>
+          <select value={profile.gender} onChange={set("gender")}
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400">
+            <option value="">-- Pilih --</option>
+            <option value="Laki-laki">Laki-laki</option>
+            <option value="Perempuan">Perempuan</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+            <Calendar size={13} /> Tanggal Lahir
+          </label>
+          <input type="date" value={profile.birthdate} onChange={set("birthdate")}
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1.5">Tempat Lahir</label>
+          <input value={profile.birthplace} onChange={set("birthplace")} placeholder="cth. Jakarta"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+            <CreditCard size={13} /> Rekening Bank
+          </label>
+          <input value={profile.bank_account} onChange={set("bank_account")} placeholder="cth. BCA 1234567890 a/n Nama"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+            <MapPin size={13} /> Alamat
+          </label>
+          <textarea value={profile.address} onChange={set("address")} rows={2} placeholder="Alamat lengkap..."
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400 resize-none" />
+        </div>
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <button onClick={handleSave} disabled={saving}
+          className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+          <Save size={14} /> {saving ? "Menyimpan..." : "Simpan Profil"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── UserRow ────────────────────────────────────────────────────── */
 function UserRow({ u, onApprove, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ full_name: u.full_name, role: u.role, password: "" });
@@ -59,26 +201,17 @@ function UserRow({ u, onApprove, onUpdate, onDelete }) {
             {u.status === "active" ? "Aktif" : "Pending"}
           </span>
           {u.status === "pending" && (
-            <button
-              onClick={() => onApprove(u.id)}
-              title="Setujui"
-              className="rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-50 transition"
-            >
+            <button onClick={() => onApprove(u.id)} title="Setujui"
+              className="rounded-lg p-1.5 text-emerald-600 hover:bg-emerald-50 transition">
               <Check size={15} />
             </button>
           )}
-          <button
-            onClick={() => setEditing((p) => !p)}
-            title="Edit"
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 transition"
-          >
+          <button onClick={() => setEditing((p) => !p)} title="Edit"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 transition">
             <Pencil size={14} />
           </button>
-          <button
-            onClick={() => onDelete(u.id, u.full_name || u.username)}
-            title="Hapus"
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition"
-          >
+          <button onClick={() => onDelete(u.id, u.full_name || u.username)} title="Hapus"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
             <Trash2 size={14} />
           </button>
         </div>
@@ -87,38 +220,21 @@ function UserRow({ u, onApprove, onUpdate, onDelete }) {
       {editing && (
         <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              value={form.full_name}
-              onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))}
+            <input value={form.full_name} onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))}
               placeholder="Nama lengkap"
-              className="flex-1 min-w-[140px] rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400"
-            />
-            <select
-              value={form.role}
-              onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400"
-            >
-              {ROLE_OPTIONS.map((r) => (
-                <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
-              ))}
+              className="flex-1 min-w-[140px] rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400" />
+            <select value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400">
+              {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
             </select>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+            <input type="password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
               placeholder="Password baru (opsional)"
-              className="flex-1 min-w-[160px] rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400"
-            />
+              className="flex-1 min-w-[160px] rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400" />
           </div>
           <div className="mt-2 flex justify-end gap-2">
-            <button onClick={() => setEditing(false)} className="rounded-xl px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-200 transition">
-              Batal
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="rounded-xl bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
-            >
+            <button onClick={() => setEditing(false)} className="rounded-xl px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-200 transition">Batal</button>
+            <button onClick={handleSave} disabled={saving}
+              className="rounded-xl bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
               {saving ? "Menyimpan..." : "Simpan"}
             </button>
           </div>
@@ -128,6 +244,7 @@ function UserRow({ u, onApprove, onUpdate, onDelete }) {
   );
 }
 
+/* ─── InviteModal ────────────────────────────────────────────────── */
 function InviteModal({ onClose, onInvited }) {
   const [form, setForm] = useState({ username: "", full_name: "", email: "", role: "talent", password: "" });
   const [loading, setLoading] = useState(false);
@@ -153,9 +270,7 @@ function InviteModal({ onClose, onInvited }) {
       <div className="w-full max-w-md rounded-[2rem] bg-white p-6 shadow-2xl">
         <div className="mb-5 flex items-center justify-between">
           <h3 className="text-lg font-semibold">Undang User Baru</h3>
-          <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition">
-            <X size={18} />
-          </button>
+          <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><X size={18} /></button>
         </div>
         <form className="space-y-3" onSubmit={handleSubmit}>
           {[
@@ -166,36 +281,21 @@ function InviteModal({ onClose, onInvited }) {
           ].map(({ key, label, type }) => (
             <div key={key}>
               <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
-              <input
-                type={type}
-                value={form[key]}
-                onChange={set(key)}
-                required
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400"
-              />
+              <input type={type} value={form[key]} onChange={set(key)} required
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
             </div>
           ))}
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
-            <select
-              value={form.role}
-              onChange={set("role")}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400"
-            >
-              {ROLE_OPTIONS.map((r) => (
-                <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
-              ))}
+            <select value={form.role} onChange={set("role")}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400">
+              {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
             </select>
           </div>
           <div className="pt-2 flex gap-2 justify-end">
-            <button type="button" onClick={onClose} className="rounded-2xl px-5 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">
-              Batal
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-2xl bg-violet-600 px-5 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
-            >
+            <button type="button" onClick={onClose} className="rounded-2xl px-5 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">Batal</button>
+            <button type="submit" disabled={loading}
+              className="rounded-2xl bg-violet-600 px-5 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
               {loading ? "Mengundang..." : "Undang"}
             </button>
           </div>
@@ -205,11 +305,14 @@ function InviteModal({ onClose, onInvited }) {
   );
 }
 
+/* ─── Main Settings Page ─────────────────────────────────────────── */
 export default function SettingsPage() {
   const { user } = useAuth();
   const { currency, setCurrency, exchangeRate, setExchangeRate } = useCurrency();
   const isAdmin = user?.role === "admin";
+  const isAdminOrPM = user?.role === "admin" || user?.role === "pm";
 
+  const [activeTab, setActiveTab] = useState("profil");
   const [rate, setRate] = useState(exchangeRate || 16000);
   const [bankInfo, setBankInfo] = useState({ nama: "Ivo Febrian Pratama", bank: "BCA", rekening: "8030651287" });
 
@@ -217,14 +320,13 @@ export default function SettingsPage() {
   const [whitelist, setWhitelist] = useState([]);
   const [newEmail, setNewEmail] = useState("");
   const [showInvite, setShowInvite] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     try {
       const res = await api.get("/users");
       setUsers(res.data.users || []);
-    } catch {
-      // non-admin roles get 403, silently ignore
-    }
+    } catch {}
   }, []);
 
   const fetchWhitelist = useCallback(async () => {
@@ -235,10 +337,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (isAdmin) {
-      fetchUsers();
-      fetchWhitelist();
-    }
+    if (isAdmin) { fetchUsers(); fetchWhitelist(); }
   }, [isAdmin, fetchUsers, fetchWhitelist]);
 
   const handleApprove = async (userId) => {
@@ -246,9 +345,7 @@ export default function SettingsPage() {
       const res = await api.patch(`/users/${userId}`, { status: "active" });
       setUsers((prev) => prev.map((u) => u.id === userId ? res.data.user : u));
       toast.success("User disetujui");
-    } catch {
-      toast.error("Gagal menyetujui user");
-    }
+    } catch { toast.error("Gagal menyetujui user"); }
   };
 
   const handleUpdate = async (userId, payload) => {
@@ -262,9 +359,7 @@ export default function SettingsPage() {
       await api.delete(`/users/${userId}`);
       setUsers((prev) => prev.filter((u) => u.id !== userId));
       toast.success("User dihapus");
-    } catch {
-      toast.error("Gagal menghapus user");
-    }
+    } catch { toast.error("Gagal menghapus user"); }
   };
 
   const handleAddWhitelist = async () => {
@@ -276,9 +371,7 @@ export default function SettingsPage() {
       setWhitelist(updated);
       setNewEmail("");
       toast.success("Email ditambahkan");
-    } catch {
-      toast.error("Gagal menyimpan whitelist");
-    }
+    } catch { toast.error("Gagal menyimpan whitelist"); }
   };
 
   const handleRemoveWhitelist = async (email) => {
@@ -286,188 +379,196 @@ export default function SettingsPage() {
     try {
       await api.post("/settings/email-whitelist", { emails: updated });
       setWhitelist(updated);
-      toast.success("Email dihapus dari whitelist");
-    } catch {
-      toast.error("Gagal menyimpan whitelist");
-    }
+    } catch { toast.error("Gagal menyimpan whitelist"); }
+  };
+
+  const handleSeedTeam = async () => {
+    if (!window.confirm("Buat akun tim (Ivo, Novita, Kevin, Andre, Hadziq, Quin) dengan password GetukLindri!?\nUser yang sudah ada tidak akan ditimpa.")) return;
+    setSeeding(true);
+    try {
+      const res = await api.post("/admin/seed-team");
+      const { created = [], skipped = [] } = res.data;
+      if (created.length > 0) toast.success(`Dibuat: ${created.join(", ")}`);
+      if (skipped.length > 0) toast.info(`Sudah ada: ${skipped.join(", ")}`);
+      fetchUsers();
+    } catch { toast.error("Gagal membuat akun tim"); }
+    finally { setSeeding(false); }
   };
 
   const pendingUsers = users.filter((u) => u.status === "pending");
   const activeUsers = users.filter((u) => u.status === "active");
 
+  const TABS = [
+    { key: "profil", label: "Profil Saya" },
+    ...(isAdminOrPM ? [{ key: "tim", label: "Manajemen Tim" }, { key: "umum", label: "Pengaturan" }] : []),
+  ];
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-slate-500">Akses tim & konfigurasi dashboard.</p>
+        <p className="mt-1 text-sm text-slate-500">Profil & konfigurasi dashboard.</p>
       </div>
 
-      {isAdmin && (
-        <>
-          {/* Whitelist Email */}
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-2 mb-1">
-              <Mail size={18} className="text-violet-500" />
-              <h2 className="text-lg font-semibold">Whitelist Email Pendaftaran</h2>
-            </div>
-            <p className="text-sm text-slate-500 mb-4">
-              Hanya email di daftar ini yang boleh mendaftar (admin selalu boleh). Kosongkan = semua boleh.
-            </p>
-            <div className="flex gap-2 mb-3">
-              <input
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddWhitelist()}
-                placeholder="email@contoh.com"
-                type="email"
-                className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400"
-              />
-              <button
-                onClick={handleAddWhitelist}
-                className="flex items-center gap-1.5 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 transition"
-              >
-                <Plus size={15} /> Tambah
-              </button>
-            </div>
-            {whitelist.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">Kosong — semua email boleh mendaftar.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {whitelist.map((email) => (
-                  <span key={email} className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                    {email}
-                    <button onClick={() => handleRemoveWhitelist(email)} className="text-slate-400 hover:text-rose-500 transition">
-                      <X size={12} />
+      <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1 gap-1">
+        {TABS.map((tab) => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            className={`rounded-xl px-5 py-2 text-sm font-semibold transition ${activeTab === tab.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "profil" && <ProfileSection user={user} />}
+
+      {activeTab === "tim" && isAdminOrPM && (
+        <div className="space-y-6">
+          {isAdmin && (
+            <>
+              {/* Whitelist */}
+              <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <Mail size={18} className="text-violet-500" />
+                  <h2 className="text-lg font-semibold">Whitelist Email Pendaftaran</h2>
+                </div>
+                <p className="text-sm text-slate-500 mb-4">Hanya email di daftar ini yang boleh mendaftar. Kosongkan = semua boleh.</p>
+                <div className="flex gap-2 mb-3">
+                  <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleAddWhitelist()}
+                    placeholder="email@contoh.com" type="email"
+                    className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+                  <button onClick={handleAddWhitelist}
+                    className="flex items-center gap-1.5 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 transition">
+                    <Plus size={15} /> Tambah
+                  </button>
+                </div>
+                {whitelist.length === 0
+                  ? <p className="text-xs text-slate-400 italic">Kosong — semua email boleh mendaftar.</p>
+                  : (
+                    <div className="flex flex-wrap gap-2">
+                      {whitelist.map((email) => (
+                        <span key={email} className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                          {email}
+                          <button onClick={() => handleRemoveWhitelist(email)} className="text-slate-400 hover:text-rose-500 transition"><X size={12} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+              </div>
+
+              {/* User Management */}
+              <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={18} className="text-violet-500" />
+                    <h2 className="text-lg font-semibold">User Management</h2>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={handleSeedTeam} disabled={seeding}
+                      className="flex items-center gap-1.5 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition">
+                      {seeding ? "..." : "Seed Tim"}
                     </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* User Management */}
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={18} className="text-violet-500" />
-                <h2 className="text-lg font-semibold">User Management</h2>
-              </div>
-              <button
-                onClick={() => setShowInvite(true)}
-                className="flex items-center gap-1.5 rounded-2xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition"
-              >
-                <UserPlus size={15} /> Invite User
-              </button>
-            </div>
-            <p className="text-sm text-slate-500 mb-5">
-              Kelola akses tim. User baru mendaftar status <strong>pending</strong> sampai disetujui. Admin bisa invite user langsung aktif.
-            </p>
-
-            {pendingUsers.length > 0 && (
-              <div className="mb-5">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Clock size={14} className="text-orange-500" />
-                  <p className="text-xs font-bold uppercase tracking-wide text-orange-500">Menunggu Persetujuan ({pendingUsers.length})</p>
+                    <button onClick={() => setShowInvite(true)}
+                      className="flex items-center gap-1.5 rounded-2xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition">
+                      <UserPlus size={15} /> Invite User
+                    </button>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {pendingUsers.map((u) => (
-                    <UserRow key={u.id} u={u} onApprove={handleApprove} onUpdate={handleUpdate} onDelete={handleDelete} />
-                  ))}
-                </div>
-              </div>
-            )}
+                <p className="text-sm text-slate-500 mb-5">Kelola akses tim. "Seed Tim" membuat akun Ivo, Novita, Kevin, Andre, Hadziq, Quin.</p>
 
-            {activeUsers.length > 0 && (
-              <div>
-                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Anggota Aktif ({activeUsers.length})</p>
-                <div className="space-y-2">
-                  {activeUsers.map((u) => (
-                    <UserRow key={u.id} u={u} onApprove={handleApprove} onUpdate={handleUpdate} onDelete={handleDelete} />
-                  ))}
-                </div>
-              </div>
-            )}
+                {pendingUsers.length > 0 && (
+                  <div className="mb-5">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Clock size={14} className="text-orange-500" />
+                      <p className="text-xs font-bold uppercase tracking-wide text-orange-500">Menunggu Persetujuan ({pendingUsers.length})</p>
+                    </div>
+                    <div className="space-y-2">
+                      {pendingUsers.map((u) => <UserRow key={u.id} u={u} onApprove={handleApprove} onUpdate={handleUpdate} onDelete={handleDelete} />)}
+                    </div>
+                  </div>
+                )}
 
-            {users.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-4">Belum ada user tambahan.</p>
-            )}
-          </div>
-        </>
+                {activeUsers.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Anggota Aktif ({activeUsers.length})</p>
+                    <div className="space-y-2">
+                      {activeUsers.map((u) => <UserRow key={u.id} u={u} onApprove={handleApprove} onUpdate={handleUpdate} onDelete={handleDelete} />)}
+                    </div>
+                  </div>
+                )}
+                {users.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Belum ada user tambahan.</p>}
+              </div>
+            </>
+          )}
+        </div>
       )}
 
-      {/* Currency */}
-      <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold mb-5">Mata Uang & Kurs</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Tampilkan Harga Dalam</label>
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-              <button onClick={() => setCurrency("IDR")} className={`px-4 py-2 rounded-full text-sm font-semibold transition ${currency === "IDR" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>IDR</button>
-              <button onClick={() => setCurrency("USD")} className={`px-4 py-2 rounded-full text-sm font-semibold transition ${currency === "USD" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>USD</button>
+      {activeTab === "umum" && isAdminOrPM && (
+        <div className="space-y-6">
+          {/* Currency */}
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-xl font-semibold mb-5">Mata Uang & Kurs</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Tampilkan Harga Dalam</label>
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+                  <button onClick={() => setCurrency("IDR")} className={`px-4 py-2 rounded-full text-sm font-semibold transition ${currency === "IDR" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>IDR</button>
+                  <button onClick={() => setCurrency("USD")} className={`px-4 py-2 rounded-full text-sm font-semibold transition ${currency === "USD" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>USD</button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Kurs USD → IDR</label>
+                <div className="flex gap-2">
+                  <input value={rate} onChange={(e) => setRate(e.target.value)} type="number" min="1"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm outline-none focus:border-slate-400" />
+                  <button onClick={() => { const val = Number(rate); if (isNaN(val) || val <= 0) { toast.error("Kurs tidak valid"); return; } setExchangeRate(val); toast.success("Kurs berhasil disimpan"); }}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+                    <Save size={14} /> Simpan
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">1 USD = Rp {Number(rate).toLocaleString("id-ID")}</p>
+              </div>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Kurs USD → IDR</label>
-            <div className="flex gap-2">
-              <input
-                value={rate}
-                onChange={(e) => setRate(e.target.value)}
-                type="number"
-                min="1"
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm outline-none focus:border-slate-400"
-              />
-              <button
-                onClick={() => {
-                  const val = Number(rate);
-                  if (isNaN(val) || val <= 0) { toast.error("Kurs tidak valid"); return; }
-                  setExchangeRate(val);
-                  toast.success("Kurs berhasil disimpan");
-                }}
-                className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                <Save size={14} /> Simpan
+
+          {/* Bank Info */}
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-xl font-semibold mb-5">Info Pembayaran (Invoice)</h2>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Nama Rekening</label>
+                <input value={bankInfo.nama} onChange={(e) => setBankInfo((p) => ({ ...p, nama: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Bank</label>
+                <input value={bankInfo.bank} onChange={(e) => setBankInfo((p) => ({ ...p, bank: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-violet-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">No. Rekening</label>
+                <input value={bankInfo.rekening} onChange={(e) => setBankInfo((p) => ({ ...p, rekening: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-violet-400" />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => toast.success("Info bank disimpan")}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+                <Save size={14} /> Simpan Info Bank
               </button>
             </div>
-            <p className="mt-1 text-xs text-slate-400">1 USD = Rp {Number(rate).toLocaleString("id-ID")}</p>
           </div>
-        </div>
-      </div>
 
-      {/* Bank Info */}
-      <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold mb-5">Info Pembayaran (Invoice)</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Nama Rekening</label>
-            <input value={bankInfo.nama} onChange={(e) => setBankInfo((p) => ({ ...p, nama: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Bank</label>
-            <input value={bankInfo.bank} onChange={(e) => setBankInfo((p) => ({ ...p, bank: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">No. Rekening</label>
-            <input value={bankInfo.rekening} onChange={(e) => setBankInfo((p) => ({ ...p, rekening: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400" />
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-xl font-semibold mb-2">Versi App</h2>
+            <p className="text-sm text-slate-500">Magsika Studio Dashboard v2.0</p>
+            <p className="text-xs text-slate-400 mt-1">Deploy: {new Date().toLocaleDateString("id-ID")}</p>
           </div>
         </div>
-        <div className="mt-4 flex justify-end">
-          <button onClick={() => toast.success("Info bank disimpan")} className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800">
-            <Save size={14} /> Simpan Info Bank
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold mb-2">Versi App</h2>
-        <p className="text-sm text-slate-500">Magsika Studio Dashboard v2.0</p>
-        <p className="text-xs text-slate-400 mt-1">Deploy: {new Date().toLocaleDateString("id-ID")}</p>
-      </div>
+      )}
 
       {showInvite && (
-        <InviteModal
-          onClose={() => setShowInvite(false)}
-          onInvited={(newUser) => setUsers((prev) => [...prev, newUser])}
-        />
+        <InviteModal onClose={() => setShowInvite(false)} onInvited={(newUser) => setUsers((prev) => [...prev, newUser])} />
       )}
     </div>
   );

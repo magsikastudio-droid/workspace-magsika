@@ -333,9 +333,8 @@ export default function OrdersPage() {
                     )}
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
-                        {deadlineDiff !== null && deadlineDiff < 0 && <span title="Overdue" className="text-rose-500">⚠</span>}
-                        {deadlineDiff !== null && deadlineDiff >= 0 && deadlineDiff <= 3 && <span title={`${deadlineDiff}h lagi`} className="text-amber-500">🔥</span>}
-                        {deadlineDiff !== null && deadlineDiff > 3 && <span className="text-slate-300">📅</span>}
+                        {!isDone && deadlineDiff !== null && deadlineDiff < 0 && <span title="Overdue" className="text-rose-500">⚠</span>}
+                        {!isDone && deadlineDiff !== null && deadlineDiff >= 0 && deadlineDiff <= 3 && <span title={`${deadlineDiff} hari lagi`} className="text-amber-500">🔥</span>}
                         <span className={`text-sm ${deadlineDiff !== null && deadlineDiff < 0 ? "text-rose-600 font-semibold" : deadlineDiff !== null && deadlineDiff <= 3 ? "text-amber-600 font-semibold" : "text-slate-600"}`}>
                           {order.deadline || "—"}
                         </span>
