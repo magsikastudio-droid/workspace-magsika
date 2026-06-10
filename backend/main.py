@@ -310,6 +310,7 @@ class FreelanceProjectUpdate(BaseModel):
     pelunasan_date: Optional[str] = None
     status_bayar: Optional[str] = None
     notes: Optional[str] = None
+    order_id: Optional[str] = None
 
 
 class TaskBase(BaseModel):

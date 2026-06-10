@@ -1,28 +1,62 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { Users, Plus, Edit3, Trash2, ChevronDown, ChevronUp, CreditCard } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Users, Plus, Edit3, Trash2, ChevronDown, ChevronUp,
+  CreditCard, Link2, X, Search, TrendingUp, AlertCircle,
+} from "lucide-react";
 import { api } from "../lib/api";
+import { useOrders } from "../context/OrdersContext";
 import { toast } from "sonner";
 
 const STATUS_BAYAR = ["Belum Lunas", "DP", "Lunas"];
 
 const statusColor = {
-  "Lunas":       "bg-emerald-100 text-emerald-700",
-  "DP":          "bg-amber-100 text-amber-700",
-  "Belum Lunas": "bg-rose-100 text-rose-700",
+  "Lunas":       "bg-emerald-100 text-emerald-700 border-emerald-200",
+  "DP":          "bg-amber-100 text-amber-700 border-amber-200",
+  "Belum Lunas": "bg-rose-100 text-rose-700 border-rose-200",
 };
+
+function fmtCurrency(v) {
+  if (!v && v !== 0) return "—";
+  return `$${Number(v).toLocaleString("en-US")}`;
+}
+
+const EMPTY_ARTIST = { name: "", bank: "", rekening: "", phone: "", notes: "" };
+const EMPTY_PROJECT = { project_name: "", fee: "", dp_amount: "", dp_date: "", pelunasan_date: "", status_bayar: "Belum Lunas", notes: "", order_id: "" };
 
 export default function Freelance() {
   const [artists, setArtists] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedArtist, setExpandedArtist] = useState(null);
-  const [showArtistForm, setShowArtistForm] = useState(false);
+
+  const [showArtistModal, setShowArtistModal] = useState(false);
   const [editArtist, setEditArtist] = useState(null);
-  const [showProjectForm, setShowProjectForm] = useState(null);
+  const [artistForm, setArtistForm] = useState(EMPTY_ARTIST);
+
+  const [showProjectModal, setShowProjectModal] = useState(null);
+  const [editProject, setEditProject] = useState(null);
+  const [projectForm, setProjectForm] = useState(EMPTY_PROJECT);
+  const [orderSearch, setOrderSearch] = useState("");
+
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const [artistForm, setArtistForm] = useState({ name: "", bank: "", rekening: "", phone: "", notes: "" });
-  const [projectForm, setProjectForm] = useState({ project_name: "", fee: "", dp_amount: "", dp_date: "", pelunasan_date: "", status_bayar: "Belum Lunas", notes: "" });
+  const { orders } = useOrders();
+
+  /* Orders dengan fee_freelance > 0 untuk auto-link */
+  const linkedableOrders = useMemo(() =>
+    orders.filter((o) => (o.fee_freelance || 0) > 0),
+    [orders]
+  );
+
+  const filteredLinkOrders = useMemo(() => {
+    if (!orderSearch.trim()) return linkedableOrders;
+    const q = orderSearch.toLowerCase();
+    return linkedableOrders.filter((o) =>
+      o.project?.toLowerCase().includes(q) ||
+      o.client?.toLowerCase().includes(q) ||
+      o.folder_code?.toLowerCase().includes(q)
+    );
+  }, [linkedableOrders, orderSearch]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -45,6 +79,17 @@ export default function Freelance() {
   const artistProjects = (artistId) => projects.filter((p) => p.artist_id === artistId);
   const totalFee = (artistId) => artistProjects(artistId).reduce((s, p) => s + (p.fee || 0), 0);
   const paidFee = (artistId) => artistProjects(artistId).filter((p) => p.status_bayar === "Lunas").reduce((s, p) => s + (p.fee || 0), 0);
+  const dpFee = (artistId) => artistProjects(artistId).filter((p) => p.status_bayar === "DP").reduce((s, p) => s + (p.dp_amount || 0), 0);
+
+  /* Global summary */
+  const globalTotal = artists.reduce((s, a) => s + totalFee(a.id), 0);
+  const globalPaid  = artists.reduce((s, a) => s + paidFee(a.id), 0);
+  const globalOutstanding = artists.reduce((s, a) => {
+    artistProjects(a.id).forEach((p) => {
+      if (p.status_bayar !== "Lunas") s += (p.fee || 0) - (p.dp_amount || 0);
+    });
+    return s;
+  }, 0);
 
   const handleSaveArtist = async (e) => {
     e.preventDefault();
@@ -56,9 +101,9 @@ export default function Freelance() {
         await api.post("/freelance/artists", artistForm);
         toast.success("Artist ditambahkan");
       }
-      setShowArtistForm(false);
+      setShowArtistModal(false);
       setEditArtist(null);
-      setArtistForm({ name: "", bank: "", rekening: "", phone: "", notes: "" });
+      setArtistForm(EMPTY_ARTIST);
       loadAll();
     } catch { toast.error("Gagal menyimpan"); }
   };
@@ -75,15 +120,31 @@ export default function Freelance() {
   const handleSaveProject = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/freelance/projects", { ...projectForm, artist_id: showProjectForm, fee: Number(projectForm.fee), dp_amount: projectForm.dp_amount ? Number(projectForm.dp_amount) : null });
-      toast.success("Project ditambahkan");
-      setShowProjectForm(null);
-      setProjectForm({ project_name: "", fee: "", dp_amount: "", dp_date: "", pelunasan_date: "", status_bayar: "Belum Lunas", notes: "" });
+      const payload = {
+        ...projectForm,
+        artist_id: showProjectModal,
+        fee: projectForm.fee ? Number(projectForm.fee) : 0,
+        dp_amount: projectForm.dp_amount ? Number(projectForm.dp_amount) : null,
+        dp_date: projectForm.dp_date || null,
+        pelunasan_date: projectForm.pelunasan_date || null,
+        order_id: projectForm.order_id || null,
+      };
+      if (editProject) {
+        await api.patch(`/freelance/projects/${editProject.id}`, payload);
+        toast.success("Project diperbarui");
+      } else {
+        await api.post("/freelance/projects", payload);
+        toast.success("Project ditambahkan");
+      }
+      setShowProjectModal(null);
+      setEditProject(null);
+      setProjectForm(EMPTY_PROJECT);
+      setOrderSearch("");
       loadAll();
     } catch { toast.error("Gagal menyimpan project"); }
   };
 
-  const handleUpdateProjectStatus = async (projectId, status_bayar) => {
+  const handleUpdateStatus = async (projectId, status_bayar) => {
     try {
       await api.patch(`/freelance/projects/${projectId}`, { status_bayar });
       loadAll();
@@ -91,6 +152,7 @@ export default function Freelance() {
   };
 
   const handleDeleteProject = async (projectId) => {
+    if (!window.confirm("Hapus project ini?")) return;
     try {
       await api.delete(`/freelance/projects/${projectId}`);
       toast.success("Project dihapus");
@@ -98,30 +160,87 @@ export default function Freelance() {
     } catch { toast.error("Gagal menghapus"); }
   };
 
-  const inputCls = "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-slate-400";
+  const openAddProject = (artistId) => {
+    setEditProject(null);
+    setProjectForm(EMPTY_PROJECT);
+    setOrderSearch("");
+    setShowProjectModal(artistId);
+  };
+
+  const openEditProject = (artistId, proj) => {
+    setEditProject(proj);
+    setProjectForm({
+      project_name: proj.project_name || "",
+      fee: proj.fee?.toString() || "",
+      dp_amount: proj.dp_amount?.toString() || "",
+      dp_date: proj.dp_date || "",
+      pelunasan_date: proj.pelunasan_date || "",
+      status_bayar: proj.status_bayar || "Belum Lunas",
+      notes: proj.notes || "",
+      order_id: proj.order_id || "",
+    });
+    setOrderSearch("");
+    setShowProjectModal(artistId);
+  };
+
+  const linkOrder = (order) => {
+    setProjectForm((p) => ({
+      ...p,
+      project_name: p.project_name || order.project,
+      fee: p.fee || (order.fee_freelance?.toString() || ""),
+      order_id: order.id,
+    }));
+    setOrderSearch("");
+  };
+
+  const inputCls = "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400 transition";
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-            <Users size={18} /> Freelance
-          </div>
-          <h1 className="text-3xl font-bold text-slate-900">Manajemen Freelancer</h1>
-          <p className="mt-2 text-sm text-slate-500">Kelola profil dan pembayaran DP/Pelunasan artist freelance.</p>
+          <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-2">
+            <Users size={28} className="text-sky-500" /> Freelancer
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">Kelola profil & pembayaran artist freelance.</p>
         </div>
-        <button onClick={() => { setEditArtist(null); setArtistForm({ name: "", bank: "", rekening: "", phone: "", notes: "" }); setShowArtistForm(true); }}
-          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
-          <Plus size={16} /> Tambah Artist
+        <button
+          onClick={() => { setEditArtist(null); setArtistForm(EMPTY_ARTIST); setShowArtistModal(true); }}
+          className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 transition"
+        >
+          <Plus size={15} /> Tambah Artist
         </button>
       </div>
+
+      {/* Summary cards */}
+      {!loading && artists.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Total Fee</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{fmtCurrency(globalTotal)}</p>
+            <p className="mt-1 text-xs text-slate-400">{artists.length} artist freelance</p>
+          </div>
+          <div className="rounded-[2rem] border border-emerald-100 bg-emerald-50 px-5 py-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-emerald-500">Sudah Lunas</p>
+            <p className="mt-2 text-2xl font-bold text-emerald-700">{fmtCurrency(globalPaid)}</p>
+            <p className="mt-1 text-xs text-emerald-500">{globalTotal > 0 ? Math.round((globalPaid / globalTotal) * 100) : 0}% dari total</p>
+          </div>
+          <div className="rounded-[2rem] border border-rose-100 bg-rose-50 px-5 py-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-rose-400">Outstanding</p>
+            <p className="mt-2 text-2xl font-bold text-rose-600">{fmtCurrency(globalOutstanding)}</p>
+            <p className="mt-1 text-xs text-rose-400">belum/DP sisa</p>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-16 text-slate-400">Memuat data...</div>
       ) : artists.length === 0 ? (
         <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-16 text-center">
           <Users size={40} className="mx-auto mb-4 text-slate-300" />
-          <p className="text-slate-500">Belum ada freelancer. Tambah artist pertama.</p>
+          <p className="text-slate-500 font-medium">Belum ada freelancer.</p>
+          <p className="text-sm text-slate-400 mt-1">Tambah artist pertama kamu.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -129,90 +248,158 @@ export default function Freelance() {
             const aproj = artistProjects(artist.id);
             const total = totalFee(artist.id);
             const paid = paidFee(artist.id);
+            const dp = dpFee(artist.id);
+            const outstanding = aproj.filter((p) => p.status_bayar !== "Lunas").reduce((s, p) => s + (p.fee || 0) - (p.dp_amount || 0), 0);
+            const paidPct = total > 0 ? Math.round((paid / total) * 100) : 0;
+            const dpPct = total > 0 ? Math.round(((paid + dp) / total) * 100) : 0;
             const expanded = expandedArtist === artist.id;
+            const artistColor = `hsl(${Math.abs(artist.name.split("").reduce((h, c) => c.charCodeAt(0) + ((h << 5) - h), 0)) % 360}, 65%, 50%)`;
+
             return (
               <div key={artist.id} className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div className="flex flex-wrap items-center justify-between gap-4 p-6">
+                {/* Artist row */}
+                <div className="flex flex-wrap items-center justify-between gap-4 p-5">
                   <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-violet-600 text-lg font-bold text-white">
+                    <div
+                      className="flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-bold text-white shrink-0"
+                      style={{ background: artistColor }}
+                    >
                       {artist.name.slice(0, 1).toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-semibold text-slate-900 text-lg">{artist.name}</p>
-                      <p className="text-sm text-slate-500">{artist.bank} {artist.rekening && `· ${artist.rekening}`}</p>
+                      <p className="font-semibold text-slate-900 text-lg leading-tight">{artist.name}</p>
+                      {(artist.bank || artist.rekening) && (
+                        <p className="text-sm text-slate-500">{artist.bank}{artist.rekening ? ` · ${artist.rekening}` : ""}</p>
+                      )}
+                      {artist.phone && <p className="text-xs text-slate-400">{artist.phone}</p>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400">Total Fee</p>
-                      <p className="font-bold text-slate-900">${total.toLocaleString()}</p>
-                      <p className="text-xs text-emerald-600">Lunas: ${paid.toLocaleString()}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400">Projects</p>
-                      <p className="font-bold text-slate-900">{aproj.length}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => { setShowProjectForm(artist.id); }} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">
+
+                  <div className="flex flex-wrap items-center gap-5">
+                    {/* Fee summary */}
+                    {total > 0 && (
+                      <div className="min-w-[140px]">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs text-slate-400">Fee</span>
+                          <span className="text-sm font-bold text-slate-900">{fmtCurrency(total)}</span>
+                        </div>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full bg-amber-300 transition-all" style={{ width: `${dpPct}%` }} />
+                          <div className="h-full rounded-full bg-emerald-500 -mt-2 transition-all" style={{ width: `${paidPct}%` }} />
+                        </div>
+                        <div className="flex justify-between mt-0.5">
+                          <span className="text-[10px] text-emerald-600 font-semibold">Lunas {fmtCurrency(paid)}</span>
+                          {outstanding > 0 && <span className="text-[10px] text-rose-500 font-semibold">Sisa {fmtCurrency(outstanding)}</span>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openAddProject(artist.id)}
+                        className="inline-flex items-center gap-1.5 rounded-2xl bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition"
+                      >
                         <Plus size={13} /> Project
                       </button>
-                      <button onClick={() => { setEditArtist(artist); setArtistForm({ name: artist.name, bank: artist.bank || "", rekening: artist.rekening || "", phone: artist.phone || "", notes: artist.notes || "" }); setShowArtistForm(true); }}
-                        className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">
-                        <Edit3 size={13} />
+                      <button
+                        onClick={() => { setEditArtist(artist); setArtistForm({ name: artist.name, bank: artist.bank || "", rekening: artist.rekening || "", phone: artist.phone || "", notes: artist.notes || "" }); setShowArtistModal(true); }}
+                        className="rounded-2xl p-2 text-slate-400 hover:bg-slate-100 transition"
+                      >
+                        <Edit3 size={14} />
                       </button>
-                      <button onClick={() => setConfirmDelete(artist)} className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-100">
-                        <Trash2 size={13} />
+                      <button
+                        onClick={() => setConfirmDelete(artist)}
+                        className="rounded-2xl p-2 text-rose-400 hover:bg-rose-50 transition"
+                      >
+                        <Trash2 size={14} />
                       </button>
-                      <button onClick={() => setExpandedArtist(expanded ? null : artist.id)} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">
-                        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      <button
+                        onClick={() => setExpandedArtist(expanded ? null : artist.id)}
+                        className="rounded-2xl p-2 text-slate-400 hover:bg-slate-100 transition"
+                      >
+                        {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                       </button>
                     </div>
                   </div>
                 </div>
 
+                {/* Expanded project list */}
                 {expanded && (
-                  <div className="border-t border-slate-100 px-6 pb-6">
-                    {artist.phone && <p className="mt-3 text-sm text-slate-500">📱 {artist.phone}</p>}
-                    {artist.notes && <p className="mt-1 text-sm text-slate-500">{artist.notes}</p>}
+                  <div className="border-t border-slate-100 px-5 pb-5 pt-3">
+                    {artist.notes && (
+                      <p className="mb-3 text-sm text-slate-500 italic">{artist.notes}</p>
+                    )}
                     {aproj.length === 0 ? (
-                      <p className="mt-4 text-sm text-slate-400">Belum ada project untuk artist ini.</p>
+                      <div className="rounded-2xl border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
+                        Belum ada project untuk {artist.name}.
+                      </div>
                     ) : (
-                      <div className="mt-4 overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-100 text-sm">
-                          <thead>
-                            <tr className="text-xs uppercase tracking-widest text-slate-400">
-                              <th className="px-3 py-2 text-left">Project</th>
-                              <th className="px-3 py-2 text-left">Fee</th>
-                              <th className="px-3 py-2 text-left">DP</th>
-                              <th className="px-3 py-2 text-left">Tgl DP</th>
-                              <th className="px-3 py-2 text-left">Pelunasan</th>
-                              <th className="px-3 py-2 text-left">Status</th>
-                              <th className="px-3 py-2 text-left">Aksi</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-50">
-                            {aproj.map((proj) => (
-                              <tr key={proj.id} className="hover:bg-slate-50">
-                                <td className="px-3 py-3 font-semibold text-slate-900">{proj.project_name}</td>
-                                <td className="px-3 py-3">${proj.fee}</td>
-                                <td className="px-3 py-3">{proj.dp_amount ? `$${proj.dp_amount}` : "-"}</td>
-                                <td className="px-3 py-3">{proj.dp_date || "-"}</td>
-                                <td className="px-3 py-3">{proj.pelunasan_date || "-"}</td>
-                                <td className="px-3 py-3">
-                                  <select value={proj.status_bayar} onChange={(e) => handleUpdateProjectStatus(proj.id, e.target.value)}
-                                    className={`rounded-full px-3 py-1 text-xs font-semibold border-0 outline-none cursor-pointer ${statusColor[proj.status_bayar] || "bg-slate-100 text-slate-700"}`}>
+                      <div className="space-y-3">
+                        {aproj.map((proj) => {
+                          const remaining = (proj.fee || 0) - (proj.dp_amount || 0);
+                          const dpPct = proj.fee > 0 ? Math.round(((proj.dp_amount || 0) / proj.fee) * 100) : 0;
+                          const linkedOrder = proj.order_id ? orders.find((o) => o.id === proj.order_id) : null;
+                          return (
+                            <div key={proj.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-semibold text-slate-900">{proj.project_name}</p>
+                                    {linkedOrder && (
+                                      <span className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600 border border-sky-100">
+                                        <Link2 size={9} /> {linkedOrder.folder_code || linkedOrder.project}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                                    <span className="font-semibold text-slate-900">{fmtCurrency(proj.fee)}</span>
+                                    {proj.dp_amount > 0 && (
+                                      <>
+                                        <span>DP: <span className="font-semibold text-amber-700">{fmtCurrency(proj.dp_amount)}</span></span>
+                                        {proj.dp_date && <span>Tgl DP: {proj.dp_date}</span>}
+                                      </>
+                                    )}
+                                    {proj.pelunasan_date && <span>Pelunasan: {proj.pelunasan_date}</span>}
+                                  </div>
+                                  {proj.fee > 0 && proj.status_bayar !== "Lunas" && (
+                                    <div className="mt-2">
+                                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                                        <div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${dpPct}%` }} />
+                                      </div>
+                                      {remaining > 0 && (
+                                        <p className="mt-0.5 text-[10px] text-rose-500">Sisa {fmtCurrency(remaining)}</p>
+                                      )}
+                                    </div>
+                                  )}
+                                  {proj.notes && <p className="mt-1.5 text-xs text-slate-400 italic">{proj.notes}</p>}
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <select
+                                    value={proj.status_bayar}
+                                    onChange={(e) => handleUpdateStatus(proj.id, e.target.value)}
+                                    className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold outline-none cursor-pointer ${statusColor[proj.status_bayar] || "bg-slate-100 text-slate-700 border-slate-200"}`}
+                                  >
                                     {STATUS_BAYAR.map((s) => <option key={s}>{s}</option>)}
                                   </select>
-                                </td>
-                                <td className="px-3 py-3">
-                                  <button onClick={() => handleDeleteProject(proj.id)} className="rounded-full bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-100">
-                                    <Trash2 size={12} />
+                                  <button
+                                    onClick={() => openEditProject(artist.id, proj)}
+                                    className="rounded-xl p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition"
+                                  >
+                                    <Edit3 size={13} />
                                   </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                  <button
+                                    onClick={() => handleDeleteProject(proj.id)}
+                                    className="rounded-xl p-1.5 text-rose-400 hover:bg-rose-100 transition"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -223,64 +410,152 @@ export default function Freelance() {
         </div>
       )}
 
-      {showArtistForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-          <div className="w-full max-w-lg rounded-[2rem] bg-white p-8 shadow-xl">
-            <h2 className="text-xl font-semibold mb-6">{editArtist ? "Edit Artist" : "Tambah Artist"}</h2>
-            <form onSubmit={handleSaveArtist} className="grid gap-4">
-              <label className="space-y-2 text-sm"><span>Nama</span><input value={artistForm.name} onChange={(e) => setArtistForm((p) => ({ ...p, name: e.target.value }))} required className={inputCls} /></label>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2 text-sm"><span>Bank</span><input value={artistForm.bank} onChange={(e) => setArtistForm((p) => ({ ...p, bank: e.target.value }))} placeholder="BCA, BRI, dll" className={inputCls} /></label>
-                <label className="space-y-2 text-sm"><span>No. Rekening</span><input value={artistForm.rekening} onChange={(e) => setArtistForm((p) => ({ ...p, rekening: e.target.value }))} className={inputCls} /></label>
+      {/* Artist Modal */}
+      {showArtistModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md rounded-[2rem] bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{editArtist ? "Edit Artist" : "Tambah Artist"}</h2>
+              <button onClick={() => { setShowArtistModal(false); setEditArtist(null); }} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><X size={18} /></button>
+            </div>
+            <form onSubmit={handleSaveArtist} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Nama *</label>
+                <input value={artistForm.name} onChange={(e) => setArtistForm((p) => ({ ...p, name: e.target.value }))} required className={inputCls} placeholder="Nama artist" />
               </div>
-              <label className="space-y-2 text-sm"><span>No. HP / WhatsApp</span><input value={artistForm.phone} onChange={(e) => setArtistForm((p) => ({ ...p, phone: e.target.value }))} className={inputCls} /></label>
-              <label className="space-y-2 text-sm"><span>Catatan</span><textarea value={artistForm.notes} onChange={(e) => setArtistForm((p) => ({ ...p, notes: e.target.value }))} rows={2} className={inputCls} /></label>
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => { setShowArtistForm(false); setEditArtist(null); }} className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700">Batal</button>
-                <button type="submit" className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white">Simpan</button>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Bank</label>
+                  <input value={artistForm.bank} onChange={(e) => setArtistForm((p) => ({ ...p, bank: e.target.value }))} placeholder="BCA, BRI..." className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">No. Rekening</label>
+                  <input value={artistForm.rekening} onChange={(e) => setArtistForm((p) => ({ ...p, rekening: e.target.value }))} className={inputCls} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">No. HP / WhatsApp</label>
+                <input value={artistForm.phone} onChange={(e) => setArtistForm((p) => ({ ...p, phone: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Catatan</label>
+                <textarea value={artistForm.notes} onChange={(e) => setArtistForm((p) => ({ ...p, notes: e.target.value }))} rows={2} className={inputCls} />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" onClick={() => { setShowArtistModal(false); setEditArtist(null); }} className="rounded-2xl px-5 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">Batal</button>
+                <button type="submit" className="rounded-2xl bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-700 transition">Simpan</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {showProjectForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-          <div className="w-full max-w-lg rounded-[2rem] bg-white p-8 shadow-xl">
-            <h2 className="text-xl font-semibold mb-6">Tambah Project Freelance</h2>
-            <form onSubmit={handleSaveProject} className="grid gap-4">
-              <label className="space-y-2 text-sm"><span>Nama Project</span><input value={projectForm.project_name} onChange={(e) => setProjectForm((p) => ({ ...p, project_name: e.target.value }))} required className={inputCls} /></label>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2 text-sm"><span>Fee Total (USD)</span><input value={projectForm.fee} onChange={(e) => setProjectForm((p) => ({ ...p, fee: e.target.value }))} type="number" min="0" className={inputCls} /></label>
-                <label className="space-y-2 text-sm"><span>Jumlah DP</span><input value={projectForm.dp_amount} onChange={(e) => setProjectForm((p) => ({ ...p, dp_amount: e.target.value }))} type="number" min="0" className={inputCls} /></label>
+      {/* Project Modal */}
+      {showProjectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{editProject ? "Edit Project" : "Tambah Project Freelance"}</h2>
+              <button onClick={() => { setShowProjectModal(null); setEditProject(null); setOrderSearch(""); }} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><X size={18} /></button>
+            </div>
+
+            {/* Auto-link from orders */}
+            {!editProject && linkedableOrders.length > 0 && (
+              <div className="mb-4 rounded-2xl border border-sky-100 bg-sky-50 p-3">
+                <p className="text-xs font-semibold text-sky-700 mb-2 flex items-center gap-1"><Link2 size={12} /> Tautkan dari Order (opsional)</p>
+                <div className="relative mb-2">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={orderSearch}
+                    onChange={(e) => setOrderSearch(e.target.value)}
+                    placeholder="Cari order..."
+                    className="w-full rounded-2xl border border-sky-200 bg-white pl-8 pr-3 py-2 text-xs outline-none focus:border-sky-400"
+                  />
+                </div>
+                {projectForm.order_id && (
+                  <div className="mb-2 flex items-center gap-2 rounded-xl bg-sky-100 px-3 py-2 text-xs text-sky-700 font-semibold">
+                    <Link2 size={11} />
+                    Tertaut: {orders.find((o) => o.id === projectForm.order_id)?.project || projectForm.order_id}
+                    <button onClick={() => setProjectForm((p) => ({ ...p, order_id: "" }))} className="ml-auto"><X size={12} /></button>
+                  </div>
+                )}
+                <div className="max-h-28 overflow-y-auto space-y-1">
+                  {filteredLinkOrders.slice(0, 8).map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => linkOrder(o)}
+                      disabled={projectForm.order_id === o.id}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition ${projectForm.order_id === o.id ? "bg-sky-200 text-sky-800 cursor-default" : "bg-white hover:bg-sky-100 text-slate-700"}`}
+                    >
+                      <span className="font-medium truncate">{o.project}</span>
+                      <span className="shrink-0 ml-2 font-semibold text-sky-600">${o.fee_freelance?.toLocaleString()}</span>
+                    </button>
+                  ))}
+                  {filteredLinkOrders.length === 0 && (
+                    <p className="text-xs text-slate-400 text-center py-2">Tidak ada order.</p>
+                  )}
+                </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2 text-sm"><span>Tanggal DP</span><input value={projectForm.dp_date} onChange={(e) => setProjectForm((p) => ({ ...p, dp_date: e.target.value }))} type="date" className={inputCls} /></label>
-                <label className="space-y-2 text-sm"><span>Tanggal Pelunasan</span><input value={projectForm.pelunasan_date} onChange={(e) => setProjectForm((p) => ({ ...p, pelunasan_date: e.target.value }))} type="date" className={inputCls} /></label>
+            )}
+
+            <form onSubmit={handleSaveProject} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Nama Project *</label>
+                <input value={projectForm.project_name} onChange={(e) => setProjectForm((p) => ({ ...p, project_name: e.target.value }))} required className={inputCls} placeholder="Nama project" />
               </div>
-              <label className="space-y-2 text-sm"><span>Status Bayar</span>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Fee Total (USD) *</label>
+                  <input value={projectForm.fee} onChange={(e) => setProjectForm((p) => ({ ...p, fee: e.target.value }))} type="number" min="0" required className={inputCls} placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Jumlah DP</label>
+                  <input value={projectForm.dp_amount} onChange={(e) => setProjectForm((p) => ({ ...p, dp_amount: e.target.value }))} type="number" min="0" className={inputCls} placeholder="0" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal DP</label>
+                  <input value={projectForm.dp_date} onChange={(e) => setProjectForm((p) => ({ ...p, dp_date: e.target.value }))} type="date" className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Tanggal Pelunasan</label>
+                  <input value={projectForm.pelunasan_date} onChange={(e) => setProjectForm((p) => ({ ...p, pelunasan_date: e.target.value }))} type="date" className={inputCls} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status Bayar</label>
                 <select value={projectForm.status_bayar} onChange={(e) => setProjectForm((p) => ({ ...p, status_bayar: e.target.value }))} className={inputCls}>
                   {STATUS_BAYAR.map((s) => <option key={s}>{s}</option>)}
                 </select>
-              </label>
-              <label className="space-y-2 text-sm"><span>Catatan</span><textarea value={projectForm.notes} onChange={(e) => setProjectForm((p) => ({ ...p, notes: e.target.value }))} rows={2} className={inputCls} /></label>
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setShowProjectForm(null)} className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700">Batal</button>
-                <button type="submit" className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white">Simpan</button>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Catatan</label>
+                <textarea value={projectForm.notes} onChange={(e) => setProjectForm((p) => ({ ...p, notes: e.target.value }))} rows={2} className={inputCls} />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" onClick={() => { setShowProjectModal(null); setEditProject(null); setOrderSearch(""); }} className="rounded-2xl px-5 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">Batal</button>
+                <button type="submit" className="rounded-2xl bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-700 transition">
+                  {editProject ? "Simpan" : "Tambah"}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* Confirm delete artist */}
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-          <div className="w-full max-w-md rounded-[2rem] bg-white p-8 shadow-xl">
-            <h2 className="text-xl font-semibold">Hapus Artist?</h2>
-            <p className="mt-2 text-sm text-slate-500"><span className="font-semibold">{confirmDelete.name}</span> dan semua project-nya akan dihapus.</p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setConfirmDelete(null)} className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700">Batal</button>
-              <button onClick={() => handleDeleteArtist(confirmDelete.id)} className="rounded-full bg-rose-600 px-5 py-2 text-sm font-semibold text-white">Hapus</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-[2rem] bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-slate-900">Hapus Artist?</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              <span className="font-semibold">{confirmDelete.name}</span> dan semua project-nya akan dihapus permanen.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setConfirmDelete(null)} className="rounded-2xl px-5 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">Batal</button>
+              <button onClick={() => handleDeleteArtist(confirmDelete.id)} className="rounded-2xl bg-rose-600 px-5 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition">Hapus</button>
             </div>
           </div>
         </div>

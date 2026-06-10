@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import {
   Activity, BarChart3, ChevronLeft, ChevronRight, Clock, Star,
   TrendingUp, Users, Zap, FolderOpen, CheckCircle2, Timer,
+  Search, X, Timer as TimerIcon,
 } from "lucide-react";
 import { normalizeStatus } from "../lib/constants";
 import { monthKey, monthLabel } from "../lib/format";
@@ -53,6 +54,11 @@ function TalentPerformance({ user }) {
 
   const [summary, setSummary] = useState({ artists: [], orders: [] });
   const [loading, setLoading] = useState(false);
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+    api.get("/users/me").then((r) => setProfile(r.data?.user || null)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -94,7 +100,6 @@ function TalentPerformance({ user }) {
   const doneRate = myStats.tasks > 0 ? Math.round((myStats.done / myStats.tasks) * 100) : 0;
   const color = getColor(myName);
 
-  // Riwayat per bulan — last 6 months
   const [historyData, setHistoryData] = useState([]);
   useEffect(() => {
     const fetchAll = async () => {
@@ -128,31 +133,39 @@ function TalentPerformance({ user }) {
   }, [selYear, selMonth, myName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const maxTasks = Math.max(...historyData.map((h) => h.done), 1);
+  const displayName = profile?.full_name || myName || "Saya";
+  const position = profile?.position || "";
 
   return (
     <div className="space-y-5 max-w-3xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-bold text-white shrink-0" style={{ background: color }}>
-            {myName?.charAt(0)?.toUpperCase() || "?"}
+      {/* Header — profil kartu */}
+      <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div
+              className="flex h-16 w-16 items-center justify-center rounded-2xl text-2xl font-bold text-white shrink-0 shadow-sm"
+              style={{ background: color }}
+            >
+              {displayName?.charAt(0)?.toUpperCase() || "?"}
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900">{displayName}</h1>
+              {position && <p className="text-sm text-violet-600 font-medium">{position}</p>}
+              <p className="text-xs text-slate-400 mt-0.5">Performa bulan — {MONTH_NAMES[selMonth]} {selYear}</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">{myName || "Saya"}</h1>
-            <p className="text-sm text-slate-400">Performa saya — {MONTH_NAMES[selMonth]} {selYear}</p>
+          <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 px-3 py-2">
+            <button onClick={prevMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><ChevronLeft size={16} /></button>
+            <div className="flex items-center gap-2 min-w-[150px] justify-center">
+              <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))} className="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+                {[selYear - 1, selYear, selYear + 1].map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))} className="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+                {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+              </select>
+            </div>
+            <button onClick={nextMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><ChevronRight size={16} /></button>
           </div>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-          <button onClick={prevMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><ChevronLeft size={16} /></button>
-          <div className="flex items-center gap-2 min-w-[150px] justify-center">
-            <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))} className="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
-              {[selYear - 1, selYear, selYear + 1].map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))} className="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
-              {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
-            </select>
-          </div>
-          <button onClick={nextMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><ChevronRight size={16} /></button>
         </div>
       </div>
 
@@ -284,7 +297,112 @@ function TalentPerformance({ user }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   ADMIN / PM VIEW  (same as before, extracted here)
+   ARTIST DETAIL PANEL (admin klik nama talent)
+══════════════════════════════════════════════════════════════════ */
+function ArtistDetailPanel({ artistName, summary, orderById, monthStr, selMonth, selYear, onClose }) {
+  const color = getColor(artistName);
+  const stats = summary.artists.find((a) => a.name === artistName) || { tasks: 0, done: 0, failed: 0, in_progress: 0, time: 0 };
+  const artistOrders = useMemo(() =>
+    summary.orders
+      .filter((os) => (os.assignees || []).includes(artistName))
+      .map((os) => ({ ...os, order: orderById[os.order_id] || null }))
+      .filter((os) => os.order)
+      .sort((a, b) => b.time - a.time),
+    [summary.orders, artistName, orderById]
+  );
+  const doneRate = stats.tasks > 0 ? Math.round((stats.done / stats.tasks) * 100) : 0;
+  const avgTimePerOrder = artistOrders.length > 0 ? Math.round(stats.time / artistOrders.length) : 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-sm bg-white shadow-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4 shrink-0">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white" style={{ background: color }}>
+            {artistName.charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-slate-900">{artistName}</p>
+            <p className="text-xs text-slate-400">{MONTH_NAMES[selMonth]} {selYear}</p>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><X size={18} /></button>
+        </div>
+
+        {/* Stats */}
+        <div className="p-4 grid grid-cols-2 gap-3 shrink-0">
+          <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 text-center">
+            <p className="text-2xl font-bold text-slate-900">{stats.done}</p>
+            <p className="text-xs text-slate-400 mt-0.5">Task Done</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 text-center">
+            <p className="text-2xl font-bold" style={{ color }}>{doneRate}%</p>
+            <p className="text-xs text-slate-400 mt-0.5">Done Rate</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 text-center">
+            <p className="text-2xl font-bold text-slate-900">{fmtTime(stats.time) === "—" ? "0" : fmtTime(stats.time)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">Total Waktu</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 text-center">
+            <p className="text-2xl font-bold text-sky-700">{fmtTime(avgTimePerOrder) === "—" ? "0" : fmtTime(avgTimePerOrder)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">Avg/Project</p>
+          </div>
+        </div>
+
+        {/* Progress bar done rate */}
+        <div className="px-4 pb-3 shrink-0">
+          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+            <div className="h-full rounded-full transition-all" style={{ width: `${doneRate}%`, background: color }} />
+          </div>
+          <p className="text-xs text-slate-400 mt-1">{stats.tasks} task total · {stats.in_progress} sedang jalan · {stats.failed} gagal</p>
+        </div>
+
+        {/* Order list */}
+        <div className="flex-1 overflow-y-auto border-t border-slate-100">
+          <p className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate-400">Project Dikerjakan ({artistOrders.length})</p>
+          {artistOrders.length === 0 ? (
+            <p className="px-4 pb-4 text-sm text-slate-400">Tidak ada project bulan ini.</p>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {artistOrders.map((os) => {
+                const o = os.order;
+                const myDone = os.done_by_assignee?.[artistName] ?? os.done;
+                const myTasks = os.tasks_by_assignee?.[artistName] ?? os.tasks;
+                const rate = myTasks > 0 ? Math.round((myDone / myTasks) * 100) : 0;
+                return (
+                  <div key={os.order_id} className="flex items-start gap-3 px-4 py-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white" style={{ background: color }}>
+                      {o.project?.charAt(0)?.toUpperCase() || "?"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-900 truncate">{o.project}</p>
+                        {os.time > 0 && <p className="text-xs font-mono font-bold text-slate-600 shrink-0">{fmtTime(os.time)}</p>}
+                      </div>
+                      <p className="text-[10px] text-indigo-500 font-mono">{o.folder_code || o.client}</p>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <span className="text-[10px] text-slate-400">{myTasks} task</span>
+                        {myDone > 0 && <span className="text-[10px] text-emerald-600 font-semibold">· ✓ {myDone}</span>}
+                      </div>
+                      {myTasks > 0 && (
+                        <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${rate}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ADMIN / PM VIEW
 ══════════════════════════════════════════════════════════════════ */
 function AdminPerformance() {
   const { orders } = useOrders();
@@ -297,6 +415,9 @@ function AdminPerformance() {
 
   const [summary, setSummary] = useState({ artists: [], orders: [], total_tasks: 0, total_time: 0 });
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [selectedArtist, setSelectedArtist] = useState(null);
+  const [orderSearch, setOrderSearch] = useState("");
+
   useEffect(() => {
     setLoadingTasks(true);
     api.get("/tasks/summary", { params: { month: monthStr } })
@@ -311,7 +432,6 @@ function AdminPerformance() {
       return d.startsWith(monthStr);
     }), [orders, monthStr]);
 
-  const revenue    = monthOrders.reduce((s, o) => s + (o.total || 0), 0);
   const doneOrders = monthOrders.filter((o) => normalizeStatus(o.status) === "Done").length;
   const activeOrds = monthOrders.filter((o) => {
     const s = normalizeStatus(o.status);
@@ -377,6 +497,23 @@ function AdminPerformance() {
     [summary.orders, orderById]
   );
 
+  const filteredOrderTaskStats = useMemo(() => {
+    if (!orderSearch.trim()) return orderTaskStats;
+    const q = orderSearch.toLowerCase();
+    return orderTaskStats.filter((os) =>
+      os.order?.project?.toLowerCase().includes(q) ||
+      os.order?.client?.toLowerCase().includes(q) ||
+      os.order?.folder_code?.toLowerCase().includes(q)
+    );
+  }, [orderTaskStats, orderSearch]);
+
+  /* Avg waktu per project (semua order yang ada time-nya di bulan ini) */
+  const avgTimePerProject = useMemo(() => {
+    const ordersWithTime = orderTaskStats.filter((os) => os.time > 0);
+    if (ordersWithTime.length === 0) return 0;
+    return Math.round(ordersWithTime.reduce((s, os) => s + os.time, 0) / ordersWithTime.length);
+  }, [orderTaskStats]);
+
   const revenueChart = useMemo(() => {
     const map = {};
     orders.forEach((o) => {
@@ -393,6 +530,7 @@ function AdminPerformance() {
   }, [orders, selYear, selMonth]);
 
   const maxRevenue = Math.max(...revenueChart.map((m) => m.revenue), 1);
+  const revenue = monthOrders.reduce((s, o) => s + (o.total || 0), 0);
 
   const prevMonth = () => {
     if (selMonth === 0) { setSelYear((y) => y - 1); setSelMonth(11); }
@@ -433,17 +571,17 @@ function AdminPerformance() {
         </div>
       </div>
 
-      {/* Metrics */}
+      {/* Metrics — revenue diganti avg waktu/project */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetCard icon={FolderOpen}  label="Orders Masuk"   value={monthOrders.length} sub={`${doneOrders} selesai · ${activeOrds} aktif`}  accent="border-l-violet-500" iconBg="bg-violet-50 text-violet-600" />
         <MetCard icon={Activity}    label="Tasks Selesai"  value={summary.artists.reduce((s,a)=>s+a.done,0)} sub={`dari ${summary.total_tasks} task total`} accent="border-l-emerald-500" iconBg="bg-emerald-50 text-emerald-600" />
         <MetCard icon={Clock}       label="Total Waktu"    value={fmtTime(summary.total_time)} sub="akumulasi timer semua artist" accent="border-l-sky-500" iconBg="bg-sky-50 text-sky-600" />
-        <MetCard icon={TrendingUp}  label="Revenue"        value={formatMoney(revenue)} sub="order masuk bulan ini" accent="border-l-amber-500" iconBg="bg-amber-50 text-amber-600" />
+        <MetCard icon={Timer}       label="Avg Waktu/Project" value={avgTimePerProject > 0 ? fmtTime(avgTimePerProject) : "—"} sub={`dari ${orderTaskStats.filter(o=>o.time>0).length} project`} accent="border-l-amber-500" iconBg="bg-amber-50 text-amber-600" />
       </div>
 
       {/* Main grid */}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        {/* Per Artist */}
+        {/* Per Artist — klik untuk detail */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
             <div>
@@ -466,7 +604,11 @@ function AdminPerformance() {
                 const onTimeRate = oas.onTimeTotal > 0 ? Math.round((oas.onTime / oas.onTimeTotal) * 100) : null;
                 const avgRevision = oas.orderCount > 0 ? (oas.totalRevisions / oas.orderCount).toFixed(1) : null;
                 return (
-                  <div key={artist.name} className="px-6 py-4">
+                  <div
+                    key={artist.name}
+                    className="px-6 py-4 cursor-pointer hover:bg-slate-50 transition"
+                    onClick={() => setSelectedArtist(artist.name)}
+                  >
                     <div className="flex items-start gap-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white" style={{ background: color }}>
                         {artist.name.charAt(0).toUpperCase()}
@@ -474,7 +616,7 @@ function AdminPerformance() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-2">
                           <div>
-                            <p className="font-semibold text-slate-900">{artist.name}</p>
+                            <p className="font-semibold text-slate-900 hover:text-violet-700 transition">{artist.name}</p>
                             <p className="text-xs text-slate-400 capitalize">{artist.assignee_type}</p>
                           </div>
                           <div className="text-right shrink-0">
@@ -576,59 +718,95 @@ function AdminPerformance() {
         </div>
       </div>
 
+      {/* Aktivitas per Order dengan search */}
       {orderTaskStats.length > 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
             <div>
               <p className="font-bold text-slate-900">Aktivitas per Order</p>
               <p className="text-xs text-slate-400">Waktu kerja dan progress task {MONTH_NAMES[selMonth]} {selYear}</p>
             </div>
-            <Zap size={16} className="text-slate-300" />
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={orderSearch}
+                onChange={(e) => setOrderSearch(e.target.value)}
+                placeholder="Cari project..."
+                className="rounded-2xl border border-slate-200 bg-slate-50 pl-8 pr-4 py-2 text-sm outline-none focus:border-violet-400 w-52"
+              />
+              {orderSearch && (
+                <button onClick={() => setOrderSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
           </div>
-          <div className="divide-y divide-slate-50">
-            {orderTaskStats.map((os) => {
-              const o = os.order;
-              const rate = os.tasks > 0 ? Math.round((os.done / os.tasks) * 100) : 0;
-              return (
-                <div key={os.order_id} className="flex items-start gap-4 px-6 py-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-sm font-bold text-violet-700">
-                    {o.project?.charAt(0)?.toUpperCase() || "?"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2 flex-wrap">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-900 truncate">{o.project}</p>
-                        <p className="text-xs text-indigo-600 font-mono">{o.folder_code || o.client}</p>
+          {filteredOrderTaskStats.length === 0 ? (
+            <div className="py-8 text-center text-sm text-slate-400">Tidak ditemukan.</div>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {filteredOrderTaskStats.map((os) => {
+                const o = os.order;
+                const rate = os.tasks > 0 ? Math.round((os.done / os.tasks) * 100) : 0;
+                return (
+                  <div key={os.order_id} className="flex items-start gap-4 px-6 py-4">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-sm font-bold text-violet-700">
+                      {o.project?.charAt(0)?.toUpperCase() || "?"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900 truncate">{o.project}</p>
+                          <p className="text-xs text-indigo-600 font-mono">{o.folder_code || o.client}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-bold text-slate-900">{fmtTime(os.time)}</p>
+                          <p className="text-xs text-slate-400">waktu kerja</p>
+                        </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-bold text-slate-900">{fmtTime(os.time)}</p>
-                        <p className="text-xs text-slate-400">waktu kerja</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-slate-500">{os.tasks} task</span>
+                        {os.done > 0 && <span className="text-xs text-emerald-600 font-semibold">✓ {os.done} done</span>}
+                        {os.failed > 0 && <span className="text-xs text-rose-500 font-semibold">✗ {os.failed} gagal</span>}
+                        <span className="text-xs text-slate-400">·</span>
+                        {os.assignees.map((a) => (
+                          <button
+                            key={a}
+                            onClick={() => setSelectedArtist(a)}
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white hover:ring-2 hover:ring-offset-1 transition"
+                            style={{ background: getColor(a), ringColor: getColor(a) }}
+                            title={a}
+                          >
+                            {a.charAt(0).toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${rate}%` }} />
                       </div>
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-slate-500">{os.tasks} task</span>
-                      {os.done > 0 && <span className="text-xs text-emerald-600 font-semibold">✓ {os.done} done</span>}
-                      {os.failed > 0 && <span className="text-xs text-rose-500 font-semibold">✗ {os.failed} gagal</span>}
-                      <span className="text-xs text-slate-400">·</span>
-                      {os.assignees.map((a) => (
-                        <span key={a} className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: getColor(a) }} title={a}>
-                          {a.charAt(0).toUpperCase()}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-100">
-                      <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${rate}%` }} />
-                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
       <PipelineHealth pipeline={pipeline} />
-      <AllTimeSection orders={orders} formatMoney={formatMoney} />
+      <AllTimeSection orders={orders} formatMoney={formatMoney} onSelectArtist={setSelectedArtist} />
+
+      {selectedArtist && (
+        <ArtistDetailPanel
+          artistName={selectedArtist}
+          summary={summary}
+          orderById={orderById}
+          monthStr={monthStr}
+          selMonth={selMonth}
+          selYear={selYear}
+          onClose={() => setSelectedArtist(null)}
+        />
+      )}
     </div>
   );
 }
@@ -730,7 +908,7 @@ function PipelineHealth({ pipeline }) {
 }
 
 /* ─── AllTimeSection ─────────────────────────────────────────────── */
-function AllTimeSection({ orders, formatMoney }) {
+function AllTimeSection({ orders, formatMoney, onSelectArtist }) {
   const [open, setOpen] = useState(false);
   const artistStats = useMemo(() => {
     const map = {};
@@ -763,7 +941,11 @@ function AllTimeSection({ orders, formatMoney }) {
           ) : (
             <div className="divide-y divide-slate-50">
               {artistStats.map((a) => (
-                <div key={a.name} className="flex items-center gap-4 px-6 py-3.5">
+                <button
+                  key={a.name}
+                  onClick={() => onSelectArtist(a.name)}
+                  className="flex w-full items-center gap-4 px-6 py-3.5 hover:bg-slate-50 transition text-left"
+                >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white" style={{ background: getColor(a.name) }}>
                     {a.name.charAt(0).toUpperCase()}
                   </div>
@@ -774,7 +956,7 @@ function AllTimeSection({ orders, formatMoney }) {
                     </div>
                     <p className="text-xs text-slate-400">{a.orders} order · {a.done} selesai · {formatMoney(a.revenue)}</p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
