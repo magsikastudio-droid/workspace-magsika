@@ -154,7 +154,7 @@ export default function Layout({ children }) {
   );
 
   return (
-    <div className="flex overflow-hidden bg-slate-50" style={{ height: "100dvh" }}>
+    <div className="fixed inset-0 flex overflow-hidden bg-slate-50">
       <aside className="hidden w-56 shrink-0 overflow-hidden border-r border-slate-200 bg-white lg:flex lg:flex-col">
         <SidebarContent />
       </aside>
