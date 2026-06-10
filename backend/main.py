@@ -1346,6 +1346,9 @@ async def send_fcm(task_title: str, assignee: str):
                         notification=fb_messaging.AndroidNotification(
                             channel_id="task-alert",
                             sound="default",
+                            default_sound=True,
+                            default_vibrate_timings=False,
+                            vibrate_timings_millis=[0, 800, 200, 800, 200, 800],
                         ),
                     ),
                     data={"type": "task_alert", "task_title": task_title, "assignee": assignee},
