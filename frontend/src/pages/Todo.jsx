@@ -761,6 +761,7 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
           </button>
         </div>
       </div>
+      </div>
     </div>
   );
 }
@@ -799,7 +800,6 @@ function TelegramConfirmModal({ task, onConfirm, onCancel }) {
             ✓ Sudah kirim
           </button>
         </div>
-      </div>
       </div>
     </div>
   );
