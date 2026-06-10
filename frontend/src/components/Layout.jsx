@@ -88,18 +88,18 @@ export default function Layout({ children }) {
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+      <div className="flex items-center gap-3 border-b border-slate-100 dark:border-white/[0.06] px-5 py-4">
         <img src="/logo.png" alt="Magsika Studio" className="h-8 w-auto object-contain" />
       </div>
 
       <div className="px-4 py-3">
         <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Cari menu..."
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-xs text-slate-700 outline-none transition focus:border-violet-300 focus:bg-white"
+            className="w-full rounded-xl border border-slate-200 dark:border-white/[0.06] bg-slate-50 dark:bg-white/5 py-2 pl-9 pr-3 text-xs text-slate-700 dark:text-slate-300 outline-none transition focus:border-violet-300 dark:focus:border-violet-700 focus:bg-white dark:focus:bg-white/10 placeholder:text-slate-400 dark:placeholder:text-slate-600"
           />
         </div>
       </div>
@@ -108,12 +108,12 @@ export default function Layout({ children }) {
         {filteredItems ? (
           <div className="space-y-0.5">
             {filteredItems.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : 0} />)}
-            {filteredItems.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">Tidak ditemukan.</p>}
+            {filteredItems.length === 0 && <p className="px-3 py-2 text-xs text-slate-400 dark:text-slate-600">Tidak ditemukan.</p>}
           </div>
         ) : (
           visibleSections.map((section) => (
             <div key={section.label} className="mb-4">
-              <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">{section.label}</p>
+              <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-600">{section.label}</p>
               <div className="space-y-0.5">
                 {section.items.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : 0} />)}
               </div>
@@ -122,30 +122,30 @@ export default function Layout({ children }) {
         )}
       </nav>
 
-      <div className="border-t border-slate-100 px-4 py-3">
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-          <span className="text-xs font-semibold text-slate-500">Tampilkan harga</span>
+      <div className="border-t border-slate-100 dark:border-white/[0.06] px-4 py-3">
+        <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-white/5 px-3 py-2">
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tampilkan harga</span>
           <button
             onClick={() => setCurrency(currency === "IDR" ? "USD" : "IDR")}
-            className="rounded-lg bg-white px-3 py-1 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-100 transition"
+            className="rounded-lg bg-white dark:bg-white/10 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-100 dark:hover:bg-white/20 transition"
           >
             {currency}
           </button>
         </div>
       </div>
 
-      <div className="border-t border-slate-100 px-4 py-4">
+      <div className="border-t border-slate-100 dark:border-white/[0.06] px-4 py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
               {(user?.name || user?.full_name || "A").charAt(0).toUpperCase()}
             </div>
             <div>
-              <p className="text-xs font-semibold text-slate-800">{user?.name || user?.full_name || "Admin"}</p>
-              <p className="text-[10px] text-slate-400 capitalize">{user?.role || "admin"}</p>
+              <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{user?.name || user?.full_name || "Admin"}</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-600 capitalize">{user?.role || "admin"}</p>
             </div>
           </div>
-          <button onClick={logout} title="Logout" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-500 transition">
+          <button onClick={logout} title="Logout" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-rose-500 transition">
             <LogOut size={15} />
           </button>
         </div>
@@ -154,17 +154,17 @@ export default function Layout({ children }) {
   );
 
   return (
-    <div className="fixed inset-0 flex overflow-hidden bg-slate-50">
-      <aside className="hidden w-56 shrink-0 overflow-hidden border-r border-slate-200 bg-white lg:flex lg:flex-col">
+    <div className="fixed inset-0 flex overflow-hidden bg-slate-50 dark:bg-[#0f0f0f]">
+      <aside className="hidden w-56 shrink-0 overflow-hidden border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d0d0d] lg:flex lg:flex-col">
         <SidebarContent />
       </aside>
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-56 overflow-hidden bg-white shadow-2xl">
+          <aside className="absolute left-0 top-0 h-full w-56 overflow-hidden bg-white dark:bg-[#0d0d0d] shadow-2xl">
             <div className="absolute right-3 top-3 z-10">
-              <button onClick={() => setMobileOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+              <button onClick={() => setMobileOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10">
                 <X size={16} />
               </button>
             </div>
@@ -174,16 +174,16 @@ export default function Layout({ children }) {
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="relative z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3.5 shadow-sm">
+        <header className="relative z-10 flex items-center justify-between border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d0d0d] px-5 py-3.5 shadow-sm dark:shadow-none">
           <div className="flex items-center gap-3">
-            <button onClick={() => setMobileOpen(true)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 lg:hidden">
+            <button onClick={() => setMobileOpen(true)} className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 lg:hidden">
               <Menu size={20} />
             </button>
             <div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-600">
                 <span>Magsika Studio</span>
                 <span>/</span>
-                <span className="font-medium text-violet-600">{currentPage?.label || "Dashboard"}</span>
+                <span className="font-medium text-violet-600 dark:text-violet-400">{currentPage?.label || "Dashboard"}</span>
               </div>
             </div>
           </div>
@@ -192,7 +192,7 @@ export default function Layout({ children }) {
               <button
                 onClick={() => navigate("/notifications")}
                 title="Notifikasi"
-                className="relative rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-200 transition"
+                className="relative rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/5 p-2 text-slate-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-500 hover:border-indigo-200 dark:hover:border-indigo-700 transition"
               >
                 <Bell size={16} />
                 {unreadCount > 0 && (
@@ -202,7 +202,7 @@ export default function Layout({ children }) {
                 )}
               </button>
             )}
-            <button onClick={logout} title="Logout" className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-500 hover:border-rose-200 transition">
+            <button onClick={logout} title="Logout" className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/5 p-2 text-slate-500 dark:text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 hover:text-rose-500 hover:border-rose-200 dark:hover:border-rose-800 transition">
               <LogOut size={16} />
             </button>
           </div>
@@ -223,14 +223,14 @@ function NavItem({ item, badge = 0 }) {
       className={({ isActive }) =>
         `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-all ${
           isActive
-            ? "bg-violet-50 font-semibold text-violet-700"
-            : "font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+            ? "bg-violet-50 dark:bg-violet-500/10 font-semibold text-violet-700 dark:text-violet-400"
+            : "font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-200"
         }`
       }
     >
       {({ isActive }) => (
         <>
-          <item.icon size={16} className={isActive ? "text-violet-600" : "text-slate-400"} />
+          <item.icon size={16} className={isActive ? "text-violet-600 dark:text-violet-400" : "text-slate-400 dark:text-slate-600"} />
           <span className="flex-1">{item.label}</span>
           {badge > 0 && (
             <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">
