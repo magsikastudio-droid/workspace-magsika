@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { Kanban } from "lucide-react";
 import { useOrders } from "../context/OrdersContext";
+import { useAuth } from "../context/AuthContext";
 import { ACTIVE_STATUSES, STATUS_COLORS, getArtistColor, normalizeStatus } from "../lib/constants";
 import Pill from "../components/Pill";
 
@@ -15,6 +16,8 @@ function groupBy(items, keyFn) {
 
 export default function Board() {
   const { orders, updateOrder } = useOrders();
+  const { user } = useAuth();
+  const canEdit = user?.role === "admin" || user?.role === "pm";
   const [viewBy, setViewBy] = useState("status");
   const [showAll, setShowAll] = useState(false);
   const [dragOver, setDragOver] = useState(null);
@@ -46,6 +49,7 @@ export default function Board() {
   }, [grouped, viewBy, showAll]);
 
   const handleDrop = async (target) => {
+    if (!canEdit) return;
     const orderId = dragIdRef.current;
     if (!orderId) return;
     const order = orders.find((o) => o.id === orderId);
@@ -70,10 +74,10 @@ export default function Board() {
     return (
       <div
         key={order.id}
-        draggable
-        onDragStart={(e) => { dragIdRef.current = order.id; e.dataTransfer.effectAllowed = "move"; }}
-        onDragEnd={() => { dragIdRef.current = null; }}
-        className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md cursor-grab active:cursor-grabbing"
+        draggable={canEdit}
+        onDragStart={canEdit ? (e) => { dragIdRef.current = order.id; e.dataTransfer.effectAllowed = "move"; } : undefined}
+        onDragEnd={canEdit ? () => { dragIdRef.current = null; } : undefined}
+        className={`group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md ${canEdit ? "cursor-grab active:cursor-grabbing" : "cursor-default"}`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -133,9 +137,9 @@ export default function Board() {
           return (
             <div
               key={key}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(key); }}
-              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
-              onDrop={(e) => { e.preventDefault(); handleDrop(key); }}
+              onDragOver={canEdit ? (e) => { e.preventDefault(); setDragOver(key); } : undefined}
+              onDragLeave={canEdit ? (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); } : undefined}
+              onDrop={canEdit ? (e) => { e.preventDefault(); handleDrop(key); } : undefined}
               className={`flex-shrink-0 w-72 rounded-3xl border p-4 transition ${isOver ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}
             >
               <div className="mb-4 flex items-center justify-between gap-3">

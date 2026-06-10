@@ -447,6 +447,7 @@ async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
         orders = await db.orders.find().to_list(500)
     except Exception as e:
         return {"created": 0, "skipped": 0, "error": str(e)}
+    orders.sort(key=lambda o: (o.get("deadline") is None, o.get("deadline") or ""))
     for order in orders:
         st = order.get("status", "")
         if st.lower() in ["done", "cancel"]:
@@ -975,6 +976,14 @@ def format_user(record: dict) -> dict:
         "status": record.get("status", "pending"),
         "avatar_url": record.get("avatar_url"),
         "created_at": record.get("created_at"),
+        "phone": record.get("phone", ""),
+        "telegram": record.get("telegram", ""),
+        "gender": record.get("gender", ""),
+        "birthdate": record.get("birthdate", ""),
+        "birthplace": record.get("birthplace", ""),
+        "position": record.get("position", ""),
+        "address": record.get("address", ""),
+        "bank_account": record.get("bank_account", ""),
     }
 
 
@@ -998,6 +1007,26 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     password: Optional[str] = None
     status: Optional[str] = None
+    phone: Optional[str] = None
+    telegram: Optional[str] = None
+    gender: Optional[str] = None
+    birthdate: Optional[str] = None
+    birthplace: Optional[str] = None
+    position: Optional[str] = None
+    address: Optional[str] = None
+    bank_account: Optional[str] = None
+
+
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    telegram: Optional[str] = None
+    gender: Optional[str] = None
+    birthdate: Optional[str] = None
+    birthplace: Optional[str] = None
+    position: Optional[str] = None
+    address: Optional[str] = None
+    bank_account: Optional[str] = None
 
 
 class EmailWhitelistUpdate(BaseModel):
@@ -1063,6 +1092,36 @@ async def invite_user(req: InviteUserRequest, current_user: dict = Depends(get_c
         return {"user": format_user({**user_doc, "_id": result.inserted_id})}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/users/me")
+async def get_my_profile(current_user: dict = Depends(get_current_user)):
+    try:
+        uid = current_user.get("id") or str(current_user.get("_id", ""))
+        record = await db.users.find_one({"_id": to_object_id(uid)})
+        if not record:
+            return {"user": format_user(current_user)}
+        return {"user": format_user(record)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/users/me")
+async def update_my_profile(data: UserProfileUpdate, current_user: dict = Depends(get_current_user)):
+    uid = current_user.get("id") or str(current_user.get("_id", ""))
+    payload: dict = {}
+    for field in ["full_name", "phone", "telegram", "gender", "birthdate", "birthplace", "position", "address", "bank_account"]:
+        val = getattr(data, field, None)
+        if val is not None:
+            payload[field] = val
+    if not payload:
+        raise HTTPException(status_code=400, detail="No update data")
+    try:
+        await db.users.update_one({"_id": to_object_id(uid)}, {"$set": payload})
+        updated = await db.users.find_one({"_id": to_object_id(uid)})
+        return {"user": format_user(updated)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1469,3 +1528,124 @@ async def save_strategic_plan(plan_type: str, data: dict, current_user: dict = D
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True}
+
+
+# ─── Seed Team ────────────────────────────────────────────────────────────────
+
+@app.post("/admin/seed-team")
+async def seed_team(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    team = [
+        {"username": "ivo",     "full_name": "Ivo",     "email": "ivo@magsikastudio.com",    "role": "admin"},
+        {"username": "novita",  "full_name": "Novita",  "email": "novita@magsikastudio.com", "role": "admin"},
+        {"username": "kevin",   "full_name": "Kevin",   "email": "kevin@magsikastudio.com",  "role": "pm"},
+        {"username": "andre",   "full_name": "Andre",   "email": "andre@magsikastudio.com",  "role": "talent"},
+        {"username": "hadziq",  "full_name": "Hadziq",  "email": "hadziq@magsikastudio.com", "role": "talent"},
+        {"username": "quin",    "full_name": "Quin",    "email": "quin@magsikastudio.com",   "role": "talent"},
+    ]
+    password = "GetukLindri!"
+    created, skipped = [], []
+    for member in team:
+        existing = await db.users.find_one({"username": member["username"]})
+        if existing:
+            skipped.append(member["username"])
+            continue
+        await db.users.insert_one({
+            **member,
+            "hashed_password": hash_password(password),
+            "status": "active",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        created.append(member["username"])
+    return {"created": created, "skipped": skipped}
+
+
+# ─── Earnings Weekly Tracking ─────────────────────────────────────────────────
+
+class EarningsWeeklyEntry(BaseModel):
+    year: int
+    month: int
+    account: str
+    week: int
+    fiverr: float = 0
+    etsy: float = 0
+    upwork: float = 0
+    vgen: float = 0
+    komunitas: float = 0
+    lain_lain: float = 0
+
+
+class EarningsTarget(BaseModel):
+    year: int
+    month: int
+    account: str
+    target: float = 0
+
+
+@app.get("/earnings/weekly")
+async def get_earnings_weekly(year: int, month: int, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        records = await db.earnings_weekly.find({"year": year, "month": month}).to_list(100)
+        return {"entries": [
+            {
+                "year": r["year"], "month": r["month"], "account": r["account"],
+                "week": r["week"], "fiverr": r.get("fiverr", 0), "etsy": r.get("etsy", 0),
+                "upwork": r.get("upwork", 0), "vgen": r.get("vgen", 0),
+                "komunitas": r.get("komunitas", 0), "lain_lain": r.get("lain_lain", 0),
+            }
+            for r in records
+        ]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/earnings/weekly")
+async def upsert_earnings_weekly(data: EarningsWeeklyEntry, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        await db.earnings_weekly.update_one(
+            {"year": data.year, "month": data.month, "account": data.account, "week": data.week},
+            {"$set": {
+                "year": data.year, "month": data.month, "account": data.account, "week": data.week,
+                "fiverr": data.fiverr, "etsy": data.etsy, "upwork": data.upwork,
+                "vgen": data.vgen, "komunitas": data.komunitas, "lain_lain": data.lain_lain,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/earnings/targets")
+async def get_earnings_targets(year: int, month: int, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        records = await db.earnings_targets.find({"year": year, "month": month}).to_list(20)
+        return {"targets": [
+            {"year": r["year"], "month": r["month"], "account": r["account"], "target": r.get("target", 0)}
+            for r in records
+        ]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/earnings/targets")
+async def upsert_earnings_target(data: EarningsTarget, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        await db.earnings_targets.update_one(
+            {"year": data.year, "month": data.month, "account": data.account},
+            {"$set": {"year": data.year, "month": data.month, "account": data.account, "target": data.target}},
+            upsert=True,
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
