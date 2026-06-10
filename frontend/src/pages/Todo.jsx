@@ -695,11 +695,9 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
   }, [task.order_id]);
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center bg-slate-950/50 backdrop-blur-sm px-0 sm:px-4" onClick={onClose}>
-      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-center pt-3 pb-1 sm:hidden">
-          <div className="h-1 w-10 rounded-full bg-slate-200" />
-        </div>
+    <div className="fixed inset-0 z-[300] overflow-y-auto bg-slate-950/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="flex min-h-full items-center justify-center px-4 py-6">
+      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-slate-100">
           <div className="min-w-0 flex-1">
             <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${sm.bg} ${sm.text}`}>
@@ -801,6 +799,7 @@ function TelegramConfirmModal({ task, onConfirm, onCancel }) {
             ✓ Sudah kirim
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

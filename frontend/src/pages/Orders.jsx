@@ -804,7 +804,8 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
   );
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-slate-950/50 backdrop-blur-sm px-4 py-6">
+    <div className="fixed inset-0 z-[300] overflow-y-auto bg-slate-950/50 backdrop-blur-sm">
+      <div className="flex min-h-full items-center justify-center px-4 py-6">
       <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-7 py-5">
@@ -1038,6 +1039,7 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
           </div>
         </form>
       </div>
+      </div>
     </div>
   );
 }
@@ -1064,7 +1066,8 @@ function ImportCSVModal({ rows, onClose, onImport, formatMoney }) {
     setImporting(false);
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4 py-6">
+    <div className="fixed inset-0 z-[300] overflow-y-auto bg-slate-950/50 backdrop-blur-sm">
+      <div className="flex min-h-full items-center justify-center px-4 py-6">
       <div className="flex w-full max-w-3xl flex-col rounded-3xl bg-white shadow-2xl" style={{ maxHeight: "85vh" }}>
         <div className="flex items-center justify-between border-b border-slate-100 px-7 py-5">
           <div>
@@ -1121,6 +1124,7 @@ function ImportCSVModal({ rows, onClose, onImport, formatMoney }) {
             </button>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
