@@ -30,15 +30,12 @@ export default function Login() {
   };
 
   return (
-    <div
-      className="relative flex overflow-hidden"
-      style={{ minHeight: "100dvh", background: "#0f0f0f" }}
-    >
+    <div className="fixed inset-0 overflow-y-auto" style={{ background: "#0f0f0f" }}>
       {/* Background glow accents */}
-      <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full opacity-20" style={{ background: "radial-gradient(circle, #7c3aed, transparent 70%)" }} />
-      <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full opacity-15" style={{ background: "radial-gradient(circle, #4f46e5, transparent 70%)" }} />
+      <div className="pointer-events-none fixed -left-32 -top-32 h-96 w-96 rounded-full opacity-20" style={{ background: "radial-gradient(circle, #7c3aed, transparent 70%)" }} />
+      <div className="pointer-events-none fixed -bottom-32 -right-32 h-96 w-96 rounded-full opacity-15" style={{ background: "radial-gradient(circle, #4f46e5, transparent 70%)" }} />
 
-      <div className="relative z-10 flex w-full flex-col items-center justify-center px-4 py-8">
+      <div className="flex min-h-full flex-col items-center justify-center px-4 py-8">
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center gap-4">
           <img
