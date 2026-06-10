@@ -1334,6 +1334,10 @@ async def send_fcm(task_title: str, assignee: str):
         body = f"{assignee}: {task_title}" if assignee else task_title
         msg = fb_messaging.MulticastMessage(
             tokens=tokens,
+            notification=fb_messaging.Notification(
+                title="⚠️ Task Menunggu Review!",
+                body=body,
+            ),
             android=fb_messaging.AndroidConfig(
                 priority="high",
                 notification=fb_messaging.AndroidNotification(
@@ -1341,13 +1345,13 @@ async def send_fcm(task_title: str, assignee: str):
                     body=body,
                     channel_id="task-alert",
                     default_vibrate_timings=True,
-                    notification_priority=fb_messaging.AndroidNotificationPriority.MAX,
-                    visibility=fb_messaging.AndroidNotificationVisibility.PUBLIC,
+                    sound="default",
                 ),
             ),
             data={"type": "task_alert", "task_title": task_title, "assignee": assignee},
         )
-        fb_messaging.send_each_for_multicast(msg)
+        result = fb_messaging.send_each_for_multicast(msg)
+        print(f"[FCM] Sent: success={result.success_count}, fail={result.failure_count}")
     except Exception as e:
         print(f"[FCM] Send error: {e}")
 
