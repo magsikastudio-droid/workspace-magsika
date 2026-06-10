@@ -1330,28 +1330,32 @@ async def send_fcm(task_title: str, assignee: str):
         tokens_docs = await db.fcm_tokens.find().to_list(500)
         tokens = [d["token"] for d in tokens_docs if d.get("token")]
         if not tokens:
+            print("[FCM] No tokens found")
             return
         body = f"{assignee}: {task_title}" if assignee else task_title
-        msg = fb_messaging.MulticastMessage(
-            tokens=tokens,
-            notification=fb_messaging.Notification(
-                title="⚠️ Task Menunggu Review!",
-                body=body,
-            ),
-            android=fb_messaging.AndroidConfig(
-                priority="high",
-                notification=fb_messaging.AndroidNotification(
-                    title="⚠️ Task Menunggu Review!",
-                    body=body,
-                    channel_id="task-alert",
-                    default_vibrate_timings=True,
-                    sound="default",
-                ),
-            ),
-            data={"type": "task_alert", "task_title": task_title, "assignee": assignee},
-        )
-        result = fb_messaging.send_multicast(msg)
-        print(f"[FCM] Sent: success={result.success_count}, fail={result.failure_count}")
+        success = 0
+        for token in tokens:
+            try:
+                msg = fb_messaging.Message(
+                    notification=fb_messaging.Notification(
+                        title="⚠️ Task Menunggu Review!",
+                        body=body,
+                    ),
+                    android=fb_messaging.AndroidConfig(
+                        priority="high",
+                        notification=fb_messaging.AndroidNotification(
+                            channel_id="task-alert",
+                            sound="default",
+                        ),
+                    ),
+                    data={"type": "task_alert", "task_title": task_title, "assignee": assignee},
+                    token=token,
+                )
+                fb_messaging.send(msg)
+                success += 1
+            except Exception as e:
+                print(f"[FCM] Token error: {e}")
+        print(f"[FCM] Sent {success}/{len(tokens)}")
     except Exception as e:
         print(f"[FCM] Send error: {e}")
 
