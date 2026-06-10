@@ -39,6 +39,7 @@ try:
         _cred = fb_credentials.Certificate(_sa_path)
         firebase_admin.initialize_app(_cred)
     FCM_AVAILABLE = bool(firebase_admin._apps)
+    print(f"[FCM] Firebase admin initialized: {FCM_AVAILABLE}")
 except Exception as _e:
     FCM_AVAILABLE = False
     print(f"[FCM] Firebase admin not available: {_e}")
@@ -1308,14 +1309,17 @@ class FCMTokenRequest(BaseModel):
 
 @app.post("/fcm/token")
 async def register_fcm_token(req: FCMTokenRequest, current_user: dict = Depends(get_current_user)):
+    username = current_user.get("username", "unknown")
+    print(f"[FCM] Token register request from {username}, token={req.token[:30]}...")
     try:
         await db.fcm_tokens.update_one(
             {"token": req.token},
-            {"$set": {"token": req.token, "username": current_user.get("username"), "updated_at": datetime.now(timezone.utc).isoformat()}},
+            {"$set": {"token": req.token, "username": username, "updated_at": datetime.now(timezone.utc).isoformat()}},
             upsert=True,
         )
-    except Exception:
-        pass
+        print(f"[FCM] Token saved to DB for {username}")
+    except Exception as e:
+        print(f"[FCM] Token save error: {e}")
     return {"ok": True}
 
 
