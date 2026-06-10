@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, MessageSquare, Plus, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, Upload, MessageSquare, Plus, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { useChat } from "../context/ChatContext";
 import { toast } from "sonner";
 
@@ -62,6 +62,8 @@ export default function DailyChat() {
   const [week, setWeek] = useState(() => getEntryWeek(todayStr()));
   const [accountFilter, setAccountFilter] = useState("Semua");
   const [statusFilter, setStatusFilter] = useState("Semua");
+  const [importing, setImporting] = useState(false);
+  const importRef = useRef(null);
 
   useEffect(() => {
     fetchEntries(month);
@@ -147,6 +149,61 @@ export default function DailyChat() {
     a.click();
   };
 
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) { toast.error("File CSV kosong atau tidak valid"); return; }
+
+    const headers = lines[0].split(",").map((h) => h.trim().toUpperCase());
+    const colIdx = (name) => headers.indexOf(name);
+    const tglIdx = colIdx("TGL");
+    const tipeIdx = colIdx("TIPE");
+    const usernameIdx = colIdx("USERNAME");
+    const estimasiIdx = colIdx("ESTIMASI");
+    const budgetIdx = colIdx("BUDGET");
+    const agreedIdx = colIdx("AGREED");
+    const realIdx = colIdx("REAL");
+    const statusIdx = colIdx("STATUS");
+    const akunIdx = colIdx("AKUN");
+
+    if (tglIdx === -1 || statusIdx === -1) {
+      toast.error("Format CSV tidak cocok. Pastikan kolom TGL dan STATUS ada.");
+      return;
+    }
+
+    setImporting(true);
+    let ok = 0; let fail = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(",");
+      const num = (idx) => { const v = cols[idx]?.trim(); return v ? Number(v) : null; };
+      const str = (idx, fallback = "") => cols[idx]?.trim() || fallback;
+      try {
+        await createEntry({
+          date: str(tglIdx, todayStr()),
+          tipe: CHAT_TYPES.includes(str(tipeIdx)) ? str(tipeIdx) : "New Client",
+          username: str(usernameIdx),
+          estimasi: num(estimasiIdx),
+          budget: num(budgetIdx),
+          agreed: num(agreedIdx),
+          real: num(realIdx),
+          status: CHAT_STATUSES.includes(str(statusIdx)) ? str(statusIdx) : "Discussing",
+          akun: CHAT_ACCOUNTS.includes(str(akunIdx)) ? str(akunIdx) : "Magsika",
+        });
+        ok++;
+      } catch { fail++; }
+    }
+    setImporting(false);
+    if (ok > 0) {
+      toast.success(`${ok} baris berhasil diimpor${fail > 0 ? `, ${fail} gagal` : ""}`);
+      fetchEntries(month);
+    } else {
+      toast.error("Import gagal. Periksa format file CSV.");
+    }
+  };
+
   const monthLabel = (m) => {
     const [y, mo] = m.split("-").map(Number);
     return new Date(y, mo - 1, 1).toLocaleString("id-ID", { month: "long", year: "numeric" });
@@ -163,6 +220,14 @@ export default function DailyChat() {
           <p className="mt-1 text-sm text-slate-500">Tracking inbox &amp; pipeline client</p>
         </div>
         <div className="flex items-center gap-3">
+          <input ref={importRef} type="file" accept=".csv" className="hidden" onChange={handleImportFile} />
+          <button
+            onClick={() => importRef.current?.click()}
+            disabled={importing}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <Upload size={15} /> {importing ? "Mengimpor..." : "Import CSV"}
+          </button>
           <button onClick={exportCSV} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             <Download size={15} /> Export CSV
           </button>
