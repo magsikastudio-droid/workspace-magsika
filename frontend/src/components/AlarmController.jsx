@@ -3,26 +3,39 @@ import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { api } from "../lib/api";
 import { subscribe } from "../lib/ws";
-import { initNotifications } from "../lib/notifications";
+import { initNotifications, showTaskAlarm } from "../lib/notifications";
 import { useAuth } from "../context/AuthContext";
 import { useAlarm } from "../context/AlarmContext";
 
 async function setupFCM(onAlert) {
+  console.log("[FCM] isNativePlatform:", Capacitor.isNativePlatform());
   if (!Capacitor.isNativePlatform()) return;
   try {
     const perm = await PushNotifications.requestPermissions();
-    if (perm.receive !== "granted") return;
+    console.log("[FCM] permission result:", JSON.stringify(perm));
+    if (perm.receive !== "granted") {
+      console.warn("[FCM] permission not granted:", perm.receive);
+      return;
+    }
 
+    console.log("[FCM] calling register()...");
     await PushNotifications.register();
+    console.log("[FCM] register() called");
 
-    // Kirim token ke backend agar bisa dikirim FCM
     PushNotifications.addListener("registration", async ({ value: token }) => {
+      console.log("[FCM] got token:", token ? token.substring(0, 30) : "null");
       try {
         await api.post("/fcm/token", { token });
-      } catch {}
+        console.log("[FCM] token sent to backend");
+      } catch (e) {
+        console.error("[FCM] token send error:", e);
+      }
     });
 
-    // Notif diterima saat app FOREGROUND → tampilkan alarm overlay
+    PushNotifications.addListener("registrationError", (err) => {
+      console.error("[FCM] registrationError:", JSON.stringify(err));
+    });
+
     PushNotifications.addListener("pushNotificationReceived", (notif) => {
       const d = notif.data || {};
       if (d.type === "task_alert") {
@@ -30,15 +43,18 @@ async function setupFCM(onAlert) {
       }
     });
 
-    // User tap notif dari BACKGROUND/SLEEP → tampilkan alarm overlay
     PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
       const d = action.notification.data || {};
       if (d.type === "task_alert") {
-        onAlert(d.task_title || "Task menunggu review", d.assignee || "");
+        const title = d.task_title || "Task menunggu review";
+        const assignee = d.assignee || "";
+        // Trigger local fullScreenIntent notification so screen wakes on lock screen tap
+        showTaskAlarm(title, assignee);
+        onAlert(title, assignee);
       }
     });
   } catch (e) {
-    console.error("[FCM] setup error:", e);
+    console.error("[FCM] setup error:", e.message || e);
   }
 }
 

@@ -14,6 +14,7 @@ export async function initNotifications() {
       importance: 5,
       visibility: 1,
       vibration: true,
+      bypassDnd: true,
       lights: true,
       lightColor: "#FF0000",
       sound: "default",
