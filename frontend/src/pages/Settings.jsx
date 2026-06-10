@@ -647,12 +647,61 @@ export default function SettingsPage() {
             <p className="text-sm text-slate-500">Magsika Studio Dashboard v2.0</p>
             <p className="text-xs text-slate-400 mt-1">Deploy: {new Date().toLocaleDateString("id-ID")}</p>
           </div>
+
+          {isAdmin && <ClearDataSection />}
         </div>
       )}
 
       {showInvite && (
         <InviteModal onClose={() => setShowInvite(false)} onInvited={(newUser) => setUsers((prev) => [...prev, newUser])} />
       )}
+    </div>
+  );
+}
+
+function ClearDataSection() {
+  const [confirm, setConfirm] = useState("");
+  const [clearing, setClearing] = useState(false);
+
+  const handleClear = async () => {
+    if (confirm !== "HAPUS") { toast.error('Ketik "HAPUS" untuk konfirmasi'); return; }
+    setClearing(true);
+    try {
+      await api.delete("/admin/clear-all-data");
+      toast.success("Semua data berhasil dihapus. Silakan refresh halaman.");
+      setConfirm("");
+    } catch (e) {
+      toast.error("Gagal menghapus data: " + (e?.response?.data?.detail || e.message));
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  return (
+    <div className="rounded-[2rem] border-2 border-rose-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-2 mb-1">
+        <Trash2 size={18} className="text-rose-500" />
+        <h2 className="text-xl font-semibold text-rose-600">Hapus Semua Data</h2>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Menghapus <strong>seluruh data</strong> orders, tasks, daily chat, freelance, earnings, notifikasi, pengumuman, dan jadwal.
+        Akun pengguna <strong>tidak</strong> akan terhapus.
+      </p>
+      <div className="flex gap-3 items-center">
+        <input
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value.toUpperCase())}
+          placeholder='Ketik "HAPUS" untuk konfirmasi'
+          className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm outline-none focus:border-rose-400 w-64"
+        />
+        <button
+          onClick={handleClear}
+          disabled={clearing || confirm !== "HAPUS"}
+          className="inline-flex items-center gap-2 rounded-2xl bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40 transition"
+        >
+          <Trash2 size={14} /> {clearing ? "Menghapus..." : "Hapus Semua Data"}
+        </button>
+      </div>
     </div>
   );
 }
