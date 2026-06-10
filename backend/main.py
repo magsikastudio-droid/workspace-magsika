@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -28,6 +29,21 @@ except ImportError:
 from auth import create_access_token, decode_token, oauth2_scheme
 
 load_dotenv()
+
+# ─── Firebase Admin SDK ───────────────────────────────────────────────────────
+try:
+    import firebase_admin
+    from firebase_admin import credentials as fb_credentials, messaging as fb_messaging
+    _sa_path = os.path.join(os.path.dirname(__file__), "firebase-service-account.json")
+    if os.path.exists(_sa_path) and not firebase_admin._apps:
+        _cred = fb_credentials.Certificate(_sa_path)
+        firebase_admin.initialize_app(_cred)
+    FCM_AVAILABLE = bool(firebase_admin._apps)
+except Exception as _e:
+    FCM_AVAILABLE = False
+    print(f"[FCM] Firebase admin not available: {_e}")
+
+
 
 BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
@@ -779,6 +795,7 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
             "task_title": updated.get("title", ""),
             "assignee": updated.get("assignee", ""),
         })
+        await send_fcm(updated.get("title", ""), updated.get("assignee", ""))
     # Keluar dari review (approved/rejected) → tandai notifikasi terkait sebagai dibaca
     elif new_status in ["done", "in progress", "failed"]:
         try:
@@ -1282,6 +1299,53 @@ async def delete_schedule_event(event_id: str, current_user: dict = Depends(get_
         raise HTTPException(status_code=500, detail=str(e))
     await manager.broadcast({"type": "schedule_updated"})
     return {"deleted": True}
+
+
+# ─── FCM Token ───────────────────────────────────────────────────────────────
+
+class FCMTokenRequest(BaseModel):
+    token: str
+
+@app.post("/fcm/token")
+async def register_fcm_token(req: FCMTokenRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        await db.fcm_tokens.update_one(
+            {"token": req.token},
+            {"$set": {"token": req.token, "username": current_user.get("username"), "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+    except Exception:
+        pass
+    return {"ok": True}
+
+
+async def send_fcm(task_title: str, assignee: str):
+    if not FCM_AVAILABLE:
+        return
+    try:
+        tokens_docs = await db.fcm_tokens.find().to_list(500)
+        tokens = [d["token"] for d in tokens_docs if d.get("token")]
+        if not tokens:
+            return
+        body = f"{assignee}: {task_title}" if assignee else task_title
+        msg = fb_messaging.MulticastMessage(
+            tokens=tokens,
+            android=fb_messaging.AndroidConfig(
+                priority="high",
+                notification=fb_messaging.AndroidNotification(
+                    title="⚠️ Task Menunggu Review!",
+                    body=body,
+                    channel_id="task-alert",
+                    default_vibrate_timings=True,
+                    notification_priority=fb_messaging.AndroidNotificationPriority.MAX,
+                    visibility=fb_messaging.AndroidNotificationVisibility.PUBLIC,
+                ),
+            ),
+            data={"type": "task_alert", "task_title": task_title, "assignee": assignee},
+        )
+        fb_messaging.send_each_for_multicast(msg)
+    except Exception as e:
+        print(f"[FCM] Send error: {e}")
 
 
 # ─── Notifications ────────────────────────────────────────────────────────────

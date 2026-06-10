@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 websockets
+firebase-admin
 python-jose[cryptography]
 passlib
 bcrypt==4.0.1
