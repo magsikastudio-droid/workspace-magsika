@@ -51,7 +51,7 @@ MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "43200"))
 
 client_kwargs = {
     "serverSelectionTimeoutMS": 15000,
@@ -1576,19 +1576,23 @@ async def seed_team(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
     team = [
-        {"username": "ivo",     "full_name": "Ivo",     "email": "ivo@magsikastudio.com",    "role": "admin"},
-        {"username": "novita",  "full_name": "Novita",  "email": "novita@magsikastudio.com", "role": "admin"},
-        {"username": "kevin",   "full_name": "Kevin",   "email": "kevin@magsikastudio.com",  "role": "pm"},
-        {"username": "andre",   "full_name": "Andre",   "email": "andre@magsikastudio.com",  "role": "talent"},
-        {"username": "hadziq",  "full_name": "Hadziq",  "email": "hadziq@magsikastudio.com", "role": "talent"},
-        {"username": "quin",    "full_name": "Quin",    "email": "quin@magsikastudio.com",   "role": "talent"},
+        {"username": "ivo",     "full_name": "Ivo Febrian",  "email": "ivo@magsikastudio.com",    "role": "admin"},
+        {"username": "novita",  "full_name": "Novitabita",   "email": "novita@magsikastudio.com", "role": "admin"},
+        {"username": "kevin",   "full_name": "Kevin Yanto",  "email": "kevin@magsikastudio.com",  "role": "pm"},
+        {"username": "andre",   "full_name": "Andre Kopeng", "email": "andre@magsikastudio.com",  "role": "talent"},
+        {"username": "hadziq",  "full_name": "Hadziqkls7",   "email": "hadziq@magsikastudio.com", "role": "talent"},
+        {"username": "quin",    "full_name": "Quin King",    "email": "quin@magsikastudio.com",   "role": "talent"},
     ]
-    password = "GetukLindri!"
-    created, skipped = [], []
+    password = "Magsika!"
+    created, updated, skipped = [], [], []
     for member in team:
         existing = await db.users.find_one({"username": member["username"]})
         if existing:
-            skipped.append(member["username"])
+            await db.users.update_one(
+                {"username": member["username"]},
+                {"$set": {**member, "hashed_password": hash_password(password), "status": "active"}}
+            )
+            updated.append(member["username"])
             continue
         await db.users.insert_one({
             **member,
@@ -1597,7 +1601,7 @@ async def seed_team(current_user: dict = Depends(get_current_user)):
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
         created.append(member["username"])
-    return {"created": created, "skipped": skipped}
+    return {"created": created, "updated": updated, "skipped": skipped}
 
 
 # ─── Earnings Weekly Tracking ─────────────────────────────────────────────────

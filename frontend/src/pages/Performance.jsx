@@ -335,7 +335,7 @@ function ArtistDetailPanel({ artistName, summary, orderById, monthStr, selMonth,
   return (
     <div className="fixed inset-0 z-[300] flex justify-end">
       <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm bg-white shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-sm bg-white shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4 shrink-0">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white" style={{ background: color }}>
@@ -377,8 +377,8 @@ function ArtistDetailPanel({ artistName, summary, orderById, monthStr, selMonth,
         </div>
 
         {/* Order list — scrollable */}
-        <div className="flex-1 overflow-y-auto border-t border-slate-100 flex flex-col min-h-0">
-          <div className="px-4 pt-3 pb-2 shrink-0 border-b border-slate-50">
+        <div className="flex-1 overflow-y-auto min-h-0 border-t border-slate-100">
+          <div className="px-4 pt-3 pb-4">
             <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Project Dikerjakan ({artistOrders.length})</p>
             <ArtistOrderSearch artistOrders={artistOrders} artistName={artistName} />
           </div>
@@ -411,7 +411,7 @@ function ArtistOrderSearch({ artistOrders, artistName }) {
       {filtered.length === 0 ? (
         <p className="py-4 text-xs text-slate-400 text-center">Tidak ditemukan.</p>
       ) : (
-        <div className="space-y-1 max-h-64 overflow-y-auto">
+        <div className="space-y-1">
           {filtered.map((os) => {
             const o = os.order;
             const myDone = os.done_by_assignee?.[artistName] ?? os.done;

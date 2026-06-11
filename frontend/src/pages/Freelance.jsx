@@ -48,6 +48,18 @@ export default function Freelance() {
     [orders]
   );
 
+  /* Artist yang muncul di order sebagai Freelance tapi belum terdaftar */
+  const autoDetected = useMemo(() => {
+    const names = new Set();
+    orders.forEach((o) => {
+      (o.artist_contributions || []).forEach((c) => {
+        if (c.type === "Freelance" && c.name?.trim()) names.add(c.name.trim());
+      });
+    });
+    const registered = new Set(artists.map((a) => a.name));
+    return [...names].filter((n) => !registered.has(n));
+  }, [orders, artists]);
+
   const filteredLinkOrders = useMemo(() => {
     if (!orderSearch.trim()) return linkedableOrders;
     const q = orderSearch.toLowerCase();
@@ -234,6 +246,29 @@ export default function Freelance() {
         </div>
       )}
 
+      {/* Auto-detected unregistered freelancers */}
+      {!loading && autoDetected.length > 0 && (
+        <div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle size={16} className="text-amber-500 shrink-0" />
+            <p className="text-sm font-semibold text-amber-700">
+              {autoDetected.length} freelancer terdeteksi dari order — belum terdaftar
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {autoDetected.map((name) => (
+              <button
+                key={name}
+                onClick={() => { setEditArtist(null); setArtistForm({ ...EMPTY_ARTIST, name }); setShowArtistModal(true); }}
+                className="inline-flex items-center gap-1.5 rounded-2xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 transition"
+              >
+                <Plus size={14} /> Daftarkan {name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-center py-16 text-slate-400">Memuat data...</div>
       ) : artists.length === 0 ? (
@@ -267,58 +302,65 @@ export default function Freelance() {
                       {artist.name.slice(0, 1).toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-semibold text-slate-900 text-lg leading-tight">{artist.name}</p>
+                      <p className="font-bold text-slate-900 text-xl leading-tight">{artist.name}</p>
                       {(artist.bank || artist.rekening) && (
-                        <p className="text-sm text-slate-500">{artist.bank}{artist.rekening ? ` · ${artist.rekening}` : ""}</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{artist.bank}{artist.rekening ? ` · ${artist.rekening}` : ""}</p>
                       )}
-                      {artist.phone && <p className="text-xs text-slate-400">{artist.phone}</p>}
+                      {artist.phone && <p className="text-sm text-slate-400">{artist.phone}</p>}
+                      {!artist.bank && !artist.phone && (
+                        <p className="text-xs text-amber-500 mt-0.5">Rekening & kontak belum diisi</p>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-5">
                     {/* Fee summary */}
-                    {total > 0 && (
-                      <div className="min-w-[140px]">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-slate-400">Fee</span>
-                          <span className="text-sm font-bold text-slate-900">{fmtCurrency(total)}</span>
+                    {total > 0 ? (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 min-w-[180px]">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total Fee</span>
+                          <span className="text-base font-bold text-slate-900">{fmtCurrency(total)}</span>
                         </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
                           <div className="h-full rounded-full bg-amber-300 transition-all" style={{ width: `${dpPct}%` }} />
                           <div className="h-full rounded-full bg-emerald-500 -mt-2 transition-all" style={{ width: `${paidPct}%` }} />
                         </div>
-                        <div className="flex justify-between mt-0.5">
-                          <span className="text-[10px] text-emerald-600 font-semibold">Lunas {fmtCurrency(paid)}</span>
-                          {outstanding > 0 && <span className="text-[10px] text-rose-500 font-semibold">Sisa {fmtCurrency(outstanding)}</span>}
+                        <div className="flex justify-between mt-1.5">
+                          <span className="text-xs text-emerald-600 font-semibold">Lunas: {fmtCurrency(paid)}</span>
+                          {outstanding > 0 && <span className="text-xs text-rose-500 font-semibold">Sisa: {fmtCurrency(outstanding)}</span>}
                         </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-400 text-center">
+                        Belum ada project
                       </div>
                     )}
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() => openAddProject(artist.id)}
-                        className="inline-flex items-center gap-1.5 rounded-2xl bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition"
+                        className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 transition"
                       >
-                        <Plus size={13} /> Project
+                        <Plus size={15} /> Tambah Project
                       </button>
                       <button
                         onClick={() => { setEditArtist(artist); setArtistForm({ name: artist.name, bank: artist.bank || "", rekening: artist.rekening || "", phone: artist.phone || "", notes: artist.notes || "" }); setShowArtistModal(true); }}
-                        className="rounded-2xl p-2 text-slate-400 hover:bg-slate-100 transition"
+                        className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition"
                       >
-                        <Edit3 size={14} />
+                        <Edit3 size={14} /> Edit
                       </button>
                       <button
                         onClick={() => setConfirmDelete(artist)}
-                        className="rounded-2xl p-2 text-rose-400 hover:bg-rose-50 transition"
+                        className="inline-flex items-center gap-1.5 rounded-2xl border border-rose-200 px-3 py-2.5 text-sm font-semibold text-rose-500 hover:bg-rose-50 transition"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={14} /> Hapus
                       </button>
                       <button
                         onClick={() => setExpandedArtist(expanded ? null : artist.id)}
-                        className="rounded-2xl p-2 text-slate-400 hover:bg-slate-100 transition"
+                        className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-100 transition"
                       >
-                        {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                        {expanded ? <><ChevronUp size={15} /> Tutup</> : <><ChevronDown size={15} /> Lihat Project ({aproj.length})</>}
                       </button>
                     </div>
                   </div>

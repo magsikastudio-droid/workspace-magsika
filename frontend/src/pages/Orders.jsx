@@ -472,8 +472,57 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
     next[idx] = { ...next[idx], [field]: value };
     return { ...p, artist_contributions: next };
   });
-  const addContrib = () => setForm((p) => ({ ...p, artist_contributions: [...(p.artist_contributions || []), { name: "", type: "Tim", percent: 0 }] }));
-  const removeContrib = (idx) => setForm((p) => ({ ...p, artist_contributions: (p.artist_contributions || []).filter((_, i) => i !== idx) }));
+
+  const rebalance = (list) => {
+    const n = list.length;
+    if (n === 0) return list;
+    const base = Math.floor(100 / n);
+    return list.map((c, i) => ({ ...c, percent: i === n - 1 ? 100 - base * (n - 1) : base }));
+  };
+
+  const addContrib = () => setForm((p) => ({
+    ...p,
+    artist_contributions: rebalance([...(p.artist_contributions || []), { name: "", type: "Tim", percent: 0 }]),
+  }));
+  const removeContrib = (idx) => setForm((p) => ({
+    ...p,
+    artist_contributions: rebalance((p.artist_contributions || []).filter((_, i) => i !== idx)),
+  }));
+
+  // Merge order artist list with dynamic task data for view mode
+  const mergedContribs = useMemo(() => {
+    const baseList = order.artist_contributions?.length
+      ? order.artist_contributions
+      : (order.artists || []).map((a) => ({ name: a, type: "Tim", percent: 100 }));
+
+    if (!dynamicContribs?.contributions?.length) {
+      const n = baseList.length;
+      if (n <= 1) return baseList;
+      const total = baseList.reduce((s, c) => s + (Number(c.percent) || 0), 0);
+      return total > 100 ? rebalance(baseList) : baseList;
+    }
+
+    const dynMap = {};
+    dynamicContribs.contributions.forEach((c) => { dynMap[c.name] = c; });
+
+    const merged = baseList.map((ac) => ({
+      ...ac,
+      tasks: dynMap[ac.name]?.tasks ?? 0,
+      done: dynMap[ac.name]?.done ?? 0,
+      time: dynMap[ac.name]?.time ?? 0,
+    }));
+    dynamicContribs.contributions.forEach((dc) => {
+      if (!merged.find((m) => m.name === dc.name)) merged.push({ ...dc, type: dc.type || "Tim" });
+    });
+
+    const totalTime = merged.reduce((s, c) => s + (c.time || 0), 0);
+    const totalTasks = merged.reduce((s, c) => s + (c.tasks || 0), 0);
+    const n = merged.length;
+
+    if (totalTime > 0) return merged.map((c) => ({ ...c, percent: Math.round((c.time || 0) / totalTime * 100) }));
+    if (totalTasks > 0) return merged.map((c) => ({ ...c, percent: Math.round((c.tasks || 0) / totalTasks * 100) }));
+    return rebalance(merged);
+  }, [dynamicContribs, order.artist_contributions, order.artists]);
 
   const orderDate = form.order_date || new Date().toISOString().slice(0, 10);
   const orderNumToday = (ordersOnDay ? ordersOnDay(orderDate) : 0) + 1;
@@ -513,7 +562,7 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
       <div className="fixed inset-0 z-[200] bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 z-[300] flex w-full max-w-[500px] flex-col bg-white shadow-2xl" style={{ height: "100dvh" }}>
+      <div className="fixed right-0 inset-y-0 z-[300] flex w-full max-w-[500px] flex-col bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-5">
           <div className="min-w-0 flex-1">
@@ -574,7 +623,7 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
                   )}
                 </div>
                 <div className="space-y-2">
-                  {(dynamicContribs?.contributions || order.artist_contributions?.length ? (dynamicContribs?.contributions || order.artist_contributions) : (order.artists || []).map((a) => ({ name: a, type: "Tim", percent: 100 }))).map((c, i) => (
+                  {mergedContribs.map((c, i) => (
                     <div key={i} className="rounded-xl bg-slate-50 px-3 py-2.5">
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
