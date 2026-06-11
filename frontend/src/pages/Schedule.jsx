@@ -35,6 +35,80 @@ const ID_HOLIDAYS = new Set([
   "2027-01-01","2027-08-17","2027-12-25",
 ]);
 
+function DayDetailPanel({ dateStr, events, deadlines, isAdmin, onClose, onAdd, onEdit, onDelete }) {
+  const [yr, mo, dy] = dateStr.split("-");
+  const dayLabel = `${parseInt(dy)} ${MONTHS[parseInt(mo) - 1]} ${yr}`;
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
+      <div className="w-full max-w-md rounded-[2rem] bg-white p-6 shadow-2xl max-h-[80vh] flex flex-col">
+        <div className="mb-4 flex items-center justify-between shrink-0">
+          <h3 className="text-lg font-semibold">{dayLabel}</h3>
+          <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><X size={18} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 space-y-4">
+          {deadlines.length > 0 && (
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-amber-500 mb-2">Deadline Order</p>
+              <div className="space-y-2">
+                {deadlines.map((o) => (
+                  <div key={o.id} className="flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 p-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{o.project}</p>
+                      <p className="text-xs text-slate-500">{o.client}</p>
+                    </div>
+                    <span className="text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">{o.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {events.length > 0 && (
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-violet-500 mb-2">Event Tim</p>
+              <div className="space-y-2">
+                {events.map((ev) => {
+                  const col = getColor(ev.color);
+                  return (
+                    <div key={ev.id} className={`rounded-2xl border p-3 ${col.light}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold">{ev.title}</p>
+                          {ev.time && <p className="text-xs opacity-75 mt-0.5">{ev.time}</p>}
+                          {ev.end_date && ev.end_date !== ev.date && (
+                            <p className="text-xs opacity-60 mt-0.5">s/d {ev.end_date}</p>
+                          )}
+                          {ev.description && <p className="text-xs opacity-70 mt-1">{ev.description}</p>}
+                        </div>
+                        {isAdmin && (
+                          <div className="flex gap-1 shrink-0">
+                            <button onClick={() => { onClose(); onEdit(ev); }} className="rounded-lg p-1 opacity-60 hover:opacity-100 transition"><Pencil size={13} /></button>
+                            <button onClick={() => { onClose(); onDelete(ev); }} className="rounded-lg p-1 opacity-60 hover:opacity-100 text-rose-500 transition"><Trash2 size={13} /></button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {events.length === 0 && deadlines.length === 0 && (
+            <p className="text-sm text-slate-400 text-center py-4">Tidak ada event pada tanggal ini.</p>
+          )}
+        </div>
+        {isAdmin && (
+          <div className="flex justify-end pt-4 shrink-0">
+            <button onClick={() => { onClose(); onAdd(); }}
+              className="flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition">
+              <Plus size={15} /> Tambah Event
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function EventModal({ initial, selectedDate, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: initial?.title || "",
@@ -143,6 +217,8 @@ export default function SchedulePage() {
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
+  const [showDayPanel, setShowDayPanel] = useState(false);
+  const [dayPanelDate, setDayPanelDate] = useState(null);
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -224,8 +300,13 @@ export default function SchedulePage() {
   const openAdd = (d) => {
     if (!isAdmin) return;
     setEditItem(null);
-    setSelectedDate(dateStr(d));
+    setSelectedDate(typeof d === "string" ? d : dateStr(d));
     setShowModal(true);
+  };
+
+  const openDayDetail = (d) => {
+    setDayPanelDate(dateStr(d));
+    setShowDayPanel(true);
   };
 
   const openEdit = (ev) => { setEditItem(ev); setSelectedDate(ev.date); setShowModal(true); };
@@ -293,7 +374,7 @@ export default function SchedulePage() {
               return (
                 <div
                   key={ds}
-                  onClick={() => openAdd(d)}
+                  onClick={() => openDayDetail(d)}
                   className={`rounded-xl p-1 flex flex-col cursor-pointer transition hover:bg-slate-50 min-h-[68px] ${
                     isToday ? "bg-violet-50 ring-1 ring-violet-300" : ""
                   }`}
@@ -350,7 +431,7 @@ export default function SchedulePage() {
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-200" /> Deadline order</span>
             <span className="flex items-center gap-1"><span className="text-rose-500 font-bold text-xs">31</span> Minggu / Libur</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-violet-200" /> Event tim</span>
-            {isAdmin && <span className="ml-auto italic">Klik tanggal untuk menambah event</span>}
+            <span className="ml-auto italic">Klik tanggal untuk lihat detail</span>
           </div>
         </div>
 
@@ -427,6 +508,18 @@ export default function SchedulePage() {
         </div>
       </div>
 
+      {showDayPanel && dayPanelDate && (
+        <DayDetailPanel
+          dateStr={dayPanelDate}
+          events={eventsByDate[dayPanelDate] || []}
+          deadlines={deadlinesByDate[dayPanelDate] || []}
+          isAdmin={isAdmin}
+          onClose={() => { setShowDayPanel(false); setDayPanelDate(null); }}
+          onAdd={() => { openAdd(dayPanelDate); }}
+          onEdit={(ev) => openEdit(ev)}
+          onDelete={(ev) => handleDelete(ev)}
+        />
+      )}
       {showModal && (
         <EventModal initial={editItem} selectedDate={selectedDate} onClose={closeModal} onSaved={handleSaved} />
       )}
