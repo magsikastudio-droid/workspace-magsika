@@ -1603,6 +1603,7 @@ def format_notification(record: dict) -> dict:
         "date": record.get("date", ""),
         "read": record.get("read", False),
         "review_result": record.get("review_result"),
+        "reviewed_by": record.get("reviewed_by", ""),
         "created_at": record.get("created_at", ""),
     }
 
@@ -1655,6 +1656,7 @@ async def mark_notification_read(notif_id: str, body: NotifReadBody = NotifReadB
     update = {"read": True}
     if body.result:
         update["review_result"] = body.result
+        update["reviewed_by"] = current_user.get("full_name", current_user.get("username", ""))
     try:
         await db.notifications.update_one({"_id": object_id}, {"$set": update})
     except Exception as e:

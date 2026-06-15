@@ -195,12 +195,12 @@ function NotifCard({ notif, onApprove, onReject, onGoToTask, onRead }) {
             )}
             {notif.review_result === "approved" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
-                <CheckCheck size={11} /> Disetujui
+                <CheckCheck size={11} /> Disetujui{notif.reviewed_by ? ` oleh ${notif.reviewed_by}` : ""}
               </span>
             )}
             {notif.review_result === "rejected" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-600">
-                <X size={11} /> Ditolak
+                <X size={11} /> Ditolak{notif.reviewed_by ? ` oleh ${notif.reviewed_by}` : ""}
               </span>
             )}
           </div>
