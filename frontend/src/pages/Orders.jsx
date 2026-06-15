@@ -473,16 +473,30 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
     if (!order.id) return;
     api.get("/tasks/contributions", { params: { order_id: order.id } })
       .then((r) => {
-        if ((r.data.contributions || []).length > 0) {
-          setDynamicContribs(r.data);
-          // Auto-sync new assignees into order.artists
-          const currentArtists = order.artists || [];
-          const newArtists = (r.data.contributions || [])
-            .map((c) => c.name)
-            .filter((n) => n && !currentArtists.includes(n));
-          if (newArtists.length > 0) {
-            updateOrder(order.id, { artists: [...currentArtists, ...newArtists] }).catch(() => {});
-          }
+        const contribs = r.data.contributions || [];
+        if (contribs.length === 0) return;
+        setDynamicContribs(r.data);
+
+        // Build task-based contributions (primary = tasks count)
+        const totalTasks = contribs.reduce((s, c) => s + (c.tasks || 0), 0);
+        const newContributions = contribs.map((c) => ({
+          name: c.name,
+          type: c.type || "Tim",
+          percent: totalTasks > 0 ? Math.round((c.tasks || 0) / totalTasks * 100) : 0,
+        }));
+
+        // Sync edit form to show real contributors + real percentages
+        setForm((p) => ({ ...p, artist_contributions: newContributions }));
+
+        // If there are new artists not in DB yet, update order in DB
+        const currentArtists = order.artists || [];
+        const allNames = contribs.map((c) => c.name).filter(Boolean);
+        const hasNew = allNames.some((n) => !currentArtists.includes(n));
+        if (hasNew) {
+          updateOrder(order.id, {
+            artists: [...new Set([...currentArtists, ...allNames])],
+            artist_contributions: newContributions,
+          }).catch(() => {});
         }
       })
       .catch(() => {});
