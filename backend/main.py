@@ -50,29 +50,29 @@ except Exception as _e:
 
 
 BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 def _call_ai(prompt: str) -> str:
-    if not OPENROUTER_API_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY tidak disetel di server")
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    if not ANTHROPIC_API_KEY:
+        raise RuntimeError("ANTHROPIC_API_KEY tidak disetel di server")
+    url = "https://api.anthropic.com/v1/messages"
     body = _json.dumps({
-        "model": "meta-llama/llama-3.2-3b-instruct:free",
-        "messages": [{"role": "user", "content": prompt}],
+        "model": "claude-haiku-4-5-20251001",
         "max_tokens": 500,
+        "messages": [{"role": "user", "content": prompt}],
     }).encode("utf-8")
     req = _urllib_request.Request(url, data=body, headers={
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "HTTP-Referer": "https://workspace.magsikastudio.com",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
     }, method="POST")
     try:
         with _urllib_request.urlopen(req, timeout=30) as resp:
             data = _json.loads(resp.read().decode("utf-8"))
     except _urllib_request.HTTPError as e:
         err_body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"AI API {e.code}: {err_body[:300]}")
-    return data["choices"][0]["message"]["content"]
+        raise RuntimeError(f"Claude API {e.code}: {err_body[:300]}")
+    return data["content"][0]["text"]
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
@@ -1754,8 +1754,8 @@ import asyncio as _asyncio
 
 @app.get("/ai/insight/member")
 async def ai_member_insight(name: str, month: str, current_user: dict = Depends(get_current_user)):
-    if not OPENROUTER_API_KEY:
-        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set OPENROUTER_API_KEY di environment.")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set ANTHROPIC_API_KEY di environment.")
     try:
         tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
         all_orders = await db.orders.find({"artists": name}).to_list(100)
@@ -1794,8 +1794,8 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
 async def ai_overall_insight(month: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ["admin", "pm"]:
         raise HTTPException(status_code=403, detail="Forbidden")
-    if not OPENROUTER_API_KEY:
-        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set OPENROUTER_API_KEY di environment.")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set ANTHROPIC_API_KEY di environment.")
     try:
         all_orders = await db.orders.find().to_list(500)
         month_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
