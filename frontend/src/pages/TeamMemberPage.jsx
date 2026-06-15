@@ -5,7 +5,7 @@ import { useOrders } from "../context/OrdersContext";
 import { useAuth } from "../context/AuthContext";
 import {
   ArrowLeft, Bot, CheckCircle2, ChevronLeft, ChevronRight,
-  Clock, FolderOpen, Loader2, Search, Sparkles,
+  Loader2, Pencil, Search, Sparkles, Trash2,
 } from "lucide-react";
 import { normalizeStatus } from "../lib/constants";
 import { monthLabel } from "../lib/format";
@@ -61,11 +61,7 @@ const renderInsight = (text) =>
         </div>
       );
     }
-    return (
-      <p key={i} className="text-sm text-slate-700 leading-relaxed">
-        {renderBold(line)}
-      </p>
-    );
+    return <p key={i} className="text-sm text-slate-700 leading-relaxed">{renderBold(line)}</p>;
   });
 
 export default function TeamMemberPage() {
@@ -75,6 +71,7 @@ export default function TeamMemberPage() {
   const { orders } = useOrders();
   const { user } = useAuth();
   const isAdminOrPM = user?.role === "admin" || user?.role === "pm";
+  const isAdmin = user?.role === "admin";
 
   const today = new Date();
   const [selYear, setSelYear] = useState(today.getFullYear());
@@ -84,11 +81,16 @@ export default function TeamMemberPage() {
   const [summary, setSummary] = useState({ artists: [], orders: [] });
   const [loading, setLoading] = useState(false);
   const [historyData, setHistoryData] = useState([]);
-  const [aiInsight, setAiInsight] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState(null);
-  const [aiPeriod, setAiPeriod] = useState("monthly");
   const [searchQ, setSearchQ] = useState("");
+
+  // AI report state
+  const [aiPeriod, setAiPeriod] = useState("daily");
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -127,6 +129,18 @@ export default function TeamMemberPage() {
     };
     fetchHistory();
   }, [selYear, selMonth, artistName]);
+
+  // Load saved AI report whenever period or month changes
+  useEffect(() => {
+    if (!isAdminOrPM) return;
+    setReport(null);
+    setIsEditing(false);
+    setReportLoading(true);
+    api.get("/ai/reports/member", { params: { name: artistName, period: aiPeriod, month: monthStr } })
+      .then((r) => setReport(r.data.report))
+      .catch(() => {})
+      .finally(() => setReportLoading(false));
+  }, [artistName, aiPeriod, monthStr, isAdminOrPM]);
 
   const prevMonth = () => {
     if (selMonth === 0) { setSelYear((y) => y - 1); setSelMonth(11); }
@@ -171,24 +185,54 @@ export default function TeamMemberPage() {
   const color = getColor(artistName);
   const maxDone = Math.max(...historyData.map((h) => h.done), 1);
 
-  const loadInsight = useCallback(async () => {
-    setAiLoading(true);
-    setAiInsight(null);
-    setAiError(null);
+  const generateReport = useCallback(async () => {
+    setGenerating(true);
     try {
-      const res = await api.get("/ai/insight/member", { params: { name: artistName, month: monthStr, period: aiPeriod } });
-      setAiInsight(res.data.insight);
+      const res = await api.post("/ai/reports/member/generate", null, {
+        params: { name: artistName, period: aiPeriod, month: monthStr },
+      });
+      setReport(res.data.report);
+      toast.success("Laporan AI berhasil dibuat.");
     } catch (err) {
-      const msg = err?.response?.data?.detail || "Gagal memuat insight AI";
-      setAiError(msg);
-      toast.error(msg);
+      toast.error(err?.response?.data?.detail || "Gagal membuat laporan AI.");
     } finally {
-      setAiLoading(false);
+      setGenerating(false);
     }
-  }, [artistName, monthStr, aiPeriod]);
+  }, [artistName, aiPeriod, monthStr]);
+
+  const startEdit = () => {
+    setEditContent(report?.content || "");
+    setIsEditing(true);
+  };
+
+  const saveEdit = useCallback(async () => {
+    setSaving(true);
+    try {
+      const res = await api.put(`/ai/reports/${report.id}`, { content: editContent });
+      setReport(res.data.report);
+      setIsEditing(false);
+      toast.success("Laporan berhasil diperbarui.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal menyimpan.");
+    } finally {
+      setSaving(false);
+    }
+  }, [report, editContent]);
+
+  const deleteReport = useCallback(async () => {
+    if (!window.confirm("Hapus laporan ini?")) return;
+    try {
+      await api.delete(`/ai/reports/${report.id}`);
+      setReport(null);
+      setIsEditing(false);
+      toast.success("Laporan dihapus.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal menghapus.");
+    }
+  }, [report]);
 
   return (
-    <div className="space-y-5 max-w-3xl mx-auto">
+    <div className="space-y-5">
       {/* Back */}
       <button
         onClick={() => navigate("/performance")}
@@ -214,8 +258,6 @@ export default function TeamMemberPage() {
               </p>
             </div>
           </div>
-
-          {/* Month picker */}
           <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 px-3 py-2">
             <button onClick={prevMonth} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition">
               <ChevronLeft size={16} />
@@ -243,229 +285,294 @@ export default function TeamMemberPage() {
         </div>
       </div>
 
-      {/* Stat cards */}
-      {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white py-10 text-center text-sm text-slate-400">
-          Memuat data...
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-emerald-500">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Task Done</p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">{stats.done}</p>
-            <p className="mt-1 text-xs text-slate-400">dari {stats.tasks} total</p>
-          </div>
-          <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-violet-500">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Done Rate</p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">{doneRate}%</p>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full transition-all" style={{ width: `${doneRate}%`, background: color }} />
+      {/* 2-column: left=stats+data, right=AI */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
+
+        {/* ── Left column ── */}
+        <div className="lg:col-span-3 space-y-5">
+          {/* Stat cards */}
+          {loading ? (
+            <div className="rounded-2xl border border-slate-200 bg-white py-10 text-center text-sm text-slate-400">
+              Memuat data...
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-emerald-500">
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Task Done</p>
+                <p className="mt-2 text-3xl font-bold text-slate-900">{stats.done}</p>
+                <p className="mt-1 text-xs text-slate-400">dari {stats.tasks} total</p>
+              </div>
+              <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-violet-500">
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Done Rate</p>
+                <p className="mt-2 text-3xl font-bold text-slate-900">{doneRate}%</p>
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${doneRate}%`, background: color }} />
+                </div>
+              </div>
+              <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-sky-500">
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Waktu Kerja</p>
+                <p className="mt-2 text-3xl font-bold text-slate-900">{fmtTime(stats.time) === "—" ? "0" : fmtTime(stats.time)}</p>
+                <p className="mt-1 text-xs text-slate-400">akumulasi timer</p>
+              </div>
+              <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-amber-500">
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Project</p>
+                <p className="mt-2 text-3xl font-bold text-slate-900">{artistOrders.length}</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  avg {fmtTime(avgTimePerOrder) === "—" ? "—" : fmtTime(avgTimePerOrder)}/project
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* 6-month chart */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-6 py-4">
+              <p className="font-bold text-slate-900">Aktivitas 6 Bulan Terakhir</p>
+              <p className="text-xs text-slate-400">Task diselesaikan per bulan</p>
+            </div>
+            <div className="px-6 py-5">
+              <div className="flex items-end gap-2 h-32">
+                {historyData.map((h) => {
+                  const pct = Math.round((h.done / maxDone) * 100);
+                  const isCurrent = h.month === monthStr;
+                  return (
+                    <div key={h.month} className="flex flex-1 flex-col items-center gap-1 group">
+                      {h.done > 0 && (
+                        <span className="text-[9px] text-slate-400 font-semibold hidden group-hover:block">{h.done} task</span>
+                      )}
+                      <div
+                        className="w-full rounded-t-xl transition-all"
+                        style={{
+                          height: `${Math.max(pct, 4)}%`,
+                          minHeight: "6px",
+                          background: isCurrent
+                            ? `linear-gradient(to top, ${color}cc, ${color})`
+                            : "linear-gradient(to top, #cbd5e1, #e2e8f0)",
+                        }}
+                      />
+                      <span className={`text-[10px] font-semibold ${isCurrent ? "text-violet-700" : "text-slate-400"}`}>
+                        {h.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-          <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-sky-500">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Waktu Kerja</p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">{fmtTime(stats.time) === "—" ? "0" : fmtTime(stats.time)}</p>
-            <p className="mt-1 text-xs text-slate-400">akumulasi timer</p>
-          </div>
-          <div className="rounded-2xl border-l-4 border border-slate-200 bg-white px-4 py-4 shadow-sm border-l-amber-500">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Project</p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">{artistOrders.length}</p>
-            <p className="mt-1 text-xs text-slate-400">
-              avg {fmtTime(avgTimePerOrder) === "—" ? "—" : fmtTime(avgTimePerOrder)}/project
-            </p>
-          </div>
-        </div>
-      )}
 
-      {/* 6-month history chart */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-6 py-4">
-          <p className="font-bold text-slate-900">Aktivitas 6 Bulan Terakhir</p>
-          <p className="text-xs text-slate-400">Task diselesaikan per bulan</p>
-        </div>
-        <div className="px-6 py-5">
-          <div className="flex items-end gap-2 h-32">
-            {historyData.map((h) => {
-              const pct = Math.round((h.done / maxDone) * 100);
-              const isCurrent = h.month === monthStr;
-              return (
-                <div key={h.month} className="flex flex-1 flex-col items-center gap-1 group">
-                  {h.done > 0 && (
-                    <span className="text-[9px] text-slate-400 font-semibold hidden group-hover:block">{h.done} task</span>
-                  )}
-                  <div
-                    className="w-full rounded-t-xl transition-all"
-                    style={{
-                      height: `${Math.max(pct, 4)}%`,
-                      minHeight: "6px",
-                      background: isCurrent
-                        ? `linear-gradient(to top, ${color}cc, ${color})`
-                        : "linear-gradient(to top, #cbd5e1, #e2e8f0)",
-                    }}
-                  />
-                  <span className={`text-[10px] font-semibold ${isCurrent ? "text-violet-700" : "text-slate-400"}`}>
-                    {h.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Project list */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
-          <div>
-            <p className="font-bold text-slate-900">Project Dikerjakan</p>
-            <p className="text-xs text-slate-400">{MONTH_NAMES[selMonth]} {selYear} · {artistOrders.length} project</p>
-          </div>
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={searchQ}
-              onChange={(e) => setSearchQ(e.target.value)}
-              placeholder="Cari project..."
-              className="rounded-2xl border border-slate-200 bg-slate-50 pl-8 pr-3 py-2 text-xs outline-none focus:border-violet-400 w-44"
-            />
-          </div>
-        </div>
-
-        {artistOrders.length === 0 ? (
-          <div className="py-10 text-center">
-            <CheckCircle2 size={28} className="mx-auto mb-2 text-slate-200" />
-            <p className="text-sm text-slate-400">Belum ada project di {MONTH_NAMES[selMonth]} {selYear}.</p>
-          </div>
-        ) : filteredOrders.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-400">Tidak ditemukan.</p>
-        ) : (
-          <div className="divide-y divide-slate-50">
-            {filteredOrders.map((os) => {
-              const o = os.order;
-              const myDone = os.done_by_assignee?.[artistName] ?? os.done;
-              const myTasks = os.tasks_by_assignee?.[artistName] ?? os.tasks;
-              const rate = myTasks > 0 ? Math.round((myDone / myTasks) * 100) : 0;
-              return (
-                <div key={os.order_id} className="flex items-start gap-4 px-6 py-4">
-                  <div
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
-                    style={{ background: color }}
-                  >
-                    {o.project?.charAt(0)?.toUpperCase() || "?"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-900 truncate">{o.project}</p>
-                        <p className="text-xs text-indigo-500 font-mono">{o.folder_code || o.client}</p>
+          {/* Project list */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
+              <div>
+                <p className="font-bold text-slate-900">Project Dikerjakan</p>
+                <p className="text-xs text-slate-400">{MONTH_NAMES[selMonth]} {selYear} · {artistOrders.length} project</p>
+              </div>
+              <div className="relative">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                  placeholder="Cari project..."
+                  className="rounded-2xl border border-slate-200 bg-slate-50 pl-8 pr-3 py-2 text-xs outline-none focus:border-violet-400 w-44"
+                />
+              </div>
+            </div>
+            {artistOrders.length === 0 ? (
+              <div className="py-10 text-center">
+                <CheckCircle2 size={28} className="mx-auto mb-2 text-slate-200" />
+                <p className="text-sm text-slate-400">Belum ada project di {MONTH_NAMES[selMonth]} {selYear}.</p>
+              </div>
+            ) : filteredOrders.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-400">Tidak ditemukan.</p>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {filteredOrders.map((os) => {
+                  const o = os.order;
+                  const myDone = os.done_by_assignee?.[artistName] ?? os.done;
+                  const myTasks = os.tasks_by_assignee?.[artistName] ?? os.tasks;
+                  const rate = myTasks > 0 ? Math.round((myDone / myTasks) * 100) : 0;
+                  return (
+                    <div key={os.order_id} className="flex items-start gap-4 px-6 py-4">
+                      <div
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
+                        style={{ background: color }}
+                      >
+                        {o.project?.charAt(0)?.toUpperCase() || "?"}
                       </div>
-                      {os.time > 0 && (
-                        <div className="text-right shrink-0">
-                          <p className="text-sm font-bold text-slate-700 font-mono">{fmtTime(os.time)}</p>
-                          <p className="text-xs text-slate-400">waktu kerja</p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900 truncate">{o.project}</p>
+                            <p className="text-xs text-indigo-500 font-mono">{o.folder_code || o.client}</p>
+                          </div>
+                          {os.time > 0 && (
+                            <div className="text-right shrink-0">
+                              <p className="text-sm font-bold text-slate-700 font-mono">{fmtTime(os.time)}</p>
+                              <p className="text-xs text-slate-400">waktu kerja</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {myTasks > 0 && <span className="text-xs rounded-lg bg-slate-100 px-2 py-0.5 text-slate-500">{myTasks} task</span>}
+                          {myDone > 0 && <span className="text-xs rounded-lg bg-emerald-50 px-2 py-0.5 text-emerald-700 font-semibold">✓ {myDone} done</span>}
+                          {normalizeStatus(o.status) === "Done" && (
+                            <span className="text-xs rounded-lg bg-emerald-100 px-2 py-0.5 text-emerald-800 font-semibold">Project Selesai</span>
+                          )}
+                        </div>
+                        {myTasks > 0 && (
+                          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${rate}%` }} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Right column: AI Report (sticky) ── */}
+        {isAdminOrPM && (
+          <div className="lg:col-span-2 lg:sticky lg:top-4">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              {/* Gradient header */}
+              <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 shrink-0">
+                    <Bot size={16} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-white text-sm">Laporan Analisis AI</p>
+                    <p className="text-[11px] text-violet-200">{artistName} — Claude AI</p>
+                  </div>
+                </div>
+                {/* Period selector */}
+                <div className="flex items-center gap-1 w-fit rounded-xl border border-white/20 bg-white/10 p-1">
+                  {[
+                    { value: "daily", label: "Harian" },
+                    { value: "weekly", label: "Mingguan" },
+                    { value: "monthly", label: "Bulanan" },
+                  ].map(({ value, label }) => (
+                    <button
+                      key={value}
+                      onClick={() => { setAiPeriod(value); setIsEditing(false); }}
+                      className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
+                        aiPeriod === value ? "bg-white text-violet-700 shadow-sm" : "text-white/70 hover:text-white"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Report body */}
+              <div className="px-5 py-4">
+                {reportLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
+                    <Loader2 size={16} className="animate-spin text-violet-400" />
+                    Memuat laporan...
+                  </div>
+                ) : report ? (
+                  <>
+                    {/* Meta + admin actions */}
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-[10px] text-slate-400">
+                          {report.is_auto ? "Auto-generated (sistem)" : `Dibuat oleh ${report.generated_by}`}
+                        </p>
+                        <p className="text-[10px] text-slate-400">{report.date_key}</p>
+                      </div>
+                      {isAdmin && !isEditing && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={startEdit}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                          >
+                            <Pencil size={11} /> Edit
+                          </button>
+                          <button
+                            onClick={deleteReport}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-50 transition"
+                          >
+                            <Trash2 size={11} /> Hapus
+                          </button>
                         </div>
                       )}
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {myTasks > 0 && <span className="text-xs rounded-lg bg-slate-100 px-2 py-0.5 text-slate-500">{myTasks} task</span>}
-                      {myDone > 0 && <span className="text-xs rounded-lg bg-emerald-50 px-2 py-0.5 text-emerald-700 font-semibold">✓ {myDone} done</span>}
-                      {normalizeStatus(o.status) === "Done" && (
-                        <span className="text-xs rounded-lg bg-emerald-100 px-2 py-0.5 text-emerald-800 font-semibold">Project Selesai</span>
-                      )}
-                    </div>
-                    {myTasks > 0 && (
-                      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${rate}%` }} />
+
+                    {isEditing ? (
+                      <>
+                        <textarea
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          rows={16}
+                          className="w-full rounded-xl border border-violet-200 bg-violet-50/30 p-3 text-sm text-slate-700 outline-none focus:border-violet-400 resize-none leading-relaxed"
+                        />
+                        <div className="mt-3 flex justify-end gap-2">
+                          <button
+                            onClick={() => setIsEditing(false)}
+                            className="rounded-xl border border-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            onClick={saveEdit}
+                            disabled={saving}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60 transition"
+                          >
+                            {saving && <Loader2 size={12} className="animate-spin" />}
+                            Simpan
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-0.5 max-h-[60vh] overflow-y-auto pr-1">
+                        {renderInsight(report.content)}
                       </div>
                     )}
+                  </>
+                ) : (
+                  <div className="text-center py-10">
+                    <Sparkles size={28} className="mx-auto mb-3 text-violet-200" />
+                    {isAdmin ? (
+                      <>
+                        <p className="text-sm font-medium text-slate-500 mb-1">Belum ada laporan</p>
+                        <p className="text-xs text-slate-400 mb-4">
+                          {aiPeriod === "daily"
+                            ? "Laporan harian dibuat otomatis jam 17.00 WIB, atau buat sekarang."
+                            : "Klik tombol di bawah untuk membuat laporan."}
+                        </p>
+                        <button
+                          onClick={generateReport}
+                          disabled={generating}
+                          className="inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
+                        >
+                          {generating
+                            ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
+                            : <><Sparkles size={14} /> Generate Laporan</>
+                          }
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-medium text-slate-500">Belum ada laporan</p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {aiPeriod === "daily"
+                            ? "Laporan harian akan tersedia otomatis setiap jam 17.00 WIB."
+                            : "Laporan akan dibuat oleh admin."}
+                        </p>
+                      </>
+                    )}
                   </div>
-                </div>
-              );
-            })}
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
-
-      {/* AI Insight */}
-      {isAdminOrPM && (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          {/* Header gradient */}
-          <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 shrink-0">
-                  <Bot size={18} className="text-white" />
-                </div>
-                <div>
-                  <p className="font-bold text-white text-sm">Laporan Analisis AI</p>
-                  <p className="text-xs text-violet-200">{artistName} — oleh Claude AI</p>
-                </div>
-              </div>
-              <button
-                onClick={loadInsight}
-                disabled={aiLoading}
-                className="inline-flex items-center gap-2 rounded-xl bg-white/20 hover:bg-white/30 border border-white/20 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
-              >
-                {aiLoading
-                  ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
-                  : <><Sparkles size={14} /> {aiInsight ? "Perbarui" : "Generate Laporan"}</>
-                }
-              </button>
-            </div>
-
-            {/* Period selector */}
-            <div className="mt-3 flex items-center gap-1 w-fit rounded-xl border border-white/20 bg-white/10 p-1">
-              {[
-                { value: "daily", label: "Harian" },
-                { value: "weekly", label: "Mingguan" },
-                { value: "monthly", label: "Bulanan" },
-              ].map(({ value, label }) => (
-                <button
-                  key={value}
-                  onClick={() => { setAiPeriod(value); setAiInsight(null); setAiError(null); }}
-                  className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
-                    aiPeriod === value
-                      ? "bg-white text-violet-700 shadow-sm"
-                      : "text-white/70 hover:text-white"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Content */}
-          {aiLoading && (
-            <div className="flex items-center gap-3 px-6 py-10 text-sm text-slate-400">
-              <Loader2 size={16} className="animate-spin text-violet-400" />
-              Claude AI sedang menganalisis data performa...
-            </div>
-          )}
-
-          {aiInsight && !aiLoading && (
-            <div className="px-6 py-5">
-              <div className="space-y-0.5">
-                {renderInsight(aiInsight)}
-              </div>
-            </div>
-          )}
-
-          {!aiInsight && !aiLoading && !aiError && (
-            <div className="px-6 py-10 text-center">
-              <Sparkles size={28} className="mx-auto mb-3 text-violet-200" />
-              <p className="text-sm font-medium text-slate-500">Belum ada laporan</p>
-              <p className="text-xs text-slate-400 mt-1">
-                Pilih periode lalu klik "Generate Laporan" untuk membuat analisis AI performa {artistName}.
-              </p>
-            </div>
-          )}
-
-          {aiError && !aiLoading && (
-            <div className="px-6 py-5 text-center text-sm text-rose-500">{aiError}</div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

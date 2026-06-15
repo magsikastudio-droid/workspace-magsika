@@ -6,8 +6,8 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import {
   Activity, Bot, ChevronLeft, ChevronRight, Clock,
-  Users, FolderOpen, Loader2, Timer,
-  Search, Sparkles, X,
+  Users, FolderOpen, Loader2, Pencil, Timer,
+  Search, Sparkles, Trash2, X,
 } from "lucide-react";
 import { normalizeStatus } from "../lib/constants";
 import { monthKey, monthLabel } from "../lib/format";
@@ -494,6 +494,7 @@ function ArtistOrderSearch({ artistOrders, artistName }) {
 function AdminPerformance() {
   const { orders } = useOrders();
   const { formatMoney } = useCurrency();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const today = new Date();
@@ -504,27 +505,69 @@ function AdminPerformance() {
   const [summary, setSummary] = useState({ artists: [], orders: [], total_tasks: 0, total_time: 0 });
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [orderSearch, setOrderSearch] = useState("");
-  const [aiInsight, setAiInsight] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiPeriod, setAiPeriod] = useState("monthly");
+  const [aiPeriod, setAiPeriod] = useState("daily");
+  const [aiReport, setAiReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [saving, setSaving] = useState(false);
+  const isAdmin = user?.role === "admin";
 
   const goToArtist = useCallback((name) => {
     navigate(`/performance/team/${encodeURIComponent(name)}`);
   }, [navigate]);
 
-  const loadOverallInsight = useCallback(async () => {
-    setAiLoading(true);
-    setAiInsight(null);
+  const generateReport = useCallback(async () => {
+    setGenerating(true);
     try {
-      const res = await api.get("/ai/insight/overall", { params: { month: monthStr, period: aiPeriod } });
-      setAiInsight(res.data.insight);
+      const res = await api.post("/ai/reports/overall/generate", null, {
+        params: { period: aiPeriod, month: monthStr },
+      });
+      setAiReport(res.data.report);
+      toast.success("Laporan AI tim berhasil dibuat.");
     } catch (err) {
-      const msg = err?.response?.data?.detail || "Gagal memuat insight AI";
-      toast.error(msg);
+      toast.error(err?.response?.data?.detail || "Gagal membuat laporan AI.");
     } finally {
-      setAiLoading(false);
+      setGenerating(false);
     }
-  }, [monthStr, aiPeriod]);
+  }, [aiPeriod, monthStr]);
+
+  const saveEdit = useCallback(async () => {
+    setSaving(true);
+    try {
+      const res = await api.put(`/ai/reports/${aiReport.id}`, { content: editContent });
+      setAiReport(res.data.report);
+      setIsEditing(false);
+      toast.success("Laporan berhasil diperbarui.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal menyimpan.");
+    } finally {
+      setSaving(false);
+    }
+  }, [aiReport, editContent]);
+
+  const deleteReport = useCallback(async () => {
+    if (!window.confirm("Hapus laporan ini?")) return;
+    try {
+      await api.delete(`/ai/reports/${aiReport.id}`);
+      setAiReport(null);
+      setIsEditing(false);
+      toast.success("Laporan dihapus.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal menghapus.");
+    }
+  }, [aiReport]);
+
+  useEffect(() => {
+    setAiReport(null);
+    setIsEditing(false);
+    setReportLoading(true);
+    api.get("/ai/reports/overall", { params: { period: aiPeriod, month: monthStr } })
+      .then((r) => setAiReport(r.data.report))
+      .catch(() => {})
+      .finally(() => setReportLoading(false));
+  }, [aiPeriod, monthStr]);
 
   useEffect(() => {
     setLoadingTasks(true);
@@ -904,10 +947,11 @@ function AdminPerformance() {
       <PipelineHealth pipeline={pipeline} />
       <AllTimeSection orders={orders} formatMoney={formatMoney} onSelectArtist={goToArtist} />
 
-      {/* AI Overall Insight */}
+      {/* AI Overall Report */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {/* Header */}
         <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 shrink-0">
                 <Bot size={18} className="text-white" />
@@ -917,18 +961,20 @@ function AdminPerformance() {
                 <p className="text-xs text-violet-200">Keseluruhan tim — oleh Claude AI</p>
               </div>
             </div>
-            <button
-              onClick={loadOverallInsight}
-              disabled={aiLoading}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/20 hover:bg-white/30 border border-white/20 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
-            >
-              {aiLoading
-                ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
-                : <><Sparkles size={14} /> {aiInsight ? "Perbarui" : "Generate Laporan"}</>
-              }
-            </button>
+            {isAdmin && !aiReport && !reportLoading && (
+              <button
+                onClick={generateReport}
+                disabled={generating}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/20 hover:bg-white/30 border border-white/20 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
+              >
+                {generating
+                  ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
+                  : <><Sparkles size={14} /> Generate Laporan</>
+                }
+              </button>
+            )}
           </div>
-          <div className="mt-3 flex items-center gap-1 w-fit rounded-xl border border-white/20 bg-white/10 p-1">
+          <div className="flex items-center gap-1 w-fit rounded-xl border border-white/20 bg-white/10 p-1">
             {[
               { value: "daily", label: "Harian" },
               { value: "weekly", label: "Mingguan" },
@@ -936,11 +982,9 @@ function AdminPerformance() {
             ].map(({ value, label }) => (
               <button
                 key={value}
-                onClick={() => { setAiPeriod(value); setAiInsight(null); }}
+                onClick={() => { setAiPeriod(value); setIsEditing(false); }}
                 className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
-                  aiPeriod === value
-                    ? "bg-white text-violet-700 shadow-sm"
-                    : "text-white/70 hover:text-white"
+                  aiPeriod === value ? "bg-white text-violet-700 shadow-sm" : "text-white/70 hover:text-white"
                 }`}
               >
                 {label}
@@ -948,26 +992,93 @@ function AdminPerformance() {
             ))}
           </div>
         </div>
-        {aiLoading && (
-          <div className="flex items-center gap-3 px-6 py-10 text-sm text-slate-400">
-            <Loader2 size={16} className="animate-spin text-violet-400" />
-            Claude AI sedang menganalisis performa tim...
-          </div>
-        )}
-        {aiInsight && !aiLoading && (
-          <div className="px-6 py-5">
-            <div className="space-y-0.5">
-              {renderInsight(aiInsight)}
+
+        {/* Body */}
+        <div className="px-6 py-5">
+          {reportLoading ? (
+            <div className="flex items-center gap-3 py-8 text-sm text-slate-400">
+              <Loader2 size={16} className="animate-spin text-violet-400" />
+              Memuat laporan...
             </div>
-          </div>
-        )}
-        {!aiInsight && !aiLoading && (
-          <div className="px-6 py-10 text-center">
-            <Sparkles size={28} className="mx-auto mb-3 text-violet-200" />
-            <p className="text-sm font-medium text-slate-500">Belum ada laporan</p>
-            <p className="text-xs text-slate-400 mt-1">Pilih periode lalu klik "Generate Laporan" untuk analisis AI tim.</p>
-          </div>
-        )}
+          ) : aiReport ? (
+            <>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] text-slate-400">
+                    {aiReport.is_auto ? "Auto-generated (sistem)" : `Dibuat oleh ${aiReport.generated_by}`}
+                  </p>
+                  <p className="text-[10px] text-slate-400">{aiReport.date_key}</p>
+                </div>
+                {isAdmin && !isEditing && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => { setEditContent(aiReport.content); setIsEditing(true); }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                    >
+                      <Pencil size={11} /> Edit
+                    </button>
+                    <button
+                      onClick={deleteReport}
+                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-50 transition"
+                    >
+                      <Trash2 size={11} /> Hapus
+                    </button>
+                    <button
+                      onClick={generateReport}
+                      disabled={generating}
+                      className="inline-flex items-center gap-1 rounded-lg border border-violet-200 px-2.5 py-1 text-xs font-semibold text-violet-600 hover:bg-violet-50 disabled:opacity-60 transition"
+                    >
+                      {generating ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                      Perbarui
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isEditing ? (
+                <>
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    rows={14}
+                    className="w-full rounded-xl border border-violet-200 bg-violet-50/30 p-3 text-sm text-slate-700 outline-none focus:border-violet-400 resize-none leading-relaxed"
+                  />
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      onClick={() => setIsEditing(false)}
+                      className="rounded-xl border border-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      onClick={saveEdit}
+                      disabled={saving}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60 transition"
+                    >
+                      {saving && <Loader2 size={12} className="animate-spin" />}
+                      Simpan
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-0.5">
+                  {renderInsight(aiReport.content)}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="py-10 text-center">
+              <Sparkles size={28} className="mx-auto mb-3 text-violet-200" />
+              <p className="text-sm font-medium text-slate-500">Belum ada laporan</p>
+              <p className="text-xs text-slate-400 mt-1">
+                {aiPeriod === "daily"
+                  ? "Laporan harian dibuat otomatis jam 17.00 WIB."
+                  : isAdmin
+                    ? "Pilih periode lalu klik Generate Laporan."
+                    : "Laporan akan dibuat oleh admin."}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
