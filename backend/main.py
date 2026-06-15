@@ -50,28 +50,28 @@ except Exception as _e:
 
 
 BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
-def _call_groq(prompt: str) -> str:
-    if not GROQ_API_KEY:
-        raise RuntimeError("GROQ_API_KEY tidak disetel di server")
-    url = "https://api.groq.com/openai/v1/chat/completions"
+def _call_ai(prompt: str) -> str:
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY tidak disetel di server")
+    url = "https://openrouter.ai/api/v1/chat/completions"
     body = _json.dumps({
-        "model": "llama3-8b-8192",
+        "model": "meta-llama/llama-3.2-3b-instruct:free",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 500,
-        "temperature": 0.7,
     }).encode("utf-8")
     req = _urllib_request.Request(url, data=body, headers={
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "HTTP-Referer": "https://workspace.magsikastudio.com",
     }, method="POST")
     try:
         with _urllib_request.urlopen(req, timeout=30) as resp:
             data = _json.loads(resp.read().decode("utf-8"))
     except _urllib_request.HTTPError as e:
         err_body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Groq API {e.code}: {err_body[:300]}")
+        raise RuntimeError(f"AI API {e.code}: {err_body[:300]}")
     return data["choices"][0]["message"]["content"]
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
@@ -1754,8 +1754,8 @@ import asyncio as _asyncio
 
 @app.get("/ai/insight/member")
 async def ai_member_insight(name: str, month: str, current_user: dict = Depends(get_current_user)):
-    if not GROQ_API_KEY:
-        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GROQ_API_KEY di environment.")
+    if not OPENROUTER_API_KEY:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set OPENROUTER_API_KEY di environment.")
     try:
         tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
         all_orders = await db.orders.find({"artists": name}).to_list(100)
@@ -1784,7 +1784,7 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
         "dan 1 kalimat motivasi. Singkat dan personal. Maksimal 120 kata."
     )
     try:
-        text = await _asyncio.get_event_loop().run_in_executor(None, _call_groq, prompt)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt)
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
@@ -1794,8 +1794,8 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
 async def ai_overall_insight(month: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ["admin", "pm"]:
         raise HTTPException(status_code=403, detail="Forbidden")
-    if not GROQ_API_KEY:
-        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GROQ_API_KEY di environment.")
+    if not OPENROUTER_API_KEY:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set OPENROUTER_API_KEY di environment.")
     try:
         all_orders = await db.orders.find().to_list(500)
         month_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
@@ -1839,7 +1839,7 @@ async def ai_overall_insight(month: str, current_user: dict = Depends(get_curren
         "Informatif dan berdasarkan data. Maksimal 180 kata."
     )
     try:
-        text = await _asyncio.get_event_loop().run_in_executor(None, _call_groq, prompt)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt)
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
