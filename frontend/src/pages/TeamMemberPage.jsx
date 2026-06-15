@@ -29,6 +29,45 @@ const getColor = (name) => {
   return avatarColors[Math.abs(h) % avatarColors.length];
 };
 
+const renderBold = (text) => {
+  const parts = text.split(/\*\*(.*?)\*\*/g);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    i % 2 === 1
+      ? <strong key={i} className="font-semibold text-slate-900">{part}</strong>
+      : part
+  );
+};
+
+const renderInsight = (text) =>
+  text.split("\n").map((line, i) => {
+    const trimmed = line.trim();
+    if (/^\*\*[^*]+\*\*$/.test(trimmed)) {
+      return (
+        <div key={i} className="flex items-center gap-2 pt-4 pb-1 first:pt-0">
+          <div className="h-3 w-1 rounded-full bg-violet-500 shrink-0" />
+          <p className="text-[11px] font-bold uppercase tracking-widest text-violet-600">
+            {trimmed.slice(2, -2)}
+          </p>
+        </div>
+      );
+    }
+    if (trimmed === "") return <div key={i} className="h-1" />;
+    if (trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+      return (
+        <div key={i} className="flex items-start gap-2 pl-3">
+          <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
+          <p className="text-sm text-slate-600 leading-relaxed">{renderBold(trimmed.slice(2))}</p>
+        </div>
+      );
+    }
+    return (
+      <p key={i} className="text-sm text-slate-700 leading-relaxed">
+        {renderBold(line)}
+      </p>
+    );
+  });
+
 export default function TeamMemberPage() {
   const { artistName: encodedName } = useParams();
   const artistName = decodeURIComponent(encodedName || "");
@@ -48,6 +87,7 @@ export default function TeamMemberPage() {
   const [aiInsight, setAiInsight] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
+  const [aiPeriod, setAiPeriod] = useState("monthly");
   const [searchQ, setSearchQ] = useState("");
 
   useEffect(() => {
@@ -136,7 +176,7 @@ export default function TeamMemberPage() {
     setAiInsight(null);
     setAiError(null);
     try {
-      const res = await api.get("/ai/insight/member", { params: { name: artistName, month: monthStr } });
+      const res = await api.get("/ai/insight/member", { params: { name: artistName, month: monthStr, period: aiPeriod } });
       setAiInsight(res.data.insight);
     } catch (err) {
       const msg = err?.response?.data?.detail || "Gagal memuat insight AI";
@@ -145,7 +185,7 @@ export default function TeamMemberPage() {
     } finally {
       setAiLoading(false);
     }
-  }, [artistName, monthStr]);
+  }, [artistName, monthStr, aiPeriod]);
 
   return (
     <div className="space-y-5 max-w-3xl mx-auto">
@@ -348,28 +388,56 @@ export default function TeamMemberPage() {
 
       {/* AI Insight */}
       {isAdminOrPM && (
-        <div className="rounded-2xl border border-violet-100 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-50 px-6 py-4">
-            <div>
-              <p className="font-bold text-slate-900 flex items-center gap-2">
-                <Bot size={16} className="text-violet-500" /> AI Insight
-              </p>
-              <p className="text-xs text-slate-400">Analisis performa {artistName} oleh Claude AI — {MONTH_NAMES[selMonth]} {selYear}</p>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          {/* Header gradient */}
+          <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 shrink-0">
+                  <Bot size={18} className="text-white" />
+                </div>
+                <div>
+                  <p className="font-bold text-white text-sm">Laporan Analisis AI</p>
+                  <p className="text-xs text-violet-200">{artistName} — oleh Claude AI</p>
+                </div>
+              </div>
+              <button
+                onClick={loadInsight}
+                disabled={aiLoading}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/20 hover:bg-white/30 border border-white/20 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
+              >
+                {aiLoading
+                  ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
+                  : <><Sparkles size={14} /> {aiInsight ? "Perbarui" : "Generate Laporan"}</>
+                }
+              </button>
             </div>
-            <button
-              onClick={loadInsight}
-              disabled={aiLoading}
-              className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
-            >
-              {aiLoading
-                ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
-                : <><Sparkles size={14} /> {aiInsight ? "Refresh Insight" : "Generate Insight"}</>
-              }
-            </button>
+
+            {/* Period selector */}
+            <div className="mt-3 flex items-center gap-1 w-fit rounded-xl border border-white/20 bg-white/10 p-1">
+              {[
+                { value: "daily", label: "Harian" },
+                { value: "weekly", label: "Mingguan" },
+                { value: "monthly", label: "Bulanan" },
+              ].map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => { setAiPeriod(value); setAiInsight(null); setAiError(null); }}
+                  className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
+                    aiPeriod === value
+                      ? "bg-white text-violet-700 shadow-sm"
+                      : "text-white/70 hover:text-white"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
+          {/* Content */}
           {aiLoading && (
-            <div className="flex items-center gap-3 px-6 py-8 text-sm text-slate-400">
+            <div className="flex items-center gap-3 px-6 py-10 text-sm text-slate-400">
               <Loader2 size={16} className="animate-spin text-violet-400" />
               Claude AI sedang menganalisis data performa...
             </div>
@@ -377,16 +445,19 @@ export default function TeamMemberPage() {
 
           {aiInsight && !aiLoading && (
             <div className="px-6 py-5">
-              <div className="rounded-2xl bg-violet-50 border border-violet-100 px-5 py-4">
-                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{aiInsight}</p>
+              <div className="space-y-0.5">
+                {renderInsight(aiInsight)}
               </div>
             </div>
           )}
 
           {!aiInsight && !aiLoading && !aiError && (
-            <div className="px-6 py-8 text-center text-sm text-slate-400">
-              <Sparkles size={24} className="mx-auto mb-2 text-violet-200" />
-              Klik "Generate Insight" untuk mendapatkan analisis AI tentang performa {artistName} bulan ini.
+            <div className="px-6 py-10 text-center">
+              <Sparkles size={28} className="mx-auto mb-3 text-violet-200" />
+              <p className="text-sm font-medium text-slate-500">Belum ada laporan</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Pilih periode lalu klik "Generate Laporan" untuk membuat analisis AI performa {artistName}.
+              </p>
             </div>
           )}
 

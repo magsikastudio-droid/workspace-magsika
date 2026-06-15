@@ -52,13 +52,13 @@ except Exception as _e:
 BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-def _call_ai(prompt: str) -> str:
+def _call_ai(prompt: str, max_tokens: int = 800) -> str:
     if not ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY tidak disetel di server")
     url = "https://api.anthropic.com/v1/messages"
     body = _json.dumps({
         "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 500,
+        "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
     }).encode("utf-8")
     req = _urllib_request.Request(url, data=body, headers={
@@ -1753,13 +1753,31 @@ async def clear_all_data(current_user: dict = Depends(get_current_user)):
 import asyncio as _asyncio
 
 @app.get("/ai/insight/member")
-async def ai_member_insight(name: str, month: str, current_user: dict = Depends(get_current_user)):
+async def ai_member_insight(name: str, month: str, period: str = "monthly", current_user: dict = Depends(get_current_user)):
     if not ANTHROPIC_API_KEY:
         raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set ANTHROPIC_API_KEY di environment.")
+
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_str = now_wib.strftime("%Y-%m-%d")
+    week_ago_str = (now_wib - timedelta(days=6)).strftime("%Y-%m-%d")
+
     try:
-        tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
-        all_orders = await db.orders.find({"artists": name}).to_list(100)
-        month_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
+        if period == "daily":
+            tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{today_str}"}}).to_list(300)
+            all_orders = await db.orders.find({"artists": name}).to_list(200)
+            period_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "") == today_str]
+            period_label = f"Hari ini ({today_str})"
+        elif period == "weekly":
+            tasks = await db.tasks.find({"assignee": name, "date": {"$gte": week_ago_str, "$lte": today_str}}).to_list(500)
+            all_orders = await db.orders.find({"artists": name}).to_list(200)
+            period_orders = [o for o in all_orders if week_ago_str <= (o.get("order_date") or o.get("created_at", "")[:10] or "") <= today_str]
+            period_label = f"Minggu ini ({week_ago_str} s.d. {today_str})"
+        else:
+            tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
+            all_orders = await db.orders.find({"artists": name}).to_list(100)
+            period_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
+            period_label = f"Bulan {month}"
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1770,42 +1788,66 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
     total_time = sum(t.get("time_elapsed", 0) for t in tasks)
     hours = total_time // 3600
     minutes = (total_time % 3600) // 60
-    project_names = ", ".join([o.get("project", "") for o in month_orders[:5] if o.get("project")])
+    project_names = ", ".join([o.get("project", "") for o in period_orders[:5] if o.get("project")])
 
     prompt = (
-        "Kamu adalah asisten manajemen studio kreatif Magsika Studio. "
-        "Beri ringkasan dan masukan performa dalam bahasa Indonesia yang ramah dan membangun.\n\n"
-        f"Performa {name} bulan {month}:\n"
-        f"- Total task: {len(tasks)} (selesai: {done}, gagal: {failed}, berjalan: {in_progress}, revisi: {in_revision})\n"
-        f"- Total waktu kerja: {hours}j {minutes}m\n"
-        f"- Jumlah order dikerjakan: {len(month_orders)}\n"
-        f"- Project: {project_names or 'belum ada'}\n\n"
-        "Berikan: ringkasan singkat (1-2 kalimat), poin positif, 1 saran perbaikan (jika ada), "
-        "dan 1 kalimat motivasi. Singkat dan personal. Maksimal 120 kata."
+        "Anda adalah analis performa profesional untuk Magsika Studio, sebuah studio kreatif 3D/2D. "
+        "Tulis laporan analisis performa anggota tim dalam bahasa Indonesia yang formal, terstruktur, dan berbasis data.\n\n"
+        f"Data Performa: {name} | Periode: {period_label}\n"
+        f"- Total task: {len(tasks)} (selesai: {done}, gagal: {failed}, sedang berjalan: {in_progress}, revisi: {in_revision})\n"
+        f"- Akumulasi waktu kerja: {hours} jam {minutes} menit\n"
+        f"- Jumlah order dikerjakan: {len(period_orders)}\n"
+        f"- Project yang dikerjakan: {project_names or 'belum ada data'}\n\n"
+        "Tulis laporan dengan struktur berikut (gunakan persis heading ini):\n\n"
+        "**Ringkasan Eksekutif**\n"
+        "Gambaran umum kinerja secara keseluruhan (2-3 kalimat).\n\n"
+        "**Analisis Kinerja**\n"
+        "Evaluasi pencapaian berdasarkan data yang tersedia.\n\n"
+        "**Area yang Perlu Ditingkatkan**\n"
+        "Identifikasi kelemahan atau hambatan berdasarkan data (tulis 'Tidak ada catatan khusus' jika kinerja baik).\n\n"
+        "**Rekomendasi**\n"
+        "1-2 rekomendasi konkret dan terukur untuk periode berikutnya.\n\n"
+        "Gunakan bahasa Indonesia yang formal dan profesional. Maksimal 220 kata."
     )
     try:
-        text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 900)
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
 
 
 @app.get("/ai/insight/overall")
-async def ai_overall_insight(month: str, current_user: dict = Depends(get_current_user)):
+async def ai_overall_insight(month: str, period: str = "monthly", current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ["admin", "pm"]:
         raise HTTPException(status_code=403, detail="Forbidden")
     if not ANTHROPIC_API_KEY:
         raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set ANTHROPIC_API_KEY di environment.")
+
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_str = now_wib.strftime("%Y-%m-%d")
+    week_ago_str = (now_wib - timedelta(days=6)).strftime("%Y-%m-%d")
+
     try:
-        all_orders = await db.orders.find().to_list(500)
-        month_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
-        tasks = await db.tasks.find({"date": {"$regex": f"^{month}"}}).to_list(1000)
+        all_orders_db = await db.orders.find().to_list(500)
+        if period == "daily":
+            period_orders = [o for o in all_orders_db if (o.get("order_date") or o.get("created_at", "")[:10] or "") == today_str]
+            tasks = await db.tasks.find({"date": {"$regex": f"^{today_str}"}}).to_list(1000)
+            period_label = f"Hari ini ({today_str})"
+        elif period == "weekly":
+            period_orders = [o for o in all_orders_db if week_ago_str <= (o.get("order_date") or o.get("created_at", "")[:10] or "") <= today_str]
+            tasks = await db.tasks.find({"date": {"$gte": week_ago_str, "$lte": today_str}}).to_list(1000)
+            period_label = f"Minggu ini ({week_ago_str} s.d. {today_str})"
+        else:
+            period_orders = [o for o in all_orders_db if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
+            tasks = await db.tasks.find({"date": {"$regex": f"^{month}"}}).to_list(1000)
+            period_label = f"Bulan {month}"
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    done_orders = sum(1 for o in month_orders if (o.get("status") or "").lower() == "done")
-    active_orders = sum(1 for o in month_orders if (o.get("status") or "").lower() not in ["done", "cancel"])
-    total_revenue = sum(o.get("total", 0) for o in month_orders)
+    done_orders = sum(1 for o in period_orders if (o.get("status") or "").lower() == "done")
+    active_orders = sum(1 for o in period_orders if (o.get("status") or "").lower() not in ["done", "cancel"])
+    total_revenue = sum(o.get("total", 0) for o in period_orders)
     done_tasks = sum(1 for t in tasks if t.get("status") == "done")
     failed_tasks = sum(1 for t in tasks if t.get("status") == "failed")
 
@@ -1827,19 +1869,28 @@ async def ai_overall_insight(month: str, current_user: dict = Depends(get_curren
     ])
 
     prompt = (
-        "Kamu adalah asisten manajemen untuk Magsika Studio (studio kreatif 3D/2D). "
-        "Beri analisis performa tim bulanan dalam bahasa Indonesia yang profesional dan membangun untuk pimpinan studio.\n\n"
-        f"Performa tim bulan {month}:\n"
-        f"- Order: {len(month_orders)} masuk, {done_orders} selesai, {active_orders} aktif\n"
-        f"- Revenue: Rp {total_revenue:,.0f}\n"
+        "Anda adalah analis manajemen senior untuk Magsika Studio (studio kreatif 3D/2D). "
+        "Tulis laporan analisis performa tim dalam bahasa Indonesia yang formal dan komprehensif untuk pimpinan studio.\n\n"
+        f"Data Tim — Periode: {period_label}\n"
+        f"- Order: {len(period_orders)} masuk, {done_orders} selesai, {active_orders} aktif\n"
+        f"- Estimasi Revenue: Rp {total_revenue:,.0f}\n"
         f"- Task: {len(tasks)} total, {done_tasks} selesai, {failed_tasks} gagal\n\n"
-        f"Per anggota:\n{artist_lines or 'Belum ada data'}\n\n"
-        "Format: ringkasan kondisi tim (2-3 kalimat), highlight pencapaian terbaik, "
-        "area yang perlu perhatian, dan rekomendasi singkat bulan depan. "
-        "Informatif dan berdasarkan data. Maksimal 180 kata."
+        f"Rincian per Anggota Tim:\n{artist_lines or 'Belum ada data'}\n\n"
+        "Tulis laporan dengan struktur berikut (gunakan persis heading ini):\n\n"
+        "**Ringkasan Eksekutif**\n"
+        "Kondisi umum tim pada periode ini (2-3 kalimat).\n\n"
+        "**Pencapaian Tim**\n"
+        "Highlight kinerja terbaik dan pencapaian signifikan.\n\n"
+        "**Analisis Per Anggota**\n"
+        "Evaluasi singkat kontribusi masing-masing anggota berdasarkan data.\n\n"
+        "**Area Perhatian**\n"
+        "Risiko atau tantangan yang perlu diantisipasi.\n\n"
+        "**Rekomendasi Strategis**\n"
+        "2-3 rekomendasi konkret untuk periode berikutnya.\n\n"
+        "Gunakan bahasa Indonesia yang formal dan profesional. Maksimal 300 kata."
     )
     try:
-        text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 1100)
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
