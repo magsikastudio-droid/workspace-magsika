@@ -229,6 +229,7 @@ export default function SchedulePage() {
       .then((res) => setEvents(res.data.events || []))
       .catch(() => setEvents([]))
       .finally(() => setLoading(false));
+    api.patch("/mark-read/schedule").catch(() => {});
   }, []);
 
   const eventsByDate = useMemo(() => {

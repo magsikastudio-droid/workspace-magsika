@@ -1340,6 +1340,9 @@ async def create_announcement(data: AnnouncementCreate, current_user: dict = Dep
     }
     result = await db.announcements.insert_one(doc)
     await manager.broadcast({"type": "announcements_updated"})
+    _asyncio.get_event_loop().create_task(send_fcm_all(
+        "📢 Pengumuman Baru", data.title, {"type": "announcement"}
+    ))
     return {"announcement": format_announcement({**doc, "_id": result.inserted_id})}
 
 
@@ -1426,6 +1429,9 @@ async def create_schedule_event(data: ScheduleEventCreate, current_user: dict = 
     }
     result = await db.schedule.insert_one(doc)
     await manager.broadcast({"type": "schedule_updated"})
+    _asyncio.get_event_loop().create_task(send_fcm_all(
+        "📅 Event Baru", f"{data.title} — {data.date}", {"type": "schedule_event"}
+    ))
     return {"event": format_schedule_event({**doc, "_id": result.inserted_id})}
 
 
@@ -1518,6 +1524,69 @@ async def send_fcm(task_title: str, assignee: str):
         print(f"[FCM] Sent {success}/{len(tokens)}")
     except Exception as e:
         print(f"[FCM] Send error: {e}")
+
+
+async def send_fcm_to_username(username: str, title: str, body: str, data: dict = None):
+    if not FCM_AVAILABLE or not username:
+        return
+    if data is None:
+        data = {}
+    try:
+        token_doc = await db.fcm_tokens.find_one({"username": username})
+        if not token_doc or not token_doc.get("token"):
+            return
+        msg = fb_messaging.Message(
+            notification=fb_messaging.Notification(title=title, body=body),
+            android=fb_messaging.AndroidConfig(
+                priority="high",
+                notification=fb_messaging.AndroidNotification(channel_id="task-alert", sound="default"),
+            ),
+            data={k: str(v) for k, v in data.items()},
+            token=token_doc["token"],
+        )
+        fb_messaging.send(msg)
+    except Exception as e:
+        print(f"[FCM] send_to_username error: {e}")
+
+
+async def send_fcm_all(title: str, body: str, data: dict = None):
+    if not FCM_AVAILABLE:
+        return
+    if data is None:
+        data = {}
+    try:
+        token_docs = await db.fcm_tokens.find().to_list(500)
+        tokens = [d["token"] for d in token_docs if d.get("token")]
+        if not tokens:
+            return
+        for token in tokens:
+            try:
+                msg = fb_messaging.Message(
+                    notification=fb_messaging.Notification(title=title, body=body),
+                    android=fb_messaging.AndroidConfig(
+                        priority="high",
+                        notification=fb_messaging.AndroidNotification(channel_id="task-alert", sound="default"),
+                    ),
+                    data={k: str(v) for k, v in data.items()},
+                    token=token,
+                )
+                fb_messaging.send(msg)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[FCM] send_all error: {e}")
+
+
+async def _fcm_by_full_name(full_name: str, title: str, body: str, data: dict = None):
+    """Send FCM to a user identified by full_name (looks up username first)."""
+    if not FCM_AVAILABLE or not full_name:
+        return
+    try:
+        user_doc = await db.users.find_one({"full_name": full_name})
+        if user_doc:
+            await send_fcm_to_username(user_doc.get("username", ""), title, body, data or {})
+    except Exception:
+        pass
 
 
 # ─── Notifications ────────────────────────────────────────────────────────────
@@ -1636,6 +1705,66 @@ async def my_notif_read_one(notif_id: str, current_user: dict = Depends(get_curr
     object_id = to_object_id(notif_id)
     try:
         await db.user_notifications.update_one({"_id": object_id}, {"$set": {"read": True}})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
+
+
+# ─── Unified Unread Counts ───────────────────────────────────────────────────
+
+@app.get("/unread-counts")
+async def get_unread_counts(current_user: dict = Depends(get_current_user)):
+    username = current_user.get("username", "")
+    role = current_user.get("role", "")
+    full_name = current_user.get("full_name", "")
+
+    reads = {}
+    async for r in db.user_reads.find({"username": username}):
+        reads[r.get("category", "")] = r.get("last_read_at", "")
+
+    ann_count = 0
+    ann_after = reads.get("announcements", "")
+    if ann_after:
+        try:
+            ann_count = await db.announcements.count_documents({"created_at": {"$gt": ann_after}})
+        except Exception:
+            pass
+
+    sched_count = 0
+    sched_after = reads.get("schedule", "")
+    if sched_after:
+        try:
+            sched_count = await db.schedule.count_documents({"created_at": {"$gt": sched_after}})
+        except Exception:
+            pass
+
+    notif_count = 0
+    if role in ["admin", "pm"]:
+        try:
+            notif_count = await db.notifications.count_documents({"read": False})
+        except Exception:
+            pass
+    elif role == "talent" and full_name:
+        try:
+            notif_count = await db.user_notifications.count_documents({"recipient_name": full_name, "read": False})
+        except Exception:
+            pass
+
+    return {"announcements": ann_count, "schedule": sched_count, "notifications": notif_count}
+
+
+@app.patch("/mark-read/{category}")
+async def mark_category_read(category: str, current_user: dict = Depends(get_current_user)):
+    if category not in ["announcements", "schedule"]:
+        raise HTTPException(status_code=400, detail="Invalid category")
+    username = current_user.get("username", "")
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        await db.user_reads.update_one(
+            {"username": username, "category": category},
+            {"$set": {"last_read_at": now}},
+            upsert=True,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True}
@@ -2004,11 +2133,15 @@ async def generate_member_report(name: str, period: str = "monthly", month: str 
     await db.ai_reports.replace_one({"type": "member", "target": name, "period": period, "date_key": date_key}, doc, upsert=True)
     _period_id = {"daily": "harian", "weekly": "mingguan", "monthly": "bulanan"}
     try:
+        _notif_msg = f"Laporan performa {_period_id.get(period, period)} Anda telah diperbarui oleh admin."
         await db.user_notifications.insert_one({
             "recipient_name": name, "period": period, "date_key": date_key, "read": False,
-            "message": f"Laporan performa {_period_id.get(period, period)} Anda telah diperbarui oleh admin.",
+            "message": _notif_msg,
             "created_at": now,
         })
+        _asyncio.get_event_loop().create_task(_fcm_by_full_name(
+            name, "📊 Laporan Performa", _notif_msg, {"type": "performance_report"}
+        ))
     except Exception:
         pass
     result = await db.ai_reports.find_one({"type": "member", "target": name, "period": period, "date_key": date_key})
@@ -2100,11 +2233,15 @@ async def auto_daily_ai_reports():
                     upsert=True
                 )
                 try:
+                    _auto_msg = "Laporan performa harian Anda telah diperbarui secara otomatis."
                     await db.user_notifications.insert_one({
                         "recipient_name": name, "period": "daily", "date_key": date_key, "read": False,
-                        "message": "Laporan performa harian Anda telah diperbarui secara otomatis.",
+                        "message": _auto_msg,
                         "created_at": now_iso,
                     })
+                    _asyncio.get_event_loop().create_task(_fcm_by_full_name(
+                        name, "📊 Laporan Performa", _auto_msg, {"type": "performance_report"}
+                    ))
                 except Exception:
                     pass
             except Exception:
