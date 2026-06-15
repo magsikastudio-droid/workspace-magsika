@@ -357,20 +357,20 @@ export default function TeamMemberPage() {
               <p className="text-xs text-slate-400">Task diselesaikan per minggu</p>
             </div>
             <div className="px-6 py-5">
-              <div className="flex items-end gap-2 h-32">
+              <div className="flex items-end gap-2" style={{ height: "112px" }}>
                 {historyData.map((h, idx) => {
-                  const pct = Math.round((h.done / maxDone) * 100);
+                  const barH = Math.max(Math.round((h.done / maxDone) * 88), 6);
                   const isCurrent = idx === historyData.length - 1;
                   return (
                     <div key={h.label} className="flex flex-1 flex-col items-center gap-1 group">
+                      <div className="flex-1" />
                       {h.done > 0 && (
                         <span className="text-[9px] text-slate-400 font-semibold hidden group-hover:block">{h.done} task</span>
                       )}
                       <div
                         className="w-full rounded-t-xl transition-all"
                         style={{
-                          height: `${Math.max(pct, 4)}%`,
-                          minHeight: "6px",
+                          height: `${barH}px`,
                           background: isCurrent
                             ? `linear-gradient(to top, ${color}cc, ${color})`
                             : "linear-gradient(to top, #cbd5e1, #e2e8f0)",
