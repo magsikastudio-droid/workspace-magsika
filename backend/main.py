@@ -784,6 +784,14 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
         result_task = format_task({**payload, "_id": result.inserted_id})
     except Exception:
         result_task = {**payload, "id": f"task-mock-{datetime.now(timezone.utc).timestamp()}"}
+    # Auto-sync assignee into order.artists
+    oid = payload.get("order_id", "").strip()
+    assignee = payload.get("assignee", "").strip()
+    if oid and assignee:
+        try:
+            await db.orders.update_one({"_id": ObjectId(oid)}, {"$addToSet": {"artists": assignee}})
+        except Exception:
+            pass
     await manager.broadcast({"type": "tasks_updated"})
     return {"task": result_task}
 
@@ -801,6 +809,15 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
         updated = None
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    # Auto-sync assignee into order.artists
+    oid = (updated.get("order_id") or "").strip()
+    assignee = (updated.get("assignee") or "").strip()
+    if oid and assignee:
+        try:
+            await db.orders.update_one({"_id": ObjectId(oid)}, {"$addToSet": {"artists": assignee}})
+        except Exception:
+            pass
 
     new_status = payload.get("status")
     # Talent kirim ke review → buat notifikasi + broadcast alarm

@@ -457,6 +457,7 @@ const artistColor = (name) => AVATAR_COLORS[Math.abs((name||"").split("").reduce
 
 function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
   const { exchangeRate, formatMoney } = useCurrency();
+  const { updateOrder } = useOrders();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     ...order,
@@ -471,9 +472,21 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
   useEffect(() => {
     if (!order.id) return;
     api.get("/tasks/contributions", { params: { order_id: order.id } })
-      .then((r) => { if ((r.data.contributions || []).length > 0) setDynamicContribs(r.data); })
+      .then((r) => {
+        if ((r.data.contributions || []).length > 0) {
+          setDynamicContribs(r.data);
+          // Auto-sync new assignees into order.artists
+          const currentArtists = order.artists || [];
+          const newArtists = (r.data.contributions || [])
+            .map((c) => c.name)
+            .filter((n) => n && !currentArtists.includes(n));
+          if (newArtists.length > 0) {
+            updateOrder(order.id, { artists: [...currentArtists, ...newArtists] }).catch(() => {});
+          }
+        }
+      })
       .catch(() => {});
-  }, [order.id]);
+  }, [order.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
   const setContrib = (idx, field, value) => setForm((p) => {
@@ -528,8 +541,8 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
     const totalTasks = merged.reduce((s, c) => s + (c.tasks || 0), 0);
     const n = merged.length;
 
-    if (totalTime > 0) return merged.map((c) => ({ ...c, percent: Math.round((c.time || 0) / totalTime * 100) }));
     if (totalTasks > 0) return merged.map((c) => ({ ...c, percent: Math.round((c.tasks || 0) / totalTasks * 100) }));
+    if (totalTime > 0) return merged.map((c) => ({ ...c, percent: Math.round((c.time || 0) / totalTime * 100) }));
     return rebalance(merged);
   }, [dynamicContribs, order.artist_contributions, order.artists]);
 
