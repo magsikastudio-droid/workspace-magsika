@@ -26,11 +26,8 @@ try:
 except ImportError:
     SCHEDULER_AVAILABLE = False
 
-try:
-    import google.generativeai as _genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
+import urllib.request as _urllib_request
+import json as _json
 
 from auth import create_access_token, decode_token, oauth2_scheme
 
@@ -54,16 +51,16 @@ except Exception as _e:
 
 BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-_gemini_model = None
 
-def _get_gemini_model():
-    global _gemini_model
-    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
-        return None
-    if _gemini_model is None:
-        _genai.configure(api_key=GEMINI_API_KEY)
-        _gemini_model = _genai.GenerativeModel("gemini-1.5-flash")
-    return _gemini_model
+def _call_gemini(prompt: str) -> str:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY tidak disetel")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    body = _json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
+    req = _urllib_request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    with _urllib_request.urlopen(req, timeout=30) as resp:
+        data = _json.loads(resp.read().decode("utf-8"))
+    return data["candidates"][0]["content"]["parts"][0]["text"]
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
@@ -1745,8 +1742,7 @@ import asyncio as _asyncio
 
 @app.get("/ai/insight/member")
 async def ai_member_insight(name: str, month: str, current_user: dict = Depends(get_current_user)):
-    model = _get_gemini_model()
-    if not model:
+    if not GEMINI_API_KEY:
         raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GEMINI_API_KEY di environment.")
     try:
         tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
@@ -1776,8 +1772,8 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
         "dan 1 kalimat motivasi. Singkat dan personal. Maksimal 120 kata."
     )
     try:
-        response = await _asyncio.to_thread(model.generate_content, prompt)
-        return {"insight": response.text}
+        text = await _asyncio.to_thread(_call_gemini, prompt)
+        return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
 
@@ -1786,8 +1782,7 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
 async def ai_overall_insight(month: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ["admin", "pm"]:
         raise HTTPException(status_code=403, detail="Forbidden")
-    model = _get_gemini_model()
-    if not model:
+    if not GEMINI_API_KEY:
         raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GEMINI_API_KEY di environment.")
     try:
         all_orders = await db.orders.find().to_list(500)
@@ -1832,7 +1827,7 @@ async def ai_overall_insight(month: str, current_user: dict = Depends(get_curren
         "Informatif dan berdasarkan data. Maksimal 180 kata."
     )
     try:
-        response = await _asyncio.to_thread(model.generate_content, prompt)
-        return {"insight": response.text}
+        text = await _asyncio.to_thread(_call_gemini, prompt)
+        return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
