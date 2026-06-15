@@ -27,10 +27,10 @@ except ImportError:
     SCHEDULER_AVAILABLE = False
 
 try:
-    from anthropic import AsyncAnthropic as _AnthropicAsync
-    ANTHROPIC_AVAILABLE = True
+    import google.generativeai as _genai
+    GEMINI_AVAILABLE = True
 except ImportError:
-    ANTHROPIC_AVAILABLE = False
+    GEMINI_AVAILABLE = False
 
 from auth import create_access_token, decode_token, oauth2_scheme
 
@@ -53,16 +53,17 @@ except Exception as _e:
 
 
 BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-_anthropic_client = None
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+_gemini_model = None
 
-def _get_ai_client():
-    global _anthropic_client
-    if not ANTHROPIC_AVAILABLE or not ANTHROPIC_API_KEY:
+def _get_gemini_model():
+    global _gemini_model
+    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
         return None
-    if _anthropic_client is None:
-        _anthropic_client = _AnthropicAsync(api_key=ANTHROPIC_API_KEY)
-    return _anthropic_client
+    if _gemini_model is None:
+        _genai.configure(api_key=GEMINI_API_KEY)
+        _gemini_model = _genai.GenerativeModel("gemini-1.5-flash")
+    return _gemini_model
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
@@ -1738,13 +1739,15 @@ async def clear_all_data(current_user: dict = Depends(get_current_user)):
     return {"deleted": deleted}
 
 
-# ─── AI Insights ─────────────────────────────────────────────────────────────
+# ─── AI Insights (Google Gemini — free tier) ─────────────────────────────────
+
+import asyncio as _asyncio
 
 @app.get("/ai/insight/member")
 async def ai_member_insight(name: str, month: str, current_user: dict = Depends(get_current_user)):
-    client = _get_ai_client()
-    if not client:
-        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set ANTHROPIC_API_KEY di environment.")
+    model = _get_gemini_model()
+    if not model:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GEMINI_API_KEY di environment.")
     try:
         tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
         all_orders = await db.orders.find({"artists": name}).to_list(100)
@@ -1761,26 +1764,20 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
     minutes = (total_time % 3600) // 60
     project_names = ", ".join([o.get("project", "") for o in month_orders[:5] if o.get("project")])
 
-    context = (
+    prompt = (
+        "Kamu adalah asisten manajemen studio kreatif Magsika Studio. "
+        "Beri ringkasan dan masukan performa dalam bahasa Indonesia yang ramah dan membangun.\n\n"
         f"Performa {name} bulan {month}:\n"
         f"- Total task: {len(tasks)} (selesai: {done}, gagal: {failed}, berjalan: {in_progress}, revisi: {in_revision})\n"
         f"- Total waktu kerja: {hours}j {minutes}m\n"
         f"- Jumlah order dikerjakan: {len(month_orders)}\n"
-        f"- Project: {project_names or 'belum ada'}"
+        f"- Project: {project_names or 'belum ada'}\n\n"
+        "Berikan: ringkasan singkat (1-2 kalimat), poin positif, 1 saran perbaikan (jika ada), "
+        "dan 1 kalimat motivasi. Singkat dan personal. Maksimal 120 kata."
     )
     try:
-        msg = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=400,
-            messages=[{"role": "user", "content": (
-                "Kamu adalah asisten manajemen studio kreatif Magsika Studio. "
-                "Beri ringkasan dan masukan performa dalam bahasa Indonesia yang ramah dan membangun.\n\n"
-                f"{context}\n\n"
-                "Berikan: ringkasan singkat (1-2 kalimat), poin positif, 1 saran perbaikan (jika ada), "
-                "dan 1 kalimat motivasi. Singkat dan personal. Maksimal 120 kata."
-            )}]
-        )
-        return {"insight": msg.content[0].text}
+        response = await _asyncio.to_thread(model.generate_content, prompt)
+        return {"insight": response.text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
 
@@ -1789,9 +1786,9 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
 async def ai_overall_insight(month: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ["admin", "pm"]:
         raise HTTPException(status_code=403, detail="Forbidden")
-    client = _get_ai_client()
-    if not client:
-        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set ANTHROPIC_API_KEY di environment.")
+    model = _get_gemini_model()
+    if not model:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GEMINI_API_KEY di environment.")
     try:
         all_orders = await db.orders.find().to_list(500)
         month_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
@@ -1822,26 +1819,20 @@ async def ai_overall_insight(month: str, current_user: dict = Depends(get_curren
         for a, v in sorted(artist_map.items(), key=lambda x: -x[1]["done"])
     ])
 
-    context = (
+    prompt = (
+        "Kamu adalah asisten manajemen untuk Magsika Studio (studio kreatif 3D/2D). "
+        "Beri analisis performa tim bulanan dalam bahasa Indonesia yang profesional dan membangun untuk pimpinan studio.\n\n"
         f"Performa tim bulan {month}:\n"
         f"- Order: {len(month_orders)} masuk, {done_orders} selesai, {active_orders} aktif\n"
         f"- Revenue: Rp {total_revenue:,.0f}\n"
         f"- Task: {len(tasks)} total, {done_tasks} selesai, {failed_tasks} gagal\n\n"
-        f"Per anggota:\n{artist_lines or 'Belum ada data'}"
+        f"Per anggota:\n{artist_lines or 'Belum ada data'}\n\n"
+        "Format: ringkasan kondisi tim (2-3 kalimat), highlight pencapaian terbaik, "
+        "area yang perlu perhatian, dan rekomendasi singkat bulan depan. "
+        "Informatif dan berdasarkan data. Maksimal 180 kata."
     )
     try:
-        msg = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=500,
-            messages=[{"role": "user", "content": (
-                "Kamu adalah asisten manajemen untuk Magsika Studio (studio kreatif 3D/2D). "
-                "Beri analisis performa tim bulanan dalam bahasa Indonesia yang profesional dan membangun untuk pimpinan studio.\n\n"
-                f"{context}\n\n"
-                "Format: ringkasan kondisi tim (2-3 kalimat), highlight pencapaian terbaik, "
-                "area yang perlu perhatian, dan rekomendasi singkat bulan depan. "
-                "Informatif dan berdasarkan data. Maksimal 180 kata."
-            )}]
-        )
-        return {"insight": msg.content[0].text}
+        response = await _asyncio.to_thread(model.generate_content, prompt)
+        return {"insight": response.text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
