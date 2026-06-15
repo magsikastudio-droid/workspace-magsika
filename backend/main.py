@@ -595,12 +595,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 @app.post("/auth/login")
 async def login(req: LoginRequest):
+    from datetime import timedelta
     user = await authenticate_user(req.username, req.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Username atau password salah")
     if user.get("status") == "pending":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Akun menunggu persetujuan admin")
-    token = create_access_token({"sub": user["username"]})
+    token = create_access_token({"sub": user["username"]}, expires_delta=timedelta(days=365))
     return {"access_token": token, "token_type": "bearer", "user": {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "admin"), "status": user.get("status", "active")}}
 
 
