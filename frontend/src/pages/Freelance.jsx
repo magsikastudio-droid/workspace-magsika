@@ -17,7 +17,12 @@ const statusColor = {
 
 function fmtCurrency(v) {
   if (!v && v !== 0) return "—";
-  return `$${Number(v).toLocaleString("en-US")}`;
+  return `Rp ${Number(v).toLocaleString("id-ID")}`;
+}
+
+function nowMonthStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 const EMPTY_ARTIST = { name: "", bank: "", rekening: "", phone: "", notes: "" };
@@ -39,6 +44,7 @@ export default function Freelance() {
   const [orderSearch, setOrderSearch] = useState("");
 
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [monthFilter, setMonthFilter] = useState("all");
 
   const { orders } = useOrders();
 
@@ -88,10 +94,28 @@ export default function Freelance() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const artistProjects = (artistId) => projects.filter((p) => p.artist_id === artistId);
+  const artistProjects = (artistId) => {
+    const all = projects.filter((p) => p.artist_id === artistId);
+    if (monthFilter === "all") return all;
+    return all.filter((p) => {
+      const linked = p.order_id ? orders.find((o) => o.id === p.order_id) : null;
+      const dateRef = linked?.order_date || p.dp_date || p.pelunasan_date || "";
+      return dateRef.startsWith(monthFilter);
+    });
+  };
   const totalFee = (artistId) => artistProjects(artistId).reduce((s, p) => s + (p.fee || 0), 0);
   const paidFee = (artistId) => artistProjects(artistId).filter((p) => p.status_bayar === "Lunas").reduce((s, p) => s + (p.fee || 0), 0);
   const dpFee = (artistId) => artistProjects(artistId).filter((p) => p.status_bayar === "DP").reduce((s, p) => s + (p.dp_amount || 0), 0);
+
+  const availableMonths = useMemo(() => {
+    const set = new Set();
+    projects.forEach((p) => {
+      const linked = p.order_id ? orders.find((o) => o.id === p.order_id) : null;
+      const date = linked?.order_date || p.dp_date || p.pelunasan_date;
+      if (date) set.add(date.slice(0, 7));
+    });
+    return [...set].sort().reverse();
+  }, [projects, orders]);
 
   /* Global summary */
   const globalTotal = artists.reduce((s, a) => s + totalFee(a.id), 0);
@@ -217,12 +241,26 @@ export default function Freelance() {
           </h1>
           <p className="mt-1 text-sm text-slate-500">Kelola profil & pembayaran artist freelance.</p>
         </div>
-        <button
-          onClick={() => { setEditArtist(null); setArtistForm(EMPTY_ARTIST); setShowArtistModal(true); }}
-          className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 transition"
-        >
-          <Plus size={15} /> Tambah Artist
-        </button>
+        <div className="flex items-center gap-3">
+          <select
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-sky-400"
+          >
+            <option value="all">Semua Bulan</option>
+            {availableMonths.map((m) => {
+              const [y, mo] = m.split("-").map(Number);
+              const label = new Date(y, mo - 1, 1).toLocaleString("id-ID", { month: "long", year: "numeric" });
+              return <option key={m} value={m}>{label}</option>;
+            })}
+          </select>
+          <button
+            onClick={() => { setEditArtist(null); setArtistForm(EMPTY_ARTIST); setShowArtistModal(true); }}
+            className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 transition"
+          >
+            <Plus size={15} /> Tambah Artist
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -531,7 +569,7 @@ export default function Freelance() {
                       className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition ${projectForm.order_id === o.id ? "bg-sky-200 text-sky-800 cursor-default" : "bg-white hover:bg-sky-100 text-slate-700"}`}
                     >
                       <span className="font-medium truncate">{o.project}</span>
-                      <span className="shrink-0 ml-2 font-semibold text-sky-600">${o.fee_freelance?.toLocaleString()}</span>
+                      <span className="shrink-0 ml-2 font-semibold text-sky-600">Rp {o.fee_freelance?.toLocaleString("id-ID")}</span>
                     </button>
                   ))}
                   {filteredLinkOrders.length === 0 && (
@@ -548,7 +586,7 @@ export default function Freelance() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Fee Total (USD) *</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Fee Total (Rp) *</label>
                   <input value={projectForm.fee} onChange={(e) => setProjectForm((p) => ({ ...p, fee: e.target.value }))} type="number" min="0" required className={inputCls} placeholder="0" />
                 </div>
                 <div>

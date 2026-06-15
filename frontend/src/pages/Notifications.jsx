@@ -55,8 +55,8 @@ export default function NotificationsPage() {
   const handleApprove = async (notif) => {
     try {
       await api.patch(`/tasks/${notif.task_id}`, { status: "done" });
+      await api.patch(`/notifications/${notif.id}/read`, { result: "approved" });
       toast.success("Task disetujui ✓");
-      await markOneRead(notif.id);
       fetchNotifications();
     } catch {
       toast.error("Gagal approve task.");
@@ -65,9 +65,9 @@ export default function NotificationsPage() {
 
   const handleReject = async (notif) => {
     try {
-      await api.patch(`/tasks/${notif.task_id}`, { status: "in progress" });
-      toast.info("Task dikembalikan ke In Progress.");
-      await markOneRead(notif.id);
+      await api.patch(`/tasks/${notif.task_id}`, { status: "in_revision" });
+      await api.patch(`/notifications/${notif.id}/read`, { result: "rejected" });
+      toast.info("Task dikembalikan ke In Revision.");
       fetchNotifications();
     } catch {
       toast.error("Gagal reject task.");
@@ -193,9 +193,19 @@ function NotifCard({ notif, onApprove, onReject, onGoToTask, onRead }) {
                 {notif.date}
               </span>
             )}
+            {notif.review_result === "approved" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
+                <CheckCheck size={11} /> Disetujui
+              </span>
+            )}
+            {notif.review_result === "rejected" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-600">
+                <X size={11} /> Ditolak
+              </span>
+            )}
           </div>
 
-          {isReviewPending && isUnread && (
+          {isReviewPending && isUnread && !notif.review_result && (
             <div className="mt-3 flex items-center gap-2">
               <button
                 onClick={() => onApprove(notif)}

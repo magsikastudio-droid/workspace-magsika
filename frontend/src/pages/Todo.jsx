@@ -55,6 +55,7 @@ const avatarColor = (name) => {
 const STATUS_META = {
   pending:          { label: "Pending",     bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-400"   },
   "in progress":    { label: "In Progress", bg: "bg-sky-100",     text: "text-sky-700",     dot: "bg-sky-500"     },
+  in_revision:      { label: "In Revision", bg: "bg-violet-100",  text: "text-violet-700",  dot: "bg-violet-500"  },
   menunggu_review:  { label: "Review",      bg: "bg-orange-100",  text: "text-orange-700",  dot: "bg-orange-500"  },
   done:             { label: "Done",        bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
   failed:           { label: "Gagal",       bg: "bg-rose-100",    text: "text-rose-700",    dot: "bg-rose-500"    },
@@ -63,6 +64,7 @@ const STATUS_META = {
 const KANBAN_COLS = [
   { key: "pending",         label: "Pending",     color: "border-t-amber-400"   },
   { key: "in progress",     label: "In Progress", color: "border-t-sky-400"     },
+  { key: "in_revision",     label: "In Revision", color: "border-t-violet-400"  },
   { key: "menunggu_review", label: "Review",      color: "border-t-orange-400"  },
   { key: "done",            label: "Done",        color: "border-t-emerald-400" },
   { key: "failed",          label: "Gagal",       color: "border-t-rose-400"    },
@@ -156,6 +158,7 @@ export default function Todo() {
     total: visibleTasks.length,
     pending: visibleTasks.filter((t) => t.status === "pending").length,
     inProgress: visibleTasks.filter((t) => t.status === "in progress").length,
+    inRevision: visibleTasks.filter((t) => t.status === "in_revision").length,
     review: visibleTasks.filter((t) => t.status === "menunggu_review").length,
     done: visibleTasks.filter((t) => t.status === "done").length,
     failed: visibleTasks.filter((t) => t.status === "failed").length,
@@ -227,8 +230,8 @@ export default function Todo() {
   }, [handleStatus]);
 
   const handleReject = useCallback(async (task) => {
-    await handleStatus(task, "in progress");
-    toast.info("Task dikembalikan ke In Progress.");
+    await handleStatus(task, "in_revision");
+    toast.info("Task dikembalikan ke In Revision.");
   }, [handleStatus]);
 
   const handleConfirmDone = useCallback(async () => {
@@ -542,9 +545,10 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
   const isDone = task.status === "done";
   const isFailed = task.status === "failed";
   const isReview = task.status === "menunggu_review";
+  const isRevision = task.status === "in_revision";
   const isFinished = isDone || isFailed || isReview;
   const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
-  const isActive = task.status === "pending" || task.status === "in progress";
+  const isActive = task.status === "pending" || task.status === "in progress" || isRevision;
 
   const stopProp = (fn) => (e) => { e.stopPropagation(); fn(); };
 
@@ -563,12 +567,15 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
           ? "border-rose-200 bg-rose-50/50 opacity-70"
           : isReview
           ? "border-orange-300 bg-orange-50/40"
+          : isRevision
+          ? "border-violet-300 bg-violet-50/40"
           : "border-slate-200 bg-white hover:border-slate-300"
       } ${!compact ? "active:cursor-grabbing" : ""}`}
     >
-      {isDone    && <div className="h-1 rounded-t-2xl bg-emerald-400" />}
-      {isFailed  && <div className="h-1 rounded-t-2xl bg-rose-400" />}
-      {isReview  && <div className="h-1 rounded-t-2xl bg-orange-400" />}
+      {isDone      && <div className="h-1 rounded-t-2xl bg-emerald-400" />}
+      {isFailed    && <div className="h-1 rounded-t-2xl bg-rose-400" />}
+      {isReview    && <div className="h-1 rounded-t-2xl bg-orange-400" />}
+      {isRevision  && <div className="h-1 rounded-t-2xl bg-violet-400" />}
 
       {/* Top row: title + edit/delete */}
       <div className="flex items-start gap-2 px-4 pt-3">
@@ -793,9 +800,9 @@ function TelegramConfirmModal({ task, onConfirm, onCancel }) {
           <p className="mt-3 text-xs text-slate-400">Task hanya bisa ditandai selesai setelah file dikirim ke Telegram.</p>
         </div>
         <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
-          <button onClick={onCancel} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">
-            Belum, nanti
-          </button>
+          <a href="https://t.me/c/3611845591/2" target="_blank" rel="noopener noreferrer" className="flex-1 rounded-2xl border border-sky-300 bg-sky-50 py-2.5 text-sm font-semibold text-sky-700 hover:bg-sky-100 transition text-center">
+            Buka Telegram
+          </a>
           <button onClick={onConfirm} className="flex-1 rounded-2xl bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-600 transition">
             ✓ Sudah kirim
           </button>
