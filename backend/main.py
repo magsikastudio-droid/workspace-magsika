@@ -54,12 +54,16 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 def _call_gemini(prompt: str) -> str:
     if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY tidak disetel")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        raise RuntimeError("GEMINI_API_KEY tidak disetel di server")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     body = _json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
     req = _urllib_request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
-    with _urllib_request.urlopen(req, timeout=30) as resp:
-        data = _json.loads(resp.read().decode("utf-8"))
+    try:
+        with _urllib_request.urlopen(req, timeout=30) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+    except _urllib_request.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Gemini API {e.code}: {err_body[:300]}")
     return data["candidates"][0]["content"]["parts"][0]["text"]
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
