@@ -48,6 +48,8 @@ export const PLATFORM_OPTIONS = [
   "Etsy Lolicharm",
   "Direct",
   "Komunitas",
+  "Custom",
+  "Portfolio",
 ];
 
 export const PLATFORM_CODES = {
@@ -56,6 +58,8 @@ export const PLATFORM_CODES = {
   "Etsy Lolicharm":  "LOLI",
   "Direct":          "DIR",
   "Komunitas":       "KOMU",
+  "Custom":          "CSTM",
+  "Portfolio":       "PORT",
 };
 
 export const PLATFORM_COLORS = {
@@ -64,6 +68,8 @@ export const PLATFORM_COLORS = {
   "Etsy Lolicharm":  "#a855f7",
   "Direct":          "#0ea5e9",
   "Komunitas":       "#f97316",
+  "Custom":          "#ec4899",
+  "Portfolio":       "#8b5cf6",
 };
 
 export const MARKET_OPTIONS = ["Magsika", "Eirene", "Lolicharm"];

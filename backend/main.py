@@ -879,14 +879,22 @@ async def tasks_order_contributions(order_id: str, current_user: dict = Depends(
         if t.get("status") == "done":
             amap[a]["done"] += 1
         amap[a]["time"] += t.get("time_elapsed", 0) or 0
+    total_done = sum(v["done"] for v in amap.values())
     total_time = sum(v["time"] for v in amap.values())
     total_tasks = sum(v["tasks"] for v in amap.values())
     contribs = []
     for name, stats in amap.items():
-        pct = round(stats["time"] / total_time * 100) if total_time > 0 else (round(stats["tasks"] / total_tasks * 100) if total_tasks > 0 else 0)
+        if total_done > 0:
+            pct = round(stats["done"] / total_done * 100)
+        elif total_time > 0:
+            pct = round(stats["time"] / total_time * 100)
+        elif total_tasks > 0:
+            pct = round(stats["tasks"] / total_tasks * 100)
+        else:
+            pct = 0
         contribs.append({"name": name, "type": stats["type"], "tasks": stats["tasks"], "done": stats["done"], "time": stats["time"], "percent": pct})
-    contribs.sort(key=lambda x: x["time"], reverse=True)
-    return {"contributions": contribs, "total_time": total_time, "total_tasks": total_tasks}
+    contribs.sort(key=lambda x: x["done"], reverse=True)
+    return {"contributions": contribs, "total_time": total_time, "total_tasks": total_tasks, "total_done": total_done}
 
 
 @app.get("/tasks/order-total")
@@ -905,10 +913,15 @@ async def tasks_order_total(order_id: str, current_user: dict = Depends(get_curr
 
 
 @app.get("/tasks/summary")
-async def tasks_summary(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    """Agregasi task per bulan: per-artist dan per-order."""
+async def tasks_summary(month: Optional[str] = None, from_date: Optional[str] = None, to_date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Agregasi task: per-artist dan per-order. Supports month prefix or from_date/to_date range."""
     try:
-        query = {"date": {"$regex": f"^{month}"}} if month else {}
+        if from_date and to_date:
+            query = {"date": {"$gte": from_date, "$lte": to_date}}
+        elif month:
+            query = {"date": {"$regex": f"^{month}"}}
+        else:
+            query = {}
         records = await db.tasks.find(query).to_list(2000)
     except Exception:
         records = []
@@ -928,13 +941,18 @@ async def tasks_summary(month: Optional[str] = None, current_user: dict = Depend
         oid = t.get("order_id")
         if oid:
             if oid not in order_map:
-                order_map[oid] = {"tasks": 0, "done": 0, "failed": 0, "time": 0, "assignees": []}
+                order_map[oid] = {"tasks": 0, "done": 0, "failed": 0, "time": 0, "assignees": [],
+                                   "tasks_by_assignee": {}, "done_by_assignee": {}, "time_by_assignee": {}}
             order_map[oid]["tasks"] += 1
             if st == "done":   order_map[oid]["done"] += 1
             if st == "failed": order_map[oid]["failed"] += 1
             order_map[oid]["time"] += t.get("time_elapsed", 0) or 0
             if a not in order_map[oid]["assignees"]:
                 order_map[oid]["assignees"].append(a)
+            order_map[oid]["tasks_by_assignee"][a] = order_map[oid]["tasks_by_assignee"].get(a, 0) + 1
+            if st == "done":
+                order_map[oid]["done_by_assignee"][a] = order_map[oid]["done_by_assignee"].get(a, 0) + 1
+            order_map[oid]["time_by_assignee"][a] = order_map[oid]["time_by_assignee"].get(a, 0) + (t.get("time_elapsed", 0) or 0)
     return {
         "artists": [{"name": k, **v} for k, v in artist_map.items()],
         "orders": [{"order_id": k, **v} for k, v in order_map.items()],
@@ -1560,6 +1578,54 @@ async def mark_notification_read(notif_id: str, body: NotifReadBody = NotifReadB
     return {"ok": True}
 
 
+# ─── User Notifications (all roles, filtered by recipient_name) ───────────────
+
+@app.get("/my-notifications/unread-count")
+async def my_notif_unread_count(current_user: dict = Depends(get_current_user)):
+    name = current_user.get("full_name", "")
+    try:
+        count = await db.user_notifications.count_documents({"recipient_name": name, "read": False})
+        return {"count": count}
+    except Exception:
+        return {"count": 0}
+
+
+@app.get("/my-notifications")
+async def my_notif_list(current_user: dict = Depends(get_current_user)):
+    name = current_user.get("full_name", "")
+    try:
+        records = await db.user_notifications.find({"recipient_name": name}).sort("created_at", -1).to_list(100)
+        return {"notifications": [
+            {"id": str(r["_id"]), "recipient_name": r.get("recipient_name", ""),
+             "message": r.get("message", ""), "period": r.get("period", ""),
+             "date_key": r.get("date_key", ""), "read": r.get("read", False),
+             "created_at": r.get("created_at", "")}
+            for r in records
+        ]}
+    except Exception:
+        return {"notifications": []}
+
+
+@app.patch("/my-notifications/read-all")
+async def my_notif_read_all(current_user: dict = Depends(get_current_user)):
+    name = current_user.get("full_name", "")
+    try:
+        await db.user_notifications.update_many({"recipient_name": name, "read": False}, {"$set": {"read": True}})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
+
+
+@app.patch("/my-notifications/{notif_id}/read")
+async def my_notif_read_one(notif_id: str, current_user: dict = Depends(get_current_user)):
+    object_id = to_object_id(notif_id)
+    try:
+        await db.user_notifications.update_one({"_id": object_id}, {"$set": {"read": True}})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"ok": True}
+
+
 # ─── Strategic Plans ──────────────────────────────────────────────────────────
 
 @app.get("/strategic-plan/{plan_type}")
@@ -1893,7 +1959,8 @@ def _overall_prompt(tasks: list, period_orders: list, period_label: str) -> str:
 # ── GET saved member report ───────────────────────────────────────────────────
 @app.get("/ai/reports/member")
 async def get_member_report(name: str, period: str = "monthly", month: str = "", current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") not in ["admin", "pm"]:
+    role = current_user.get("role")
+    if role not in ["admin", "pm"] and current_user.get("full_name") != name:
         raise HTTPException(status_code=403, detail="Forbidden")
     date_key = _current_date_key(period, month)
     doc = await db.ai_reports.find_one({"type": "member", "target": name, "period": period, "date_key": date_key})
@@ -1918,6 +1985,15 @@ async def generate_member_report(name: str, period: str = "monthly", month: str 
            "content": text, "is_auto": False, "generated_by": current_user.get("username", "admin"),
            "created_at": now, "updated_at": now}
     await db.ai_reports.replace_one({"type": "member", "target": name, "period": period, "date_key": date_key}, doc, upsert=True)
+    _period_id = {"daily": "harian", "weekly": "mingguan", "monthly": "bulanan"}
+    try:
+        await db.user_notifications.insert_one({
+            "recipient_name": name, "period": period, "date_key": date_key, "read": False,
+            "message": f"Laporan performa {_period_id.get(period, period)} Anda telah diperbarui oleh admin.",
+            "created_at": now,
+        })
+    except Exception:
+        pass
     result = await db.ai_reports.find_one({"type": "member", "target": name, "period": period, "date_key": date_key})
     return {"report": _fmt_report(result)}
 
@@ -2006,6 +2082,14 @@ async def auto_daily_ai_reports():
                      "created_at": now_iso, "updated_at": now_iso},
                     upsert=True
                 )
+                try:
+                    await db.user_notifications.insert_one({
+                        "recipient_name": name, "period": "daily", "date_key": date_key, "read": False,
+                        "message": "Laporan performa harian Anda telah diperbarui secara otomatis.",
+                        "created_at": now_iso,
+                    })
+                except Exception:
+                    pass
             except Exception:
                 pass
         existing_overall = await db.ai_reports.find_one({"type": "overall", "period": "daily", "date_key": date_key})
