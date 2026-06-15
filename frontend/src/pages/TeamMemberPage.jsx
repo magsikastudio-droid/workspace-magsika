@@ -102,28 +102,31 @@ export default function TeamMemberPage() {
 
   useEffect(() => {
     const fetchHistory = async () => {
-      const months = [];
+      const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const lastDay = new Date(selYear, selMonth + 1, 0);
+      const dow = lastDay.getDay();
+      const anchor = new Date(lastDay);
+      if (dow !== 0) anchor.setDate(anchor.getDate() + (7 - dow));
+      const weeks = [];
       for (let i = 5; i >= 0; i--) {
-        const d = new Date(selYear, selMonth - i, 1);
-        months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+        const sun = new Date(anchor); sun.setDate(sun.getDate() - i * 7);
+        const mon = new Date(sun); mon.setDate(mon.getDate() - 6);
+        weeks.push({ fromDate: fmt(mon), toDate: fmt(sun), label: `${mon.getDate()}/${mon.getMonth() + 1}` });
       }
       const results = await Promise.all(
-        months.map((m) =>
-          api.get("/tasks/summary", { params: { month: m } })
-            .then((r) => ({ month: m, data: r.data }))
-            .catch(() => ({ month: m, data: null }))
+        weeks.map(({ fromDate, toDate }) =>
+          api.get("/tasks/summary", { params: { from_date: fromDate, to_date: toDate } })
+            .then((r) => ({ data: r.data }))
+            .catch(() => ({ data: null }))
         )
       );
-      setHistoryData(results.map(({ month, data }) => {
+      setHistoryData(results.map(({ data }, idx) => {
         const artist = data?.artists?.find((a) => a.name === artistName);
-        const myOrdCount = (data?.orders || []).filter((os) => (os.assignees || []).includes(artistName)).length;
         return {
-          month,
-          label: monthLabel(month)?.slice(0, 3) || month,
+          label: weeks[idx].label,
           tasks: artist?.tasks || 0,
           done: artist?.done || 0,
           time: artist?.time || 0,
-          orders: myOrdCount,
         };
       }));
     };
@@ -324,19 +327,19 @@ export default function TeamMemberPage() {
             </div>
           )}
 
-          {/* 6-month chart */}
+          {/* 6-week chart */}
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-6 py-4">
-              <p className="font-bold text-slate-900">Aktivitas 6 Bulan Terakhir</p>
-              <p className="text-xs text-slate-400">Task diselesaikan per bulan</p>
+              <p className="font-bold text-slate-900">Aktivitas 6 Minggu Terakhir</p>
+              <p className="text-xs text-slate-400">Task diselesaikan per minggu</p>
             </div>
             <div className="px-6 py-5">
               <div className="flex items-end gap-2 h-32">
-                {historyData.map((h) => {
+                {historyData.map((h, idx) => {
                   const pct = Math.round((h.done / maxDone) * 100);
-                  const isCurrent = h.month === monthStr;
+                  const isCurrent = idx === historyData.length - 1;
                   return (
-                    <div key={h.month} className="flex flex-1 flex-col items-center gap-1 group">
+                    <div key={h.label} className="flex flex-1 flex-col items-center gap-1 group">
                       {h.done > 0 && (
                         <span className="text-[9px] text-slate-400 font-semibold hidden group-hover:block">{h.done} task</span>
                       )}

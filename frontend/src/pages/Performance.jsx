@@ -96,10 +96,34 @@ function TalentPerformance({ user }) {
   const [summary, setSummary] = useState({ artists: [], orders: [] });
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [myNotifCount, setMyNotifCount] = useState(0);
+  const [notifDismissed, setNotifDismissed] = useState(false);
+  const [aiPeriod, setAiPeriod] = useState("daily");
+  const [aiReport, setAiReport] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     api.get("/users/me").then((r) => setProfile(r.data?.user || null)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    api.get("/my-notifications/unread-count").then((r) => setMyNotifCount(r.data?.count ?? 0)).catch(() => {});
+  }, []);
+
+  const dismissNotif = async () => {
+    setNotifDismissed(true);
+    setMyNotifCount(0);
+    try { await api.patch("/my-notifications/read-all"); } catch {}
+  };
+
+  useEffect(() => {
+    setAiReport(null);
+    setAiLoading(true);
+    api.get("/ai/reports/member", { params: { name: myName, period: aiPeriod, month: monthStr } })
+      .then((r) => setAiReport(r.data?.report || null))
+      .catch(() => {})
+      .finally(() => setAiLoading(false));
+  }, [myName, aiPeriod, monthStr]);
 
   useEffect(() => {
     setLoading(true);
@@ -144,29 +168,31 @@ function TalentPerformance({ user }) {
   const [historyData, setHistoryData] = useState([]);
   useEffect(() => {
     const fetchAll = async () => {
-      const months = [];
+      const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const lastDay = new Date(selYear, selMonth + 1, 0);
+      const dow = lastDay.getDay();
+      const anchor = new Date(lastDay);
+      if (dow !== 0) anchor.setDate(anchor.getDate() + (7 - dow));
+      const weeks = [];
       for (let i = 5; i >= 0; i--) {
-        const d = new Date(selYear, selMonth - i, 1);
-        const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        months.push(k);
+        const sun = new Date(anchor); sun.setDate(sun.getDate() - i * 7);
+        const mon = new Date(sun); mon.setDate(mon.getDate() - 6);
+        weeks.push({ fromDate: fmt(mon), toDate: fmt(sun), label: `${mon.getDate()}/${mon.getMonth() + 1}` });
       }
       const results = await Promise.all(
-        months.map((m) =>
-          api.get("/tasks/summary", { params: { month: m } })
-            .then((r) => ({ month: m, data: r.data }))
-            .catch(() => ({ month: m, data: null }))
+        weeks.map(({ fromDate, toDate }) =>
+          api.get("/tasks/summary", { params: { from_date: fromDate, to_date: toDate } })
+            .then((r) => ({ data: r.data }))
+            .catch(() => ({ data: null }))
         )
       );
-      setHistoryData(results.map(({ month, data }) => {
+      setHistoryData(results.map(({ data }, idx) => {
         const artist = data?.artists?.find((a) => a.name === myName);
-        const myOrdCount = (data?.orders || []).filter((os) => (os.assignees || []).includes(myName)).length;
         return {
-          month,
-          label: monthLabel(month)?.slice(0, 3) || month,
+          label: weeks[idx].label,
           tasks: artist?.tasks || 0,
           done: artist?.done || 0,
           time: artist?.time || 0,
-          orders: myOrdCount,
         };
       }));
     };
@@ -179,6 +205,26 @@ function TalentPerformance({ user }) {
 
   return (
     <div className="space-y-5 max-w-3xl mx-auto">
+      {/* Notification banner */}
+      {myNotifCount > 0 && !notifDismissed && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-3.5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white shrink-0">
+              {myNotifCount > 9 ? "9+" : myNotifCount}
+            </span>
+            <p className="text-sm font-semibold text-indigo-800">
+              Kamu memiliki {myNotifCount} laporan performa baru dari admin.
+            </p>
+          </div>
+          <button
+            onClick={dismissNotif}
+            className="shrink-0 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition"
+          >
+            Tandai Dibaca
+          </button>
+        </div>
+      )}
+
       {/* Header — profil kartu */}
       <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -240,19 +286,19 @@ function TalentPerformance({ user }) {
         </div>
       )}
 
-      {/* Riwayat 6 bulan chart */}
+      {/* Riwayat 6 minggu chart */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-6 py-4">
-          <p className="font-bold text-slate-900">Aktivitas 6 Bulan Terakhir</p>
-          <p className="text-xs text-slate-400">Task diselesaikan per bulan</p>
+          <p className="font-bold text-slate-900">Aktivitas 6 Minggu Terakhir</p>
+          <p className="text-xs text-slate-400">Task diselesaikan per minggu</p>
         </div>
         <div className="px-6 py-5">
           <div className="flex items-end gap-2 h-32">
-            {historyData.map((h) => {
+            {historyData.map((h, idx) => {
               const pct = Math.round((h.done / maxTasks) * 100);
-              const isCurrent = h.month === monthStr;
+              const isCurrent = idx === historyData.length - 1;
               return (
-                <div key={h.month} className="flex flex-1 flex-col items-center gap-1 group">
+                <div key={h.label} className="flex flex-1 flex-col items-center gap-1 group">
                   {h.done > 0 && (
                     <span className="text-[9px] text-slate-400 font-semibold hidden group-hover:block">{h.done} task</span>
                   )}
@@ -287,6 +333,53 @@ function TalentPerformance({ user }) {
           <p className="font-semibold text-slate-400">Belum ada project di {MONTH_NAMES[selMonth]} {selYear}.</p>
         </div>
       )}
+
+      {/* AI Report panel (view-only for talent) */}
+      <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"
+          style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" }}>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20">
+              <Bot size={16} className="text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white">Laporan AI Performa</p>
+              <p className="text-[11px] text-white/70">Dibuat oleh admin · hanya bisa dilihat</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 rounded-xl border border-white/20 bg-white/10 p-1">
+            {[{ value: "daily", label: "Harian" }, { value: "weekly", label: "Mingguan" }, { value: "monthly", label: "Bulanan" }].map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setAiPeriod(value)}
+                className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${aiPeriod === value ? "bg-white text-violet-700 shadow-sm" : "text-white/80 hover:bg-white/10"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white px-6 py-5">
+          {aiLoading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-slate-400 text-sm">
+              <Loader2 size={16} className="animate-spin" /> Memuat laporan...
+            </div>
+          ) : aiReport ? (
+            <div className="space-y-1 text-sm">
+              {renderInsight(aiReport.content)}
+              <p className="pt-3 text-[10px] text-slate-400">
+                Dibuat: {new Date(aiReport.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
+              <Bot size={28} className="text-slate-200" />
+              <p className="text-sm font-semibold text-slate-400">Belum ada laporan AI untuk periode ini.</p>
+              <p className="text-xs text-slate-400">Laporan akan muncul setelah admin membuat atau sistem auto-generate.</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

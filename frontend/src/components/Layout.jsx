@@ -54,6 +54,7 @@ export default function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
+  const [myNotifCount, setMyNotifCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -65,6 +66,19 @@ export default function Layout({ children }) {
       try {
         const res = await api.get("/notifications/unread-count");
         setUnreadCount(res.data?.count ?? 0);
+      } catch {}
+    };
+    poll();
+    const id = setInterval(poll, 20000);
+    return () => clearInterval(id);
+  }, [role]);
+
+  useEffect(() => {
+    if (role !== "talent") return;
+    const poll = async () => {
+      try {
+        const res = await api.get("/my-notifications/unread-count");
+        setMyNotifCount(res.data?.count ?? 0);
       } catch {}
     };
     poll();
@@ -198,6 +212,20 @@ export default function Layout({ children }) {
                 {unreadCount > 0 && (
                   <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
                     {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {role === "talent" && (
+              <button
+                onClick={() => navigate("/performance")}
+                title="Notifikasi Performa"
+                className="relative rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/5 p-2 text-slate-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-500 hover:border-indigo-200 dark:hover:border-indigo-700 transition"
+              >
+                <Bell size={16} />
+                {myNotifCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
+                    {myNotifCount > 9 ? "9+" : myNotifCount}
                   </span>
                 )}
               </button>
