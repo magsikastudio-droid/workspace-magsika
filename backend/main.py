@@ -1772,7 +1772,7 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
         "dan 1 kalimat motivasi. Singkat dan personal. Maksimal 120 kata."
     )
     try:
-        text = await _asyncio.to_thread(_call_gemini, prompt)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_gemini, prompt)
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
@@ -1827,7 +1827,7 @@ async def ai_overall_insight(month: str, current_user: dict = Depends(get_curren
         "Informatif dan berdasarkan data. Maksimal 180 kata."
     )
     try:
-        text = await _asyncio.to_thread(_call_gemini, prompt)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_gemini, prompt)
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
