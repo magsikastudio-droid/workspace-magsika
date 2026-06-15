@@ -419,6 +419,7 @@ export default function Todo() {
           task={liveDetailTask}
           orders={orders}
           now={now}
+          isAdminOrPM={isAdminOrPM}
           onClose={() => setDetailTaskId(null)}
           onEdit={(t) => { setDetailTaskId(null); setEditTask({ ...t }); }}
         />
@@ -687,7 +688,7 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
 }
 
 /* ─── TaskDetailModal ───────────────────────────────────────────── */
-function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
+function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
   const linkedOrder = orders.find((o) => o.id === task.order_id);
@@ -763,9 +764,11 @@ function TaskDetailModal({ task, orders, now, onClose, onEdit }) {
           <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
             Tutup
           </button>
-          <button onClick={() => onEdit(task)} className="flex-1 rounded-2xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">
-            Edit Task
-          </button>
+          {isAdminOrPM && (
+            <button onClick={() => onEdit(task)} className="flex-1 rounded-2xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">
+              Edit Task
+            </button>
+          )}
         </div>
       </div>
       </div>

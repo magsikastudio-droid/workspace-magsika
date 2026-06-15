@@ -829,6 +829,7 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
   });
   const [manualFolder, setManualFolder] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [sendingTg, setSendingTg] = useState(false);
 
   const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
 
@@ -1090,7 +1091,7 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
             </label>
           </div>
 
-          {/* TELEGRAM (UI only) */}
+          {/* TELEGRAM */}
           <div className="px-7 py-5">
             <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-cyan-600">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.01 9.461c-.143.643-.527.8-.864.498l-2.37-1.756-1.144 1.1c-.126.127-.232.233-.476.233l.17-2.403 4.367-3.941c.19-.168-.041-.261-.294-.093L7.168 15.447l-2.335-.729c-.507-.158-.52-.507.106-.75l9.136-3.519c.424-.154.797.103.487 1.799z"/></svg>
@@ -1098,16 +1099,42 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
             </div>
             <div className="flex flex-wrap gap-2">
               {[
-                { label: "Order Baru", color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: "🎉" },
-                { label: "Reminder", color: "bg-amber-50 text-amber-700 border-amber-200", icon: "⏰" },
-                { label: "Warning H-1", color: "bg-rose-50 text-rose-700 border-rose-200", icon: "⚠️" },
-                { label: "Sisa hari", color: "bg-slate-50 text-slate-700 border-slate-200", icon: "🔔" },
+                {
+                  label: "Order Baru", color: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: "🎉",
+                  msg: () => `🎉 <b>Order Baru!</b>\n\n📁 <b>${form.project || "-"}</b>\n👤 Klien: ${form.client || "-"}\n🏪 Platform: ${form.platform || "-"}\n💼 Jenis: ${form.work_type || "-"}\n💰 Total: $${form.total || 0}\n📅 Deadline: ${form.deadline || "-"}\n🖊 Artist: ${form.artist_contributions?.map((a) => a.name).filter(Boolean).join(", ") || "-"}`,
+                },
+                {
+                  label: "Reminder", color: "bg-amber-50 text-amber-700 border-amber-200", icon: "⏰",
+                  msg: () => `⏰ <b>Reminder Order</b>\n\n📁 <b>${form.project || "-"}</b>\n👤 Klien: ${form.client || "-"}\n📅 Deadline: ${form.deadline || "-"}\n🔖 Status: ${form.status || "-"}\n🖊 Artist: ${form.artist_contributions?.map((a) => a.name).filter(Boolean).join(", ") || "-"}`,
+                },
+                {
+                  label: "Warning H-1", color: "bg-rose-50 text-rose-700 border-rose-200", icon: "⚠️",
+                  msg: () => `⚠️ <b>BESOK DEADLINE!</b>\n\n📁 <b>${form.project || "-"}</b>\n👤 Klien: ${form.client || "-"}\n📅 Deadline: ${form.deadline || "-"}\n🖊 Artist: ${form.artist_contributions?.map((a) => a.name).filter(Boolean).join(", ") || "-"}\n\nSegera selesaikan!`,
+                },
+                {
+                  label: "Sisa hari", color: "bg-slate-50 text-slate-700 border-slate-200", icon: "🔔",
+                  msg: () => {
+                    const dl = form.deadline ? Math.ceil((new Date(form.deadline) - new Date()) / 86400000) : null;
+                    return `🔔 <b>Update Order</b>\n\n📁 <b>${form.project || "-"}</b>\n🔖 Status: ${form.status || "-"}\n📅 Deadline: ${form.deadline || "-"}${dl !== null ? `\n⏳ Sisa: ${dl} hari` : ""}`;
+                  },
+                },
               ].map((btn) => (
                 <button
                   key={btn.label}
                   type="button"
-                  onClick={() => toast.info("Telegram bot belum dikonfigurasi di Settings.")}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition hover:opacity-80 ${btn.color}`}
+                  disabled={sendingTg}
+                  onClick={async () => {
+                    setSendingTg(true);
+                    try {
+                      await api.post("/telegram/send", { message: btn.msg() });
+                      toast.success(`Notif "${btn.label}" terkirim ke Telegram`);
+                    } catch (err) {
+                      toast.error(err.response?.data?.detail || "Gagal kirim ke Telegram");
+                    } finally {
+                      setSendingTg(false);
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition hover:opacity-80 disabled:opacity-50 ${btn.color}`}
                 >
                   {btn.icon} {btn.label}
                 </button>

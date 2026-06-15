@@ -590,7 +590,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         user = None
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "admin"), "status": user.get("status", "active")}
+    return {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "talent"), "status": user.get("status", "active")}
 
 
 @app.post("/auth/login")
@@ -602,7 +602,7 @@ async def login(req: LoginRequest):
     if user.get("status") == "pending":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Akun menunggu persetujuan admin")
     token = create_access_token({"sub": user["username"]}, expires_delta=timedelta(days=365))
-    return {"access_token": token, "token_type": "bearer", "user": {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "admin"), "status": user.get("status", "active")}}
+    return {"access_token": token, "token_type": "bearer", "user": {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "talent"), "status": user.get("status", "active")}}
 
 
 @app.get("/auth/me")
@@ -621,6 +621,8 @@ async def list_orders(current_user: dict = Depends(get_current_user)):
 
 @app.post("/orders")
 async def create_order(order: OrderCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
     payload = order.dict()
     payload["created_at"] = datetime.now(timezone.utc).isoformat()
     try:
@@ -646,6 +648,8 @@ async def get_order(order_id: str, current_user: dict = Depends(get_current_user
 
 @app.patch("/orders/{order_id}")
 async def update_order(order_id: str, order: OrderUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
     payload = {k: v for k, v in order.dict(exclude_unset=True).items()}
     if not payload:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
@@ -665,6 +669,8 @@ async def update_order(order_id: str, order: OrderUpdate, current_user: dict = D
 
 @app.delete("/orders/{order_id}")
 async def delete_order(order_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
     object_id = to_object_id(order_id)
     try:
         result = await db.orders.delete_one({"_id": object_id})
@@ -1195,7 +1201,7 @@ async def get_my_profile(current_user: dict = Depends(get_current_user)):
                 "id": "", "username": username,
                 "full_name": current_user.get("full_name", ""),
                 "email": current_user.get("email", ""),
-                "role": current_user.get("role", "admin"),
+                "role": current_user.get("role", "talent"),
                 "status": "active",
                 "phone": "", "telegram": "", "gender": "", "birthdate": "",
                 "birthplace": "", "position": "", "address": "", "bank_account": "",
@@ -1289,6 +1295,105 @@ async def update_email_whitelist(data: EmailWhitelistUpdate, current_user: dict 
             upsert=True,
         )
         return {"emails": data.emails}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Telegram Settings ────────────────────────────────────────────────────────
+
+class TelegramSettingsUpdate(BaseModel):
+    bot_token: str = ""
+    chat_id: str = ""
+
+@app.get("/settings/telegram")
+async def get_telegram_settings(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        doc = await db.settings.find_one({"key": "telegram"})
+        if doc:
+            return {"bot_token": doc.get("bot_token", ""), "chat_id": doc.get("chat_id", "")}
+        return {"bot_token": "", "chat_id": ""}
+    except Exception:
+        return {"bot_token": "", "chat_id": ""}
+
+@app.post("/settings/telegram")
+async def update_telegram_settings(data: TelegramSettingsUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        await db.settings.update_one(
+            {"key": "telegram"},
+            {"$set": {"key": "telegram", "bot_token": data.bot_token, "chat_id": data.chat_id}},
+            upsert=True,
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Bank Info Settings ───────────────────────────────────────────────────────
+
+class BankInfoUpdate(BaseModel):
+    nama: str = ""
+    bank: str = ""
+    rekening: str = ""
+
+@app.get("/settings/bank-info")
+async def get_bank_info(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        doc = await db.settings.find_one({"key": "bank_info"})
+        if doc:
+            return {"nama": doc.get("nama", ""), "bank": doc.get("bank", ""), "rekening": doc.get("rekening", "")}
+        return {"nama": "", "bank": "", "rekening": ""}
+    except Exception:
+        return {"nama": "", "bank": "", "rekening": ""}
+
+@app.post("/settings/bank-info")
+async def update_bank_info(data: BankInfoUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        await db.settings.update_one(
+            {"key": "bank_info"},
+            {"$set": {"key": "bank_info", "nama": data.nama, "bank": data.bank, "rekening": data.rekening}},
+            upsert=True,
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Telegram Send ────────────────────────────────────────────────────────────
+
+class TelegramSendBody(BaseModel):
+    message: str
+
+@app.post("/telegram/send")
+async def send_telegram_message(body: TelegramSendBody, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        doc = await db.settings.find_one({"key": "telegram"})
+        bot_token = doc.get("bot_token", "") if doc else ""
+        chat_id = doc.get("chat_id", "") if doc else ""
+        if not bot_token or not chat_id:
+            raise HTTPException(status_code=400, detail="Telegram belum dikonfigurasi. Silakan isi Bot Token & Chat ID di Settings.")
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={"chat_id": chat_id, "text": body.message, "parse_mode": "HTML"},
+                timeout=10,
+            )
+        result = resp.json()
+        if not result.get("ok"):
+            raise HTTPException(status_code=500, detail=f"Telegram error: {result.get('description', 'Unknown')}")
+        return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
