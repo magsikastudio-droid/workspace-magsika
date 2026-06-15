@@ -884,16 +884,14 @@ async def tasks_order_contributions(order_id: str, current_user: dict = Depends(
     total_tasks = sum(v["tasks"] for v in amap.values())
     contribs = []
     for name, stats in amap.items():
-        if total_done > 0:
-            pct = round(stats["done"] / total_done * 100)
+        if total_tasks > 0:
+            pct = round(stats["tasks"] / total_tasks * 100)
         elif total_time > 0:
             pct = round(stats["time"] / total_time * 100)
-        elif total_tasks > 0:
-            pct = round(stats["tasks"] / total_tasks * 100)
         else:
             pct = 0
         contribs.append({"name": name, "type": stats["type"], "tasks": stats["tasks"], "done": stats["done"], "time": stats["time"], "percent": pct})
-    contribs.sort(key=lambda x: x["done"], reverse=True)
+    contribs.sort(key=lambda x: x["tasks"], reverse=True)
     return {"contributions": contribs, "total_time": total_time, "total_tasks": total_tasks, "total_done": total_done}
 
 
