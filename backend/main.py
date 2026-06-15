@@ -1896,6 +1896,8 @@ def _member_prompt(name: str, tasks: list, period_orders: list, period_label: st
         f"- Akumulasi waktu kerja: {total_time // 3600} jam {(total_time % 3600) // 60} menit\n"
         f"- Jumlah order dikerjakan: {len(period_orders)}\n"
         f"- Project yang dikerjakan: {project_names or 'belum ada data'}\n\n"
+        "Jangan tulis baris header laporan, nama anggota tim, atau periode di awal output. "
+        "Mulai langsung dengan section pertama berikut.\n\n"
         "Tulis laporan dengan struktur berikut (gunakan persis heading ini):\n\n"
         "**Ringkasan Eksekutif**\n"
         "Gambaran umum kinerja secara keseluruhan (2-3 kalimat).\n\n"
