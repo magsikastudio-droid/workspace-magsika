@@ -16,6 +16,45 @@ import { toast } from "sonner";
 /* ─── helpers ─────────────────────────────────────────────────────── */
 const MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
+const renderBold = (text) => {
+  const parts = text.split(/\*\*(.*?)\*\*/g);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    i % 2 === 1
+      ? <strong key={i} className="font-semibold text-slate-900">{part}</strong>
+      : part
+  );
+};
+
+const renderInsight = (text) =>
+  text.split("\n").map((line, i) => {
+    const trimmed = line.trim();
+    if (/^\*\*[^*]+\*\*$/.test(trimmed)) {
+      return (
+        <div key={i} className="flex items-center gap-2 pt-4 pb-1 first:pt-0">
+          <div className="h-3 w-1 rounded-full bg-violet-500 shrink-0" />
+          <p className="text-[11px] font-bold uppercase tracking-widest text-violet-600">
+            {trimmed.slice(2, -2)}
+          </p>
+        </div>
+      );
+    }
+    if (trimmed === "") return <div key={i} className="h-1" />;
+    if (trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+      return (
+        <div key={i} className="flex items-start gap-2 pl-3">
+          <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
+          <p className="text-sm text-slate-600 leading-relaxed">{renderBold(trimmed.slice(2))}</p>
+        </div>
+      );
+    }
+    return (
+      <p key={i} className="text-sm text-slate-700 leading-relaxed">
+        {renderBold(line)}
+      </p>
+    );
+  });
+
 const fmtTime = (s) => {
   if (!s || s <= 0) return "—";
   const h = Math.floor(s / 3600);
@@ -467,6 +506,7 @@ function AdminPerformance() {
   const [orderSearch, setOrderSearch] = useState("");
   const [aiInsight, setAiInsight] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiPeriod, setAiPeriod] = useState("monthly");
 
   const goToArtist = useCallback((name) => {
     navigate(`/performance/team/${encodeURIComponent(name)}`);
@@ -476,7 +516,7 @@ function AdminPerformance() {
     setAiLoading(true);
     setAiInsight(null);
     try {
-      const res = await api.get("/ai/insight/overall", { params: { month: monthStr } });
+      const res = await api.get("/ai/insight/overall", { params: { month: monthStr, period: aiPeriod } });
       setAiInsight(res.data.insight);
     } catch (err) {
       const msg = err?.response?.data?.detail || "Gagal memuat insight AI";
@@ -484,7 +524,7 @@ function AdminPerformance() {
     } finally {
       setAiLoading(false);
     }
-  }, [monthStr]);
+  }, [monthStr, aiPeriod]);
 
   useEffect(() => {
     setLoadingTasks(true);
@@ -865,42 +905,67 @@ function AdminPerformance() {
       <AllTimeSection orders={orders} formatMoney={formatMoney} onSelectArtist={goToArtist} />
 
       {/* AI Overall Insight */}
-      <div className="rounded-2xl border border-violet-100 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-50 px-6 py-4">
-          <div>
-            <p className="font-bold text-slate-900 flex items-center gap-2">
-              <Bot size={16} className="text-violet-500" /> AI Team Insight
-            </p>
-            <p className="text-xs text-slate-400">Analisis performa keseluruhan tim — {MONTH_NAMES[selMonth]} {selYear}</p>
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 shrink-0">
+                <Bot size={18} className="text-white" />
+              </div>
+              <div>
+                <p className="font-bold text-white text-sm">Laporan Analisis Tim AI</p>
+                <p className="text-xs text-violet-200">Keseluruhan tim — oleh Claude AI</p>
+              </div>
+            </div>
+            <button
+              onClick={loadOverallInsight}
+              disabled={aiLoading}
+              className="inline-flex items-center gap-2 rounded-xl bg-white/20 hover:bg-white/30 border border-white/20 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
+            >
+              {aiLoading
+                ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
+                : <><Sparkles size={14} /> {aiInsight ? "Perbarui" : "Generate Laporan"}</>
+              }
+            </button>
           </div>
-          <button
-            onClick={loadOverallInsight}
-            disabled={aiLoading}
-            className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
-          >
-            {aiLoading
-              ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
-              : <><Sparkles size={14} /> {aiInsight ? "Refresh Insight" : "Generate Insight"}</>
-            }
-          </button>
+          <div className="mt-3 flex items-center gap-1 w-fit rounded-xl border border-white/20 bg-white/10 p-1">
+            {[
+              { value: "daily", label: "Harian" },
+              { value: "weekly", label: "Mingguan" },
+              { value: "monthly", label: "Bulanan" },
+            ].map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => { setAiPeriod(value); setAiInsight(null); }}
+                className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
+                  aiPeriod === value
+                    ? "bg-white text-violet-700 shadow-sm"
+                    : "text-white/70 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         {aiLoading && (
-          <div className="flex items-center gap-3 px-6 py-8 text-sm text-slate-400">
+          <div className="flex items-center gap-3 px-6 py-10 text-sm text-slate-400">
             <Loader2 size={16} className="animate-spin text-violet-400" />
-            Claude AI sedang menganalisis performa tim bulan ini...
+            Claude AI sedang menganalisis performa tim...
           </div>
         )}
         {aiInsight && !aiLoading && (
           <div className="px-6 py-5">
-            <div className="rounded-2xl bg-violet-50 border border-violet-100 px-5 py-4">
-              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{aiInsight}</p>
+            <div className="space-y-0.5">
+              {renderInsight(aiInsight)}
             </div>
           </div>
         )}
         {!aiInsight && !aiLoading && (
-          <div className="px-6 py-8 text-center text-sm text-slate-400">
-            <Sparkles size={24} className="mx-auto mb-2 text-violet-200" />
-            Klik "Generate Insight" untuk mendapatkan analisis AI tentang performa tim bulan ini.
+          <div className="px-6 py-10 text-center">
+            <Sparkles size={28} className="mx-auto mb-3 text-violet-200" />
+            <p className="text-sm font-medium text-slate-500">Belum ada laporan</p>
+            <p className="text-xs text-slate-400 mt-1">Pilih periode lalu klik "Generate Laporan" untuk analisis AI tim.</p>
           </div>
         )}
       </div>
