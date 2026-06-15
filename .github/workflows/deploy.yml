@@ -53,7 +53,7 @@ jobs:
 
       - name: Write env file on VPS
         run: |
-          ssh vps "grep -v '^OPENROUTER_API_KEY=' /root/admin-dashboard/backend/.env > /tmp/.env_tmp 2>/dev/null || true && mv /tmp/.env_tmp /root/admin-dashboard/backend/.env && echo 'OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}' >> /root/admin-dashboard/backend/.env"
+          ssh vps "grep -v '^ANTHROPIC_API_KEY=' /root/admin-dashboard/backend/.env > /tmp/.env_tmp 2>/dev/null || true && mv /tmp/.env_tmp /root/admin-dashboard/backend/.env && echo 'ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}' >> /root/admin-dashboard/backend/.env"
 
       - name: Install Python dependencies on VPS
         run: |
