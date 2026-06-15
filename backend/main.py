@@ -50,21 +50,29 @@ except Exception as _e:
 
 
 BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-def _call_gemini(prompt: str) -> str:
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY tidak disetel di server")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-    body = _json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
-    req = _urllib_request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+def _call_groq(prompt: str) -> str:
+    if not GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY tidak disetel di server")
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    body = _json.dumps({
+        "model": "llama3-8b-8192",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 500,
+        "temperature": 0.7,
+    }).encode("utf-8")
+    req = _urllib_request.Request(url, data=body, headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+    }, method="POST")
     try:
         with _urllib_request.urlopen(req, timeout=30) as resp:
             data = _json.loads(resp.read().decode("utf-8"))
     except _urllib_request.HTTPError as e:
         err_body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Gemini API {e.code}: {err_body[:300]}")
-    return data["candidates"][0]["content"]["parts"][0]["text"]
+        raise RuntimeError(f"Groq API {e.code}: {err_body[:300]}")
+    return data["choices"][0]["message"]["content"]
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
@@ -1746,8 +1754,8 @@ import asyncio as _asyncio
 
 @app.get("/ai/insight/member")
 async def ai_member_insight(name: str, month: str, current_user: dict = Depends(get_current_user)):
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GEMINI_API_KEY di environment.")
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GROQ_API_KEY di environment.")
     try:
         tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
         all_orders = await db.orders.find({"artists": name}).to_list(100)
@@ -1776,7 +1784,7 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
         "dan 1 kalimat motivasi. Singkat dan personal. Maksimal 120 kata."
     )
     try:
-        text = await _asyncio.get_event_loop().run_in_executor(None, _call_gemini, prompt)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_groq, prompt)
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
@@ -1786,8 +1794,8 @@ async def ai_member_insight(name: str, month: str, current_user: dict = Depends(
 async def ai_overall_insight(month: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ["admin", "pm"]:
         raise HTTPException(status_code=403, detail="Forbidden")
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GEMINI_API_KEY di environment.")
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set GROQ_API_KEY di environment.")
     try:
         all_orders = await db.orders.find().to_list(500)
         month_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
@@ -1831,7 +1839,7 @@ async def ai_overall_insight(month: str, current_user: dict = Depends(get_curren
         "Informatif dan berdasarkan data. Maksimal 180 kata."
     )
     try:
-        text = await _asyncio.get_event_loop().run_in_executor(None, _call_gemini, prompt)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_groq, prompt)
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
