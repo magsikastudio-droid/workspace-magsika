@@ -398,20 +398,19 @@ async def auto_fail_tasks():
 
 
 async def carry_forward_tasks():
-    """Jam 00:01 WIB — task gagal kemarin dibawa ke hari ini (skip weekend)."""
+    """Jam 00:01 WIB — task pending/in progress/in_revision/gagal kemarin dibawa ke hari ini."""
     from datetime import datetime, timezone, timedelta
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
     today_wday = jkt_now.weekday()  # 0=Senin ... 6=Minggu
-    # Jika hari ini weekend (Sabtu/Minggu), tidak buat task
     if today_wday in (5, 6):
         return
     today_str = jkt_now.strftime("%Y-%m-%d")
     yesterday = (jkt_now - timedelta(days=1)).strftime("%Y-%m-%d")
-    # Cari task gagal kemarin
+    carry_statuses = ["failed", "pending", "in progress", "in_revision"]
     try:
-        failed_tasks = await db.tasks.find({"date": yesterday, "status": "failed"}).to_list(500)
+        carry_tasks = await db.tasks.find({"date": yesterday, "status": {"$in": carry_statuses}}).to_list(500)
         created = 0
-        for t in failed_tasks:
+        for t in carry_tasks:
             order_id_str = str(t.get("order_id", ""))
             assignee = t.get("assignee", "")
             existing = await db.tasks.find_one({
@@ -1474,6 +1473,7 @@ def format_notification(record: dict) -> dict:
         "notes": record.get("notes", ""),
         "date": record.get("date", ""),
         "read": record.get("read", False),
+        "review_result": record.get("review_result"),
         "created_at": record.get("created_at", ""),
     }
 
@@ -1515,13 +1515,19 @@ async def mark_all_notifications_read(current_user: dict = Depends(get_current_u
     return {"ok": True}
 
 
+class NotifReadBody(BaseModel):
+    result: Optional[str] = None
+
 @app.patch("/notifications/{notif_id}/read")
-async def mark_notification_read(notif_id: str, current_user: dict = Depends(get_current_user)):
+async def mark_notification_read(notif_id: str, body: NotifReadBody = NotifReadBody(), current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ["admin", "pm"]:
         raise HTTPException(status_code=403, detail="Forbidden")
     object_id = to_object_id(notif_id)
+    update = {"read": True}
+    if body.result:
+        update["review_result"] = body.result
     try:
-        await db.notifications.update_one({"_id": object_id}, {"$set": {"read": True}})
+        await db.notifications.update_one({"_id": object_id}, {"$set": update})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True}

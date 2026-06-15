@@ -108,11 +108,16 @@ export default function DailyChat() {
 
   const handleField = useCallback(async (id, field, value) => {
     try {
-      await updateEntry(id, { [field]: value === "" ? null : value });
+      const updates = { [field]: value === "" ? null : value };
+      if (field === "agreed" && value) {
+        const entry = entries.find((e) => e.id === id);
+        if (!entry?.real) updates.real = Math.round(Number(value) * 0.8);
+      }
+      await updateEntry(id, updates);
     } catch {
       toast.error("Gagal menyimpan");
     }
-  }, [updateEntry]);
+  }, [updateEntry, entries]);
 
   const handleDelete = async (id) => {
     if (!confirm("Hapus baris ini?")) return;

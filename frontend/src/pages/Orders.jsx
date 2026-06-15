@@ -339,14 +339,23 @@ export default function OrdersPage() {
                       <p className="font-semibold text-slate-900 whitespace-nowrap">{formatMoney(order.total)}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        {(order.artists || []).slice(0, 3).map((a, i) => (
-                          <div key={i} title={a} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6"][Math.abs(a.split("").reduce((h,c)=>c.charCodeAt(0)+((h<<5)-h),0))%5] }}>
-                            {a.charAt(0).toUpperCase()}
-                          </div>
-                        ))}
-                        {(order.artists || []).length > 3 && <span className="text-[10px] text-slate-400">+{order.artists.length - 3}</span>}
-                        {(!order.artists || order.artists.length === 0) && <span className="text-xs text-slate-300">—</span>}
+                      <div className="flex flex-wrap gap-1">
+                        {(() => {
+                          const contribs = order.artist_contributions?.length
+                            ? order.artist_contributions
+                            : (order.artists || []).map((a) => ({ name: a, type: "Tim" }));
+                          return contribs.slice(0, 3).map((c, i) => (
+                            <span key={i} className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ${c.type === "Freelance" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                              {c.name}
+                              <span className="text-[9px] opacity-60">{c.type === "Freelance" ? "·FL" : "·TM"}</span>
+                            </span>
+                          ));
+                        })()}
+                        {(() => {
+                          const n = order.artist_contributions?.length || order.artists?.length || 0;
+                          return n > 3 ? <span className="text-[10px] text-slate-400">+{n - 3}</span> : null;
+                        })()}
+                        {(!order.artists?.length && !order.artist_contributions?.length) && <span className="text-xs text-slate-300">—</span>}
                       </div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -717,7 +726,7 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
                       <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">{idx + 1}</span>
                       <input value={contrib.name} onChange={(e) => setContrib(idx, "name", e.target.value)} placeholder="Nama artist" className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-300" />
                       <select value={contrib.type} onChange={(e) => setContrib(idx, "type", e.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-sm outline-none">
-                        <option>Tim</option><option>Solo</option><option>Freelance</option>
+                        <option>Tim</option><option>Freelance</option>
                       </select>
                       <input type="number" min="0" max="100" value={contrib.percent} onChange={(e) => setContrib(idx, "percent", Number(e.target.value))} className="w-14 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-center text-sm outline-none" />
                       <span className="text-xs text-slate-400">%</span>
@@ -769,10 +778,10 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
             </div>
           ) : (
             <div className="flex justify-between gap-3">
-              <button onClick={() => onDelete(order.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50">
+              <button type="button" onClick={() => onDelete(order.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50">
                 <Trash2 size={14} /> Hapus
               </button>
-              <button onClick={() => setEditing(true)} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700">
+              <button type="button" onClick={(e) => { e.stopPropagation(); setEditing(true); }} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700">
                 <Edit3 size={14} /> Edit Order
               </button>
             </div>
