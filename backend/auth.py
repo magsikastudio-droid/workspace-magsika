@@ -10,7 +10,7 @@ load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "43200"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "525600"))  # 1 year
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 

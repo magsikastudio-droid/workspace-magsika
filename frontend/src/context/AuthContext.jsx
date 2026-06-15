@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { api, setAuthToken } from "../lib/api";
 import { connect as wsConnect, disconnect as wsDisconnect } from "../lib/ws";
 
@@ -10,6 +10,8 @@ export { TOKEN_KEY };
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const retryTimerRef = useRef(null);
+  const retryCountRef = useRef(0);
 
   const saveToken = (token) => {
     if (token) {
@@ -26,12 +28,27 @@ export function AuthProvider({ children }) {
   const fetchUser = useCallback(async () => {
     try {
       const res = await api.get("/auth/me");
+      retryCountRef.current = 0;
       setUser(res.data.user);
-    } catch {
-      saveToken(null);
-      setUser(null);
-    } finally {
       setLoading(false);
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        // Token expired or invalid — must re-login
+        retryCountRef.current = 0;
+        saveToken(null);
+        setUser(null);
+        setLoading(false);
+      } else {
+        // Transient error (network blip, server restart) — retry a few times
+        retryCountRef.current += 1;
+        if (retryCountRef.current <= 3) {
+          retryTimerRef.current = setTimeout(fetchUser, 3000);
+        } else {
+          // Retries exhausted — keep token, let user manually retry
+          retryCountRef.current = 0;
+          setLoading(false);
+        }
+      }
     }
   }, []);
 
@@ -44,6 +61,9 @@ export function AuthProvider({ children }) {
     } else {
       setLoading(false);
     }
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
   }, [fetchUser]);
 
   const login = async ({ username, password }) => {
@@ -54,6 +74,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     saveToken(null);
     setUser(null);
     window.location.href = "/login";
