@@ -39,6 +39,27 @@ const renderBold = (text) => {
   );
 };
 
+const fmtDateKey = (key, period) => {
+  if (!key) return "";
+  if (period === "daily") {
+    const [y, m, d] = key.split("-");
+    return `${parseInt(d)} ${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
+  }
+  if (period === "monthly") {
+    const [y, m] = key.split("-");
+    return `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
+  }
+  return key;
+};
+
+const cleanReportContent = (text) =>
+  text
+    .replace(/^#\s*.+\n?/gm, "")
+    .replace(/^\*\*(LAPORAN|ANGGOTA TIM|PERIODE)[^*]*\*\*\n?/gim, "")
+    .replace(/^---+\n?/gm, "")
+    .replace(/^\n{2,}/gm, "\n")
+    .trim();
+
 const renderInsight = (text) =>
   text.split("\n").map((line, i) => {
     const trimmed = line.trim();
@@ -104,8 +125,10 @@ export default function TeamMemberPage() {
     const fetchHistory = async () => {
       const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       const lastDay = new Date(selYear, selMonth + 1, 0);
-      const dow = lastDay.getDay();
-      const anchor = new Date(lastDay);
+      const todayRef = new Date();
+      const refDate = lastDay > todayRef ? todayRef : lastDay;
+      const dow = refDate.getDay();
+      const anchor = new Date(refDate);
       if (dow !== 0) anchor.setDate(anchor.getDate() + (7 - dow));
       const weeks = [];
       for (let i = 5; i >= 0; i--) {
@@ -469,6 +492,11 @@ export default function TeamMemberPage() {
                     </button>
                   ))}
                 </div>
+                {report && (
+                  <p className="mt-3 text-[11px] font-bold uppercase tracking-widest text-white/90">
+                    Laporan Analisis Performa {artistName}, {fmtDateKey(report.date_key, report.period)}
+                  </p>
+                )}
               </div>
 
               {/* Report body */}
@@ -533,7 +561,7 @@ export default function TeamMemberPage() {
                       </>
                     ) : (
                       <div className="space-y-0.5 max-h-[60vh] overflow-y-auto pr-1">
-                        {renderInsight(report.content)}
+                        {renderInsight(cleanReportContent(report.content))}
                       </div>
                     )}
                   </>

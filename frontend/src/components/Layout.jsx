@@ -121,7 +121,7 @@ export default function Layout({ children }) {
       <nav className="flex-1 overflow-y-auto px-3 py-1">
         {filteredItems ? (
           <div className="space-y-0.5">
-            {filteredItems.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : 0} />)}
+            {filteredItems.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : (item.to === "/performance" && role === "talent" ? myNotifCount : 0)} />)}
             {filteredItems.length === 0 && <p className="px-3 py-2 text-xs text-slate-400 dark:text-slate-600">Tidak ditemukan.</p>}
           </div>
         ) : (
@@ -129,7 +129,7 @@ export default function Layout({ children }) {
             <div key={section.label} className="mb-4">
               <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-600">{section.label}</p>
               <div className="space-y-0.5">
-                {section.items.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : 0} />)}
+                {section.items.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : (item.to === "/performance" && role === "talent" ? myNotifCount : 0)} />)}
               </div>
             </div>
           ))
