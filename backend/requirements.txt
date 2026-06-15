@@ -10,3 +10,4 @@ motor
 certifi
 email-validator
 apscheduler
+anthropic

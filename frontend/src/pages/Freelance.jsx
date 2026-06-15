@@ -117,15 +117,19 @@ export default function Freelance() {
     return [...set].sort().reverse();
   }, [projects, orders]);
 
-  /* Global summary */
-  const globalTotal = artists.reduce((s, a) => s + totalFee(a.id), 0);
-  const globalPaid  = artists.reduce((s, a) => s + paidFee(a.id), 0);
-  const globalOutstanding = artists.reduce((s, a) => {
-    artistProjects(a.id).forEach((p) => {
-      if (p.status_bayar !== "Lunas") s += (p.fee || 0) - (p.dp_amount || 0);
+  /* Global summary — always all-time, ignores monthFilter */
+  const allTimeArtistProjects = (artistId) => projects.filter((p) => p.artist_id === artistId);
+  const globalTotal = artists.reduce((s, a) => s + allTimeArtistProjects(a.id).reduce((t, p) => t + (p.fee || 0), 0), 0);
+  const globalPaid  = artists.reduce((s, a) => s + allTimeArtistProjects(a.id).filter((p) => p.status_bayar === "Lunas").reduce((t, p) => t + (p.fee || 0), 0), 0);
+  const globalOutstanding = (() => {
+    let out = 0;
+    artists.forEach((a) => {
+      allTimeArtistProjects(a.id).filter((p) => p.status_bayar !== "Lunas").forEach((p) => {
+        out += (p.fee || 0) - (p.dp_amount || 0);
+      });
     });
-    return s;
-  }, 0);
+    return out;
+  })();
 
   const handleSaveArtist = async (e) => {
     e.preventDefault();
