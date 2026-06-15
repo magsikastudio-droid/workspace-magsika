@@ -516,6 +516,7 @@ async def on_startup():
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
         scheduler.add_job(carry_forward_tasks, CronTrigger(hour=0, minute=1, timezone="Asia/Jakarta"))
+        scheduler.add_job(auto_daily_ai_reports, CronTrigger(hour=17, minute=0, timezone="Asia/Jakarta"))
         scheduler.start()
 
 
@@ -1748,9 +1749,282 @@ async def clear_all_data(current_user: dict = Depends(get_current_user)):
     return {"deleted": deleted}
 
 
-# ─── AI Insights (Google Gemini — free tier) ─────────────────────────────────
+# ─── AI Reports ──────────────────────────────────────────────────────────────
 
 import asyncio as _asyncio
+
+def _current_date_key(period: str, month: str = "") -> str:
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    if period == "daily":
+        return now_wib.strftime("%Y-%m-%d")
+    elif period == "weekly":
+        iso = now_wib.isocalendar()
+        return f"{iso[0]}-W{iso[1]:02d}"
+    else:
+        return month or now_wib.strftime("%Y-%m")
+
+def _fmt_report(doc: dict) -> dict:
+    return {
+        "id": str(doc["_id"]),
+        "type": doc.get("type"),
+        "target": doc.get("target"),
+        "period": doc.get("period"),
+        "date_key": doc.get("date_key"),
+        "content": doc.get("content", ""),
+        "is_auto": doc.get("is_auto", False),
+        "generated_by": doc.get("generated_by", ""),
+        "created_at": doc.get("created_at", ""),
+        "updated_at": doc.get("updated_at", ""),
+    }
+
+async def _fetch_member_data(name: str, period: str, month: str):
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_str = now_wib.strftime("%Y-%m-%d")
+    week_ago_str = (now_wib - timedelta(days=6)).strftime("%Y-%m-%d")
+    if period == "daily":
+        tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{today_str}"}}).to_list(300)
+        all_orders = await db.orders.find({"artists": name}).to_list(200)
+        period_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "") == today_str]
+        period_label = f"Hari ini ({today_str})"
+    elif period == "weekly":
+        tasks = await db.tasks.find({"assignee": name, "date": {"$gte": week_ago_str, "$lte": today_str}}).to_list(500)
+        all_orders = await db.orders.find({"artists": name}).to_list(200)
+        period_orders = [o for o in all_orders if week_ago_str <= (o.get("order_date") or o.get("created_at", "")[:10] or "") <= today_str]
+        period_label = f"Minggu ini ({week_ago_str} s.d. {today_str})"
+    else:
+        tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
+        all_orders = await db.orders.find({"artists": name}).to_list(100)
+        period_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
+        period_label = f"Bulan {month}"
+    return tasks, period_orders, period_label
+
+def _member_prompt(name: str, tasks: list, period_orders: list, period_label: str) -> str:
+    done = sum(1 for t in tasks if t.get("status") == "done")
+    failed = sum(1 for t in tasks if t.get("status") == "failed")
+    in_progress = sum(1 for t in tasks if t.get("status") == "in progress")
+    in_revision = sum(1 for t in tasks if t.get("status") == "in_revision")
+    total_time = sum(t.get("time_elapsed", 0) for t in tasks)
+    project_names = ", ".join([o.get("project", "") for o in period_orders[:5] if o.get("project")])
+    return (
+        "Anda adalah analis performa profesional untuk Magsika Studio, sebuah studio kreatif 3D/2D. "
+        "Tulis laporan analisis performa anggota tim dalam bahasa Indonesia yang formal, terstruktur, dan berbasis data.\n\n"
+        f"Data Performa: {name} | Periode: {period_label}\n"
+        f"- Total task: {len(tasks)} (selesai: {done}, gagal: {failed}, sedang berjalan: {in_progress}, revisi: {in_revision})\n"
+        f"- Akumulasi waktu kerja: {total_time // 3600} jam {(total_time % 3600) // 60} menit\n"
+        f"- Jumlah order dikerjakan: {len(period_orders)}\n"
+        f"- Project yang dikerjakan: {project_names or 'belum ada data'}\n\n"
+        "Tulis laporan dengan struktur berikut (gunakan persis heading ini):\n\n"
+        "**Ringkasan Eksekutif**\n"
+        "Gambaran umum kinerja secara keseluruhan (2-3 kalimat).\n\n"
+        "**Analisis Kinerja**\n"
+        "Evaluasi pencapaian berdasarkan data yang tersedia.\n\n"
+        "**Area yang Perlu Ditingkatkan**\n"
+        "Identifikasi kelemahan atau hambatan (tulis 'Tidak ada catatan khusus' jika kinerja baik).\n\n"
+        "**Rekomendasi**\n"
+        "1-2 rekomendasi konkret dan terukur untuk periode berikutnya.\n\n"
+        "Gunakan bahasa Indonesia yang formal dan profesional. Maksimal 220 kata."
+    )
+
+async def _fetch_overall_data(period: str, month: str):
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_str = now_wib.strftime("%Y-%m-%d")
+    week_ago_str = (now_wib - timedelta(days=6)).strftime("%Y-%m-%d")
+    all_orders_db = await db.orders.find().to_list(500)
+    if period == "daily":
+        period_orders = [o for o in all_orders_db if (o.get("order_date") or o.get("created_at", "")[:10] or "") == today_str]
+        tasks = await db.tasks.find({"date": {"$regex": f"^{today_str}"}}).to_list(1000)
+        period_label = f"Hari ini ({today_str})"
+    elif period == "weekly":
+        period_orders = [o for o in all_orders_db if week_ago_str <= (o.get("order_date") or o.get("created_at", "")[:10] or "") <= today_str]
+        tasks = await db.tasks.find({"date": {"$gte": week_ago_str, "$lte": today_str}}).to_list(1000)
+        period_label = f"Minggu ini ({week_ago_str} s.d. {today_str})"
+    else:
+        period_orders = [o for o in all_orders_db if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
+        tasks = await db.tasks.find({"date": {"$regex": f"^{month}"}}).to_list(1000)
+        period_label = f"Bulan {month}"
+    return tasks, period_orders, period_label
+
+def _overall_prompt(tasks: list, period_orders: list, period_label: str) -> str:
+    done_orders = sum(1 for o in period_orders if (o.get("status") or "").lower() == "done")
+    active_orders = sum(1 for o in period_orders if (o.get("status") or "").lower() not in ["done", "cancel"])
+    total_revenue = sum(o.get("total", 0) for o in period_orders)
+    done_tasks = sum(1 for t in tasks if t.get("status") == "done")
+    failed_tasks = sum(1 for t in tasks if t.get("status") == "failed")
+    artist_map: dict = {}
+    for t in tasks:
+        a = t.get("assignee", "")
+        if not a:
+            continue
+        if a not in artist_map:
+            artist_map[a] = {"tasks": 0, "done": 0, "time": 0}
+        artist_map[a]["tasks"] += 1
+        artist_map[a]["time"] += t.get("time_elapsed", 0)
+        if t.get("status") == "done":
+            artist_map[a]["done"] += 1
+    artist_lines = "\n".join([
+        f"- {a}: {v['done']}/{v['tasks']} task, {v['time']//3600}j kerja"
+        for a, v in sorted(artist_map.items(), key=lambda x: -x[1]["done"])
+    ])
+    return (
+        "Anda adalah analis manajemen senior untuk Magsika Studio (studio kreatif 3D/2D). "
+        "Tulis laporan analisis performa tim dalam bahasa Indonesia yang formal dan komprehensif untuk pimpinan studio.\n\n"
+        f"Data Tim — Periode: {period_label}\n"
+        f"- Order: {len(period_orders)} masuk, {done_orders} selesai, {active_orders} aktif\n"
+        f"- Estimasi Revenue: Rp {total_revenue:,.0f}\n"
+        f"- Task: {len(tasks)} total, {done_tasks} selesai, {failed_tasks} gagal\n\n"
+        f"Rincian per Anggota Tim:\n{artist_lines or 'Belum ada data'}\n\n"
+        "Tulis laporan dengan struktur berikut (gunakan persis heading ini):\n\n"
+        "**Ringkasan Eksekutif**\n"
+        "Kondisi umum tim pada periode ini (2-3 kalimat).\n\n"
+        "**Pencapaian Tim**\n"
+        "Highlight kinerja terbaik dan pencapaian signifikan.\n\n"
+        "**Analisis Per Anggota**\n"
+        "Evaluasi singkat kontribusi masing-masing anggota berdasarkan data.\n\n"
+        "**Area Perhatian**\n"
+        "Risiko atau tantangan yang perlu diantisipasi.\n\n"
+        "**Rekomendasi Strategis**\n"
+        "2-3 rekomendasi konkret untuk periode berikutnya.\n\n"
+        "Gunakan bahasa Indonesia yang formal dan profesional. Maksimal 300 kata."
+    )
+
+# ── GET saved member report ───────────────────────────────────────────────────
+@app.get("/ai/reports/member")
+async def get_member_report(name: str, period: str = "monthly", month: str = "", current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    date_key = _current_date_key(period, month)
+    doc = await db.ai_reports.find_one({"type": "member", "target": name, "period": period, "date_key": date_key})
+    return {"report": _fmt_report(doc) if doc else None}
+
+# ── POST generate + save member report (admin only) ───────────────────────────
+@app.post("/ai/reports/member/generate")
+async def generate_member_report(name: str, period: str = "monthly", month: str = "", current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang dapat membuat laporan AI.")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi.")
+    try:
+        tasks, period_orders, period_label = await _fetch_member_data(name, period, month)
+        prompt = _member_prompt(name, tasks, period_orders, period_label)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 900)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+    date_key = _current_date_key(period, month)
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {"type": "member", "target": name, "period": period, "date_key": date_key,
+           "content": text, "is_auto": False, "generated_by": current_user.get("username", "admin"),
+           "created_at": now, "updated_at": now}
+    await db.ai_reports.replace_one({"type": "member", "target": name, "period": period, "date_key": date_key}, doc, upsert=True)
+    result = await db.ai_reports.find_one({"type": "member", "target": name, "period": period, "date_key": date_key})
+    return {"report": _fmt_report(result)}
+
+# ── GET saved overall report ──────────────────────────────────────────────────
+@app.get("/ai/reports/overall")
+async def get_overall_report(period: str = "monthly", month: str = "", current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    date_key = _current_date_key(period, month)
+    doc = await db.ai_reports.find_one({"type": "overall", "period": period, "date_key": date_key})
+    return {"report": _fmt_report(doc) if doc else None}
+
+# ── POST generate + save overall report (admin only) ─────────────────────────
+@app.post("/ai/reports/overall/generate")
+async def generate_overall_report(period: str = "monthly", month: str = "", current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang dapat membuat laporan AI.")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi.")
+    try:
+        tasks, period_orders, period_label = await _fetch_overall_data(period, month)
+        prompt = _overall_prompt(tasks, period_orders, period_label)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 1100)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+    date_key = _current_date_key(period, month)
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {"type": "overall", "target": "overall", "period": period, "date_key": date_key,
+           "content": text, "is_auto": False, "generated_by": current_user.get("username", "admin"),
+           "created_at": now, "updated_at": now}
+    await db.ai_reports.replace_one({"type": "overall", "period": period, "date_key": date_key}, doc, upsert=True)
+    result = await db.ai_reports.find_one({"type": "overall", "period": period, "date_key": date_key})
+    return {"report": _fmt_report(result)}
+
+# ── PUT edit report content (admin only) ─────────────────────────────────────
+class UpdateReportBody(BaseModel):
+    content: str
+
+@app.put("/ai/reports/{report_id}")
+async def update_ai_report(report_id: str, body: UpdateReportBody, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang dapat mengedit laporan.")
+    now = datetime.now(timezone.utc).isoformat()
+    result = await db.ai_reports.find_one_and_update(
+        {"_id": ObjectId(report_id)},
+        {"$set": {"content": body.content, "updated_at": now}},
+        return_document=True,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Laporan tidak ditemukan.")
+    return {"report": _fmt_report(result)}
+
+# ── DELETE report (admin only) ────────────────────────────────────────────────
+@app.delete("/ai/reports/{report_id}")
+async def delete_ai_report(report_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang dapat menghapus laporan.")
+    result = await db.ai_reports.delete_one({"_id": ObjectId(report_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Laporan tidak ditemukan.")
+    return {"ok": True}
+
+# ── Auto-generate daily reports at 17:00 WIB ─────────────────────────────────
+async def auto_daily_ai_reports():
+    if not ANTHROPIC_API_KEY:
+        return
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    date_key = now_wib.strftime("%Y-%m-%d")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        tasks_today = await db.tasks.find({"date": {"$regex": f"^{date_key}"}}).to_list(1000)
+        artist_names = list({t.get("assignee") for t in tasks_today if t.get("assignee")})
+        for name in artist_names:
+            existing = await db.ai_reports.find_one({"type": "member", "target": name, "period": "daily", "date_key": date_key})
+            if existing:
+                continue
+            try:
+                tasks, period_orders, period_label = await _fetch_member_data(name, "daily", "")
+                prompt = _member_prompt(name, tasks, period_orders, period_label)
+                text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 900)
+                await db.ai_reports.replace_one(
+                    {"type": "member", "target": name, "period": "daily", "date_key": date_key},
+                    {"type": "member", "target": name, "period": "daily", "date_key": date_key,
+                     "content": text, "is_auto": True, "generated_by": "system",
+                     "created_at": now_iso, "updated_at": now_iso},
+                    upsert=True
+                )
+            except Exception:
+                pass
+        existing_overall = await db.ai_reports.find_one({"type": "overall", "period": "daily", "date_key": date_key})
+        if not existing_overall:
+            try:
+                tasks, period_orders, period_label = await _fetch_overall_data("daily", "")
+                prompt = _overall_prompt(tasks, period_orders, period_label)
+                text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 1100)
+                await db.ai_reports.replace_one(
+                    {"type": "overall", "period": "daily", "date_key": date_key},
+                    {"type": "overall", "target": "overall", "period": "daily", "date_key": date_key,
+                     "content": text, "is_auto": True, "generated_by": "system",
+                     "created_at": now_iso, "updated_at": now_iso},
+                    upsert=True
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 @app.get("/ai/insight/member")
 async def ai_member_insight(name: str, month: str, period: str = "monthly", current_user: dict = Depends(get_current_user)):
