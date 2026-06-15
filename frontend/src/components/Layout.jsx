@@ -53,38 +53,24 @@ export default function Layout({ children }) {
   const { currency, setCurrency } = useCurrency();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [myNotifCount, setMyNotifCount] = useState(0);
+  const [unreadCounts, setUnreadCounts] = useState({ announcements: 0, schedule: 0, notifications: 0 });
   const navigate = useNavigate();
   const location = useLocation();
 
   const role = user?.role || "talent";
 
   useEffect(() => {
-    if (role !== "admin" && role !== "pm") return;
+    if (!user) return;
     const poll = async () => {
       try {
-        const res = await api.get("/notifications/unread-count");
-        setUnreadCount(res.data?.count ?? 0);
+        const res = await api.get("/unread-counts");
+        setUnreadCounts(res.data ?? { announcements: 0, schedule: 0, notifications: 0 });
       } catch {}
     };
     poll();
     const id = setInterval(poll, 20000);
     return () => clearInterval(id);
-  }, [role]);
-
-  useEffect(() => {
-    if (role !== "talent") return;
-    const poll = async () => {
-      try {
-        const res = await api.get("/my-notifications/unread-count");
-        setMyNotifCount(res.data?.count ?? 0);
-      } catch {}
-    };
-    poll();
-    const id = setInterval(poll, 20000);
-    return () => clearInterval(id);
-  }, [role]);
+  }, [user]);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
@@ -121,7 +107,13 @@ export default function Layout({ children }) {
       <nav className="flex-1 overflow-y-auto px-3 py-1">
         {filteredItems ? (
           <div className="space-y-0.5">
-            {filteredItems.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : (item.to === "/performance" && role === "talent" ? myNotifCount : 0)} />)}
+            {filteredItems.map((item) => <NavItem key={item.to} item={item} badge={
+    item.to === "/notifications" ? unreadCounts.notifications
+    : item.to === "/performance" && role === "talent" ? unreadCounts.notifications
+    : item.to === "/pengumuman" ? unreadCounts.announcements
+    : item.to === "/schedule" ? unreadCounts.schedule
+    : 0
+} />)}
             {filteredItems.length === 0 && <p className="px-3 py-2 text-xs text-slate-400 dark:text-slate-600">Tidak ditemukan.</p>}
           </div>
         ) : (
@@ -129,7 +121,13 @@ export default function Layout({ children }) {
             <div key={section.label} className="mb-4">
               <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-600">{section.label}</p>
               <div className="space-y-0.5">
-                {section.items.map((item) => <NavItem key={item.to} item={item} badge={item.to === "/notifications" ? unreadCount : (item.to === "/performance" && role === "talent" ? myNotifCount : 0)} />)}
+                {section.items.map((item) => <NavItem key={item.to} item={item} badge={
+    item.to === "/notifications" ? unreadCounts.notifications
+    : item.to === "/performance" && role === "talent" ? unreadCounts.notifications
+    : item.to === "/pengumuman" ? unreadCounts.announcements
+    : item.to === "/schedule" ? unreadCounts.schedule
+    : 0
+} />)}
               </div>
             </div>
           ))
@@ -223,9 +221,9 @@ export default function Layout({ children }) {
                 className="relative rounded-xl border border-slate-200 dark:border-white/[0.06] bg-white dark:bg-white/5 p-2 text-slate-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-500 hover:border-indigo-200 dark:hover:border-indigo-700 transition"
               >
                 <Bell size={16} />
-                {myNotifCount > 0 && (
+                {unreadCounts.notifications > 0 && (
                   <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
-                    {myNotifCount > 9 ? "9+" : myNotifCount}
+                    {unreadCounts.notifications > 9 ? "9+" : unreadCounts.notifications}
                   </span>
                 )}
               </button>

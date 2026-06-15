@@ -153,6 +153,7 @@ export default function PengumumanPage() {
       .then((res) => setAnnouncements(res.data.announcements || []))
       .catch(() => setAnnouncements([]))
       .finally(() => setLoading(false));
+    api.patch("/mark-read/announcements").catch(() => {});
   }, []);
 
   const sorted = [...announcements].sort((a, b) => {

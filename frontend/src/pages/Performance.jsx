@@ -777,19 +777,24 @@ function AdminPerformance() {
   }, [orderTaskStats]);
 
   const revenueChart = useMemo(() => {
-    const map = {};
+    const revenueMap = {};
+    const countMap = {};
     orders.forEach((o) => {
-      const mk = monthKey(o.created_at || o.order_date);
-      if (mk) map[mk] = (map[mk] || 0) + (o.total || 0);
+      const mk = monthKey(o.order_date || o.created_at);
+      if (!mk) return;
+      revenueMap[mk] = (revenueMap[mk] || 0) + (o.total || 0);
+      countMap[mk] = (countMap[mk] || 0) + 1;
     });
     const months = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(selYear, selMonth - i, 1);
       const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      months.push({ key: k, label: monthLabel(k)?.slice(0, 3) || "", revenue: map[k] || 0 });
+      months.push({ key: k, label: monthLabel(k)?.slice(0, 3) || "", revenue: revenueMap[k] || 0, count: countMap[k] || 0 });
     }
     return months;
   }, [orders, selYear, selMonth]);
+
+  const hasRevenue = revenueChart.some((m) => m.revenue > 0);
 
   const maxRevenue = Math.max(...revenueChart.map((m) => m.revenue), 1);
   const revenue = monthOrders.reduce((s, o) => s + (o.total || 0), 0);
@@ -930,19 +935,21 @@ function AdminPerformance() {
         {/* Revenue chart */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-6 py-4">
-            <p className="font-bold text-slate-900">Tren Revenue</p>
-            <p className="text-xs text-slate-400">6 bulan terakhir</p>
+            <p className="font-bold text-slate-900">{hasRevenue ? "Tren Revenue" : "Order Masuk"}</p>
+            <p className="text-xs text-slate-400">6 bulan terakhir{!hasRevenue && " · belum ada data revenue"}</p>
           </div>
           <div className="px-6 py-5">
             <div className="flex items-end gap-2 h-36">
               {revenueChart.map((m) => {
-                const pct = Math.round((m.revenue / maxRevenue) * 100);
+                const val = hasRevenue ? m.revenue : m.count;
+                const maxVal = hasRevenue ? maxRevenue : Math.max(...revenueChart.map((x) => x.count), 1);
+                const pct = Math.round((val / maxVal) * 100);
                 const isCurrent = m.key === monthStr;
                 return (
                   <div key={m.key} className="flex flex-1 flex-col items-center gap-1 group">
-                    {m.revenue > 0 && (
-                      <span className="text-[9px] text-slate-400 font-semibold group-hover:text-slate-600 hidden group-hover:block">
-                        {formatMoney(m.revenue)}
+                    {val > 0 && (
+                      <span className="text-[9px] text-slate-400 font-semibold hidden group-hover:block">
+                        {hasRevenue ? formatMoney(m.revenue) : `${m.count} order`}
                       </span>
                     )}
                     <div

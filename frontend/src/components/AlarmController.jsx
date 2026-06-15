@@ -6,6 +6,7 @@ import { subscribe } from "../lib/ws";
 import { initNotifications, showTaskAlarm } from "../lib/notifications";
 import { useAuth } from "../context/AuthContext";
 import { useAlarm } from "../context/AlarmContext";
+import { toast } from "sonner";
 
 async function setupFCM(onAlert) {
   console.log("[FCM] isNativePlatform:", Capacitor.isNativePlatform());
@@ -40,6 +41,12 @@ async function setupFCM(onAlert) {
       const d = notif.data || {};
       if (d.type === "task_alert") {
         onAlert(d.task_title || "Task menunggu review", d.assignee || "");
+      } else if (d.type === "announcement") {
+        toast.info(notif.title || "Pengumuman Baru", { description: notif.body });
+      } else if (d.type === "schedule_event") {
+        toast.info(notif.title || "Event Baru", { description: notif.body });
+      } else if (d.type === "performance_report") {
+        toast.success(notif.title || "Laporan Performa", { description: notif.body });
       }
     });
 
