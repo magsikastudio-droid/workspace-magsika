@@ -1,15 +1,17 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import {
-  Activity, BarChart3, ChevronLeft, ChevronRight, Clock, Star,
-  TrendingUp, Users, Zap, FolderOpen, CheckCircle2, Timer,
-  Search, X, Timer as TimerIcon,
+  Activity, Bot, ChevronLeft, ChevronRight, Clock,
+  Users, FolderOpen, Loader2, Timer,
+  Search, Sparkles, X,
 } from "lucide-react";
 import { normalizeStatus } from "../lib/constants";
 import { monthKey, monthLabel } from "../lib/format";
+import { toast } from "sonner";
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
 const MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
@@ -453,6 +455,7 @@ function ArtistOrderSearch({ artistOrders, artistName }) {
 function AdminPerformance() {
   const { orders } = useOrders();
   const { formatMoney } = useCurrency();
+  const navigate = useNavigate();
 
   const today = new Date();
   const [selYear, setSelYear]   = useState(today.getFullYear());
@@ -461,8 +464,27 @@ function AdminPerformance() {
 
   const [summary, setSummary] = useState({ artists: [], orders: [], total_tasks: 0, total_time: 0 });
   const [loadingTasks, setLoadingTasks] = useState(false);
-  const [selectedArtist, setSelectedArtist] = useState(null);
   const [orderSearch, setOrderSearch] = useState("");
+  const [aiInsight, setAiInsight] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const goToArtist = useCallback((name) => {
+    navigate(`/performance/team/${encodeURIComponent(name)}`);
+  }, [navigate]);
+
+  const loadOverallInsight = useCallback(async () => {
+    setAiLoading(true);
+    setAiInsight(null);
+    try {
+      const res = await api.get("/ai/insight/overall", { params: { month: monthStr } });
+      setAiInsight(res.data.insight);
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Gagal memuat insight AI";
+      toast.error(msg);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [monthStr]);
 
   useEffect(() => {
     setLoadingTasks(true);
@@ -653,7 +675,7 @@ function AdminPerformance() {
                   <div
                     key={artist.name}
                     className="px-6 py-4 cursor-pointer hover:bg-slate-50 transition"
-                    onClick={() => setSelectedArtist(artist.name)}
+                    onClick={() => goToArtist(artist.name)}
                   >
                     <div className="flex items-start gap-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white" style={{ background: color }}>
@@ -818,9 +840,9 @@ function AdminPerformance() {
                         {os.assignees.map((a) => (
                           <button
                             key={a}
-                            onClick={() => setSelectedArtist(a)}
+                            onClick={() => goToArtist(a)}
                             className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white hover:ring-2 hover:ring-offset-1 transition"
-                            style={{ background: getColor(a), ringColor: getColor(a) }}
+                            style={{ background: getColor(a) }}
                             title={a}
                           >
                             {a.charAt(0).toUpperCase()}
@@ -840,19 +862,48 @@ function AdminPerformance() {
       )}
 
       <PipelineHealth pipeline={pipeline} />
-      <AllTimeSection orders={orders} formatMoney={formatMoney} onSelectArtist={setSelectedArtist} />
+      <AllTimeSection orders={orders} formatMoney={formatMoney} onSelectArtist={goToArtist} />
 
-      {selectedArtist && (
-        <ArtistDetailPanel
-          artistName={selectedArtist}
-          summary={summary}
-          orderById={orderById}
-          monthStr={monthStr}
-          selMonth={selMonth}
-          selYear={selYear}
-          onClose={() => setSelectedArtist(null)}
-        />
-      )}
+      {/* AI Overall Insight */}
+      <div className="rounded-2xl border border-violet-100 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-50 px-6 py-4">
+          <div>
+            <p className="font-bold text-slate-900 flex items-center gap-2">
+              <Bot size={16} className="text-violet-500" /> AI Team Insight
+            </p>
+            <p className="text-xs text-slate-400">Analisis performa keseluruhan tim — {MONTH_NAMES[selMonth]} {selYear}</p>
+          </div>
+          <button
+            onClick={loadOverallInsight}
+            disabled={aiLoading}
+            className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
+          >
+            {aiLoading
+              ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
+              : <><Sparkles size={14} /> {aiInsight ? "Refresh Insight" : "Generate Insight"}</>
+            }
+          </button>
+        </div>
+        {aiLoading && (
+          <div className="flex items-center gap-3 px-6 py-8 text-sm text-slate-400">
+            <Loader2 size={16} className="animate-spin text-violet-400" />
+            Claude AI sedang menganalisis performa tim bulan ini...
+          </div>
+        )}
+        {aiInsight && !aiLoading && (
+          <div className="px-6 py-5">
+            <div className="rounded-2xl bg-violet-50 border border-violet-100 px-5 py-4">
+              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{aiInsight}</p>
+            </div>
+          </div>
+        )}
+        {!aiInsight && !aiLoading && (
+          <div className="px-6 py-8 text-center text-sm text-slate-400">
+            <Sparkles size={24} className="mx-auto mb-2 text-violet-200" />
+            Klik "Generate Insight" untuk mendapatkan analisis AI tentang performa tim bulan ini.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

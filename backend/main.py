@@ -26,6 +26,12 @@ try:
 except ImportError:
     SCHEDULER_AVAILABLE = False
 
+try:
+    from anthropic import AsyncAnthropic as _AnthropicAsync
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
 from auth import create_access_token, decode_token, oauth2_scheme
 
 load_dotenv()
@@ -47,6 +53,16 @@ except Exception as _e:
 
 
 BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+_anthropic_client = None
+
+def _get_ai_client():
+    global _anthropic_client
+    if not ANTHROPIC_AVAILABLE or not ANTHROPIC_API_KEY:
+        return None
+    if _anthropic_client is None:
+        _anthropic_client = _AnthropicAsync(api_key=ANTHROPIC_API_KEY)
+    return _anthropic_client
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
@@ -1720,3 +1736,112 @@ async def clear_all_data(current_user: dict = Depends(get_current_user)):
         except Exception as e:
             deleted[col] = f"error: {e}"
     return {"deleted": deleted}
+
+
+# ─── AI Insights ─────────────────────────────────────────────────────────────
+
+@app.get("/ai/insight/member")
+async def ai_member_insight(name: str, month: str, current_user: dict = Depends(get_current_user)):
+    client = _get_ai_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set ANTHROPIC_API_KEY di environment.")
+    try:
+        tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
+        all_orders = await db.orders.find({"artists": name}).to_list(100)
+        month_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    done = sum(1 for t in tasks if t.get("status") == "done")
+    failed = sum(1 for t in tasks if t.get("status") == "failed")
+    in_progress = sum(1 for t in tasks if t.get("status") == "in progress")
+    in_revision = sum(1 for t in tasks if t.get("status") == "in_revision")
+    total_time = sum(t.get("time_elapsed", 0) for t in tasks)
+    hours = total_time // 3600
+    minutes = (total_time % 3600) // 60
+    project_names = ", ".join([o.get("project", "") for o in month_orders[:5] if o.get("project")])
+
+    context = (
+        f"Performa {name} bulan {month}:\n"
+        f"- Total task: {len(tasks)} (selesai: {done}, gagal: {failed}, berjalan: {in_progress}, revisi: {in_revision})\n"
+        f"- Total waktu kerja: {hours}j {minutes}m\n"
+        f"- Jumlah order dikerjakan: {len(month_orders)}\n"
+        f"- Project: {project_names or 'belum ada'}"
+    )
+    try:
+        msg = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=400,
+            messages=[{"role": "user", "content": (
+                "Kamu adalah asisten manajemen studio kreatif Magsika Studio. "
+                "Beri ringkasan dan masukan performa dalam bahasa Indonesia yang ramah dan membangun.\n\n"
+                f"{context}\n\n"
+                "Berikan: ringkasan singkat (1-2 kalimat), poin positif, 1 saran perbaikan (jika ada), "
+                "dan 1 kalimat motivasi. Singkat dan personal. Maksimal 120 kata."
+            )}]
+        )
+        return {"insight": msg.content[0].text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+
+
+@app.get("/ai/insight/overall")
+async def ai_overall_insight(month: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    client = _get_ai_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="AI tidak dikonfigurasi. Set ANTHROPIC_API_KEY di environment.")
+    try:
+        all_orders = await db.orders.find().to_list(500)
+        month_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
+        tasks = await db.tasks.find({"date": {"$regex": f"^{month}"}}).to_list(1000)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    done_orders = sum(1 for o in month_orders if (o.get("status") or "").lower() == "done")
+    active_orders = sum(1 for o in month_orders if (o.get("status") or "").lower() not in ["done", "cancel"])
+    total_revenue = sum(o.get("total", 0) for o in month_orders)
+    done_tasks = sum(1 for t in tasks if t.get("status") == "done")
+    failed_tasks = sum(1 for t in tasks if t.get("status") == "failed")
+
+    artist_map: dict = {}
+    for t in tasks:
+        a = t.get("assignee", "")
+        if not a:
+            continue
+        if a not in artist_map:
+            artist_map[a] = {"tasks": 0, "done": 0, "time": 0}
+        artist_map[a]["tasks"] += 1
+        artist_map[a]["time"] += t.get("time_elapsed", 0)
+        if t.get("status") == "done":
+            artist_map[a]["done"] += 1
+
+    artist_lines = "\n".join([
+        f"- {a}: {v['done']}/{v['tasks']} task, {v['time']//3600}j kerja"
+        for a, v in sorted(artist_map.items(), key=lambda x: -x[1]["done"])
+    ])
+
+    context = (
+        f"Performa tim bulan {month}:\n"
+        f"- Order: {len(month_orders)} masuk, {done_orders} selesai, {active_orders} aktif\n"
+        f"- Revenue: Rp {total_revenue:,.0f}\n"
+        f"- Task: {len(tasks)} total, {done_tasks} selesai, {failed_tasks} gagal\n\n"
+        f"Per anggota:\n{artist_lines or 'Belum ada data'}"
+    )
+    try:
+        msg = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=500,
+            messages=[{"role": "user", "content": (
+                "Kamu adalah asisten manajemen untuk Magsika Studio (studio kreatif 3D/2D). "
+                "Beri analisis performa tim bulanan dalam bahasa Indonesia yang profesional dan membangun untuk pimpinan studio.\n\n"
+                f"{context}\n\n"
+                "Format: ringkasan kondisi tim (2-3 kalimat), highlight pencapaian terbaik, "
+                "area yang perlu perhatian, dan rekomendasi singkat bulan depan. "
+                "Informatif dan berdasarkan data. Maksimal 180 kata."
+            )}]
+        )
+        return {"insight": msg.content[0].text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
