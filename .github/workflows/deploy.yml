@@ -49,6 +49,11 @@ jobs:
         run: |
           scp backend/main.py vps:/root/admin-dashboard/backend/
           scp backend/requirements.txt vps:/root/admin-dashboard/backend/
+          scp backend/auth.py vps:/root/admin-dashboard/backend/ 2>/dev/null || true
+
+      - name: Write env file on VPS
+        run: |
+          ssh vps "grep -v '^GEMINI_API_KEY=' /root/admin-dashboard/backend/.env > /tmp/.env_tmp 2>/dev/null || true && mv /tmp/.env_tmp /root/admin-dashboard/backend/.env && echo 'GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}' >> /root/admin-dashboard/backend/.env"
 
       - name: Install Python dependencies on VPS
         run: |
