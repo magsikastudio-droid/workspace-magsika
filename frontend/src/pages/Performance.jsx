@@ -5,7 +5,7 @@ import { useCurrency } from "../context/CurrencyContext";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import {
-  Activity, Bot, ChevronLeft, ChevronRight, Clock,
+  Activity, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock,
   Users, FolderOpen, Loader2, Pencil, Timer,
   Search, Sparkles, Trash2, X,
 } from "lucide-react";
