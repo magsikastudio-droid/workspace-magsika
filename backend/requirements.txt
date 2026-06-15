@@ -10,4 +10,3 @@ motor
 certifi
 email-validator
 apscheduler
-google-generativeai
