@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Users, Plus, Edit3, Trash2, ChevronDown, ChevronUp,
-  CreditCard, Link2, X, Search, TrendingUp, AlertCircle,
+  Link2, X, Search, AlertCircle, CheckCircle2, Clock, Circle,
+  BarChart2,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useOrders } from "../context/OrdersContext";
@@ -9,10 +10,12 @@ import { toast } from "sonner";
 
 const STATUS_BAYAR = ["Belum Lunas", "DP", "Lunas"];
 
-const statusColor = {
-  "Lunas":       "bg-emerald-100 text-emerald-700 border-emerald-200",
-  "DP":          "bg-amber-100 text-amber-700 border-amber-200",
-  "Belum Lunas": "bg-rose-100 text-rose-700 border-rose-200",
+// Colorblind-friendly: blue for paid (not green), amber for partial, slate for unpaid
+// Each status also has a unique icon — not just color
+const STATUS_CFG = {
+  "Lunas":       { sel: "bg-blue-100 text-blue-700 border-blue-200",   bar: "#60a5fa", icon: CheckCircle2, label: "Lunas" },
+  "DP":          { sel: "bg-amber-100 text-amber-800 border-amber-300", bar: "#fbbf24", icon: Clock,        label: "DP" },
+  "Belum Lunas": { sel: "bg-slate-100 text-slate-600 border-slate-300", bar: "#cbd5e1", icon: Circle,       label: "Belum Bayar" },
 };
 
 function nowMonthStr() {
@@ -23,34 +26,39 @@ function nowMonthStr() {
 const EMPTY_ARTIST = { name: "", bank: "", rekening: "", phone: "", notes: "" };
 const EMPTY_PROJECT = { project_name: "", fee: "", dp_amount: "", dp_date: "", pelunasan_date: "", status_bayar: "Belum Lunas", notes: "", order_id: "" };
 
+function avatarColor(name) {
+  const h = Math.abs((name || "").split("").reduce((acc, c) => c.charCodeAt(0) + ((acc << 5) - acc), 0)) % 360;
+  return `hsl(${h}, 60%, 45%)`;
+}
+
 export default function Freelance() {
   const fmtIDR = (v) => (v || v === 0) ? `Rp ${Number(v).toLocaleString("id-ID")}` : "—";
-  const [artists, setArtists] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  const [artists, setArtists]         = useState([]);
+  const [projects, setProjects]       = useState([]);
+  const [loading, setLoading]         = useState(true);
   const [expandedArtist, setExpandedArtist] = useState(null);
+  const [showRoster, setShowRoster]   = useState(false);
 
   const [showArtistModal, setShowArtistModal] = useState(false);
-  const [editArtist, setEditArtist] = useState(null);
-  const [artistForm, setArtistForm] = useState(EMPTY_ARTIST);
+  const [editArtist, setEditArtist]           = useState(null);
+  const [artistForm, setArtistForm]           = useState(EMPTY_ARTIST);
 
   const [showProjectModal, setShowProjectModal] = useState(null);
-  const [editProject, setEditProject] = useState(null);
-  const [projectForm, setProjectForm] = useState(EMPTY_PROJECT);
-  const [orderSearch, setOrderSearch] = useState("");
+  const [editProject, setEditProject]           = useState(null);
+  const [projectForm, setProjectForm]           = useState(EMPTY_PROJECT);
+  const [orderSearch, setOrderSearch]           = useState("");
 
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [monthFilter, setMonthFilter] = useState("all");
+  const [monthFilter, setMonthFilter]     = useState(nowMonthStr());
 
   const { orders } = useOrders();
 
-  /* Orders dengan fee_freelance > 0 untuk auto-link */
   const linkedableOrders = useMemo(() =>
     orders.filter((o) => (o.fee_freelance || 0) > 0),
     [orders]
   );
 
-  /* Artist yang muncul di order sebagai Freelance tapi belum terdaftar */
   const autoDetected = useMemo(() => {
     const names = new Set();
     orders.forEach((o) => {
@@ -90,7 +98,6 @@ export default function Freelance() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  /* Auto-projects: orders with freelance contribution not yet recorded manually */
   const autoProjectsMap = useMemo(() => {
     const result = {};
     artists.forEach((artist) => {
@@ -130,41 +137,57 @@ export default function Freelance() {
     ...(autoProjectsMap[artistId] || []),
   ];
 
+  // Filter logic:
+  // - Paid (Lunas): show only in the month of payment (pelunasan_date)
+  // - Unpaid/DP: always show (outstanding balance)
   const artistProjects = (artistId) => {
     const all = allProjectsForArtist(artistId);
     if (monthFilter === "all") return all;
     return all.filter((p) => {
-      const linked = p.order_id ? orders.find((o) => o.id === p.order_id) : null;
-      const dateRef = linked?.order_date || p.dp_date || p.pelunasan_date || "";
-      return dateRef.startsWith(monthFilter);
+      if (p.status_bayar === "Lunas") {
+        return (p.pelunasan_date || "").startsWith(monthFilter);
+      }
+      return true; // unpaid always visible
     });
   };
-  const totalFee = (artistId) => artistProjects(artistId).reduce((s, p) => s + (p.fee || 0), 0);
-  const paidFee = (artistId) => artistProjects(artistId).filter((p) => p.status_bayar === "Lunas").reduce((s, p) => s + (p.fee || 0), 0);
-  const dpFee = (artistId) => artistProjects(artistId).filter((p) => p.status_bayar === "DP").reduce((s, p) => s + (p.dp_amount || 0), 0);
+
+  const totalFee      = (id) => artistProjects(id).reduce((s, p) => s + (p.fee || 0), 0);
+  const paidFee       = (id) => artistProjects(id).filter((p) => p.status_bayar === "Lunas").reduce((s, p) => s + (p.fee || 0), 0);
+  const dpFee         = (id) => artistProjects(id).filter((p) => p.status_bayar === "DP").reduce((s, p) => s + (p.dp_amount || 0), 0);
+  const outstanding   = (id) => artistProjects(id).filter((p) => p.status_bayar !== "Lunas").reduce((s, p) => s + (p.fee || 0) - (p.dp_amount || 0), 0);
+
+  // Only show artists with visible projects (when filtered)
+  const visibleArtists = useMemo(() =>
+    artists.filter((a) => monthFilter === "all" || artistProjects(a.id).length > 0),
+    [artists, monthFilter, projects, autoProjectsMap, orders] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const availableMonths = useMemo(() => {
     const set = new Set();
     [...projects, ...Object.values(autoProjectsMap).flat()].forEach((p) => {
       const linked = p.order_id ? orders.find((o) => o.id === p.order_id) : null;
-      const date = linked?.order_date || p.dp_date || p.pelunasan_date;
+      const date = p.status_bayar === "Lunas" ? p.pelunasan_date : (linked?.order_date || p.dp_date);
       if (date) set.add(date.slice(0, 7));
     });
     return [...set].sort().reverse();
   }, [projects, autoProjectsMap, orders]);
 
-  /* Global summary — all-time, ignores monthFilter */
-  const globalTotal = artists.reduce((s, a) => s + allProjectsForArtist(a.id).reduce((t, p) => t + (p.fee || 0), 0), 0);
-  const globalPaid  = artists.reduce((s, a) => s + allProjectsForArtist(a.id).filter((p) => p.status_bayar === "Lunas").reduce((t, p) => t + (p.fee || 0), 0), 0);
-  const globalOutstanding = (() => {
-    let out = 0;
-    artists.forEach((a) => {
-      allProjectsForArtist(a.id).filter((p) => p.status_bayar !== "Lunas").forEach((p) => {
-        out += (p.fee || 0) - (p.dp_amount || 0);
-      });
-    });
-    return out;
-  })();
+  // Summary for current filter
+  const filteredTotal       = visibleArtists.reduce((s, a) => s + totalFee(a.id), 0);
+  const filteredPaid        = visibleArtists.reduce((s, a) => s + paidFee(a.id), 0);
+  const filteredDp          = visibleArtists.reduce((s, a) => s + dpFee(a.id), 0);
+  const filteredOutstanding = visibleArtists.reduce((s, a) => s + outstanding(a.id), 0);
+
+  // All-time totals per artist (for roster)
+  const artistLifetime = (artistId) => {
+    const all = allProjectsForArtist(artistId);
+    return {
+      count:   all.length,
+      total:   all.reduce((s, p) => s + (p.fee || 0), 0),
+      paid:    all.filter((p) => p.status_bayar === "Lunas").reduce((s, p) => s + (p.fee || 0), 0),
+      active:  all.filter((p) => p.status_bayar !== "Lunas").length,
+    };
+  };
 
   const handleSaveArtist = async (e) => {
     e.preventDefault();
@@ -176,9 +199,7 @@ export default function Freelance() {
         await api.post("/freelance/artists", artistForm);
         toast.success("Artist ditambahkan");
       }
-      setShowArtistModal(false);
-      setEditArtist(null);
-      setArtistForm(EMPTY_ARTIST);
+      setShowArtistModal(false); setEditArtist(null); setArtistForm(EMPTY_ARTIST);
       loadAll();
     } catch { toast.error("Gagal menyimpan"); }
   };
@@ -187,8 +208,7 @@ export default function Freelance() {
     try {
       await api.delete(`/freelance/artists/${id}`);
       toast.success("Artist dihapus");
-      setConfirmDelete(null);
-      loadAll();
+      setConfirmDelete(null); loadAll();
     } catch { toast.error("Gagal menghapus"); }
   };
 
@@ -197,12 +217,12 @@ export default function Freelance() {
     try {
       const payload = {
         ...projectForm,
-        artist_id: showProjectModal,
-        fee: projectForm.fee ? Number(projectForm.fee) : 0,
-        dp_amount: projectForm.dp_amount ? Number(projectForm.dp_amount) : null,
-        dp_date: projectForm.dp_date || null,
-        pelunasan_date: projectForm.pelunasan_date || null,
-        order_id: projectForm.order_id || null,
+        artist_id:       showProjectModal,
+        fee:             projectForm.fee ? Number(projectForm.fee) : 0,
+        dp_amount:       projectForm.dp_amount ? Number(projectForm.dp_amount) : null,
+        dp_date:         projectForm.dp_date || null,
+        pelunasan_date:  projectForm.pelunasan_date || null,
+        order_id:        projectForm.order_id || null,
       };
       if (editProject) {
         await api.patch(`/freelance/projects/${editProject.id}`, payload);
@@ -211,17 +231,18 @@ export default function Freelance() {
         await api.post("/freelance/projects", payload);
         toast.success("Project ditambahkan");
       }
-      setShowProjectModal(null);
-      setEditProject(null);
-      setProjectForm(EMPTY_PROJECT);
-      setOrderSearch("");
+      setShowProjectModal(null); setEditProject(null); setProjectForm(EMPTY_PROJECT); setOrderSearch("");
       loadAll();
     } catch { toast.error("Gagal menyimpan project"); }
   };
 
   const handleUpdateStatus = async (projectId, status_bayar) => {
     try {
-      await api.patch(`/freelance/projects/${projectId}`, { status_bayar });
+      const extra = {};
+      if (status_bayar === "Lunas" && !projects.find((p) => p.id === projectId)?.pelunasan_date) {
+        extra.pelunasan_date = new Date().toISOString().slice(0, 10);
+      }
+      await api.patch(`/freelance/projects/${projectId}`, { status_bayar, ...extra });
       loadAll();
     } catch { toast.error("Gagal update status"); }
   };
@@ -230,8 +251,7 @@ export default function Freelance() {
     if (!window.confirm("Hapus project ini?")) return;
     try {
       await api.delete(`/freelance/projects/${projectId}`);
-      toast.success("Project dihapus");
-      loadAll();
+      toast.success("Project dihapus"); loadAll();
     } catch { toast.error("Gagal menghapus"); }
   };
 
@@ -253,24 +273,22 @@ export default function Freelance() {
     } else {
       setProjectForm(EMPTY_PROJECT);
     }
-    setOrderSearch("");
-    setShowProjectModal(artistId);
+    setOrderSearch(""); setShowProjectModal(artistId);
   };
 
   const openEditProject = (artistId, proj) => {
     setEditProject(proj);
     setProjectForm({
-      project_name: proj.project_name || "",
-      fee: proj.fee?.toString() || "",
-      dp_amount: proj.dp_amount?.toString() || "",
-      dp_date: proj.dp_date || "",
+      project_name:   proj.project_name || "",
+      fee:            proj.fee?.toString() || "",
+      dp_amount:      proj.dp_amount?.toString() || "",
+      dp_date:        proj.dp_date || "",
       pelunasan_date: proj.pelunasan_date || "",
-      status_bayar: proj.status_bayar || "Belum Lunas",
-      notes: proj.notes || "",
-      order_id: proj.order_id || "",
+      status_bayar:   proj.status_bayar || "Belum Lunas",
+      notes:          proj.notes || "",
+      order_id:       proj.order_id || "",
     });
-    setOrderSearch("");
-    setShowProjectModal(artistId);
+    setOrderSearch(""); setShowProjectModal(artistId);
   };
 
   const linkOrder = (order) => {
@@ -285,62 +303,82 @@ export default function Freelance() {
 
   const inputCls = "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400 transition";
 
+  const monthLabel = (m) => {
+    const [y, mo] = m.split("-").map(Number);
+    return new Date(y, mo - 1, 1).toLocaleString("id-ID", { month: "long", year: "numeric" });
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-2">
-            <Users size={28} className="text-sky-500" /> Freelancer
+            <Users size={28} className="text-violet-500" /> Freelancer
           </h1>
           <p className="mt-1 text-sm text-slate-500">Kelola profil & pembayaran artist freelance.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <select
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-sky-400"
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-violet-400"
           >
             <option value="all">Semua Bulan</option>
-            {availableMonths.map((m) => {
-              const [y, mo] = m.split("-").map(Number);
-              const label = new Date(y, mo - 1, 1).toLocaleString("id-ID", { month: "long", year: "numeric" });
-              return <option key={m} value={m}>{label}</option>;
-            })}
+            {availableMonths.includes(nowMonthStr()) ? null : (
+              <option value={nowMonthStr()}>{monthLabel(nowMonthStr())}</option>
+            )}
+            {availableMonths.map((m) => (
+              <option key={m} value={m}>{monthLabel(m)}</option>
+            ))}
           </select>
           <button
             onClick={() => { setEditArtist(null); setArtistForm(EMPTY_ARTIST); setShowArtistModal(true); }}
-            className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 transition"
+            className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 transition"
           >
             <Plus size={15} /> Tambah Artist
           </button>
         </div>
       </div>
 
-      {/* Summary cards */}
+      {/* ── Summary cards ── */}
       {!loading && artists.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Total Fee</p>
-            <p className="mt-2 text-2xl font-bold text-slate-900">{fmtIDR(globalTotal)}</p>
-            <p className="mt-1 text-xs text-slate-400">{artists.length} artist freelance</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Total Fee</p>
+            <p className="mt-1.5 text-xl font-bold text-slate-900">{fmtIDR(filteredTotal)}</p>
+            <p className="mt-0.5 text-xs text-slate-400">{visibleArtists.length} freelancer</p>
           </div>
-          <div className="rounded-[2rem] border border-emerald-100 bg-emerald-50 px-5 py-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-widest text-emerald-500">Sudah Lunas</p>
-            <p className="mt-2 text-2xl font-bold text-emerald-700">{fmtIDR(globalPaid)}</p>
-            <p className="mt-1 text-xs text-emerald-500">{globalTotal > 0 ? Math.round((globalPaid / globalTotal) * 100) : 0}% dari total</p>
+          <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50 px-5 py-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-1">
+              <CheckCircle2 size={13} className="text-blue-500" />
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-blue-400">Lunas</p>
+            </div>
+            <p className="text-xl font-bold text-blue-700">{fmtIDR(filteredPaid)}</p>
+            <p className="mt-0.5 text-xs text-blue-400">{filteredTotal > 0 ? Math.round((filteredPaid / filteredTotal) * 100) : 0}% dari total</p>
           </div>
-          <div className="rounded-[2rem] border border-rose-100 bg-rose-50 px-5 py-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-widest text-rose-400">Outstanding</p>
-            <p className="mt-2 text-2xl font-bold text-rose-600">{fmtIDR(globalOutstanding)}</p>
-            <p className="mt-1 text-xs text-rose-400">belum/DP sisa</p>
+          <div className="rounded-[1.5rem] border border-amber-100 bg-amber-50 px-5 py-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Clock size={13} className="text-amber-500" />
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-400">DP Masuk</p>
+            </div>
+            <p className="text-xl font-bold text-amber-700">{fmtIDR(filteredDp)}</p>
+            <p className="mt-0.5 text-xs text-amber-400">sudah ditransfer sebagian</p>
+          </div>
+          <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Circle size={13} className="text-slate-400" />
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Outstanding</p>
+            </div>
+            <p className="text-xl font-bold text-slate-700">{fmtIDR(filteredOutstanding)}</p>
+            <p className="mt-0.5 text-xs text-slate-400">belum ditransfer</p>
           </div>
         </div>
       )}
 
-      {/* Auto-detected unregistered freelancers */}
+      {/* ── Auto-detected alert ── */}
       {!loading && autoDetected.length > 0 && (
-        <div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-5">
+        <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle size={16} className="text-amber-500 shrink-0" />
             <p className="text-sm font-semibold text-amber-700">
@@ -361,6 +399,7 @@ export default function Freelance() {
         </div>
       )}
 
+      {/* ── Artist cards ── */}
       {loading ? (
         <div className="text-center py-16 text-slate-400">Memuat data...</div>
       ) : artists.length === 0 ? (
@@ -369,98 +408,121 @@ export default function Freelance() {
           <p className="text-slate-500 font-medium">Belum ada freelancer.</p>
           <p className="text-sm text-slate-400 mt-1">Tambah artist pertama kamu.</p>
         </div>
+      ) : visibleArtists.length === 0 ? (
+        <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-12 text-center">
+          <CheckCircle2 size={36} className="mx-auto mb-3 text-blue-300" />
+          <p className="text-slate-600 font-semibold">Semua freelancer sudah lunas bulan ini</p>
+          <p className="text-sm text-slate-400 mt-1">Tidak ada outstanding di {monthLabel(monthFilter)}. Pilih "Semua Bulan" untuk melihat riwayat.</p>
+        </div>
       ) : (
         <div className="space-y-4">
-          {artists.map((artist) => {
-            const aproj = artistProjects(artist.id);
-            const total = totalFee(artist.id);
-            const paid = paidFee(artist.id);
-            const dp = dpFee(artist.id);
-            const outstanding = aproj.filter((p) => p.status_bayar !== "Lunas").reduce((s, p) => s + (p.fee || 0) - (p.dp_amount || 0), 0);
-            const paidPct = total > 0 ? Math.round((paid / total) * 100) : 0;
-            const dpPct = total > 0 ? Math.round(((paid + dp) / total) * 100) : 0;
+          {visibleArtists.map((artist) => {
+            const aproj    = artistProjects(artist.id);
+            const total    = totalFee(artist.id);
+            const paid     = paidFee(artist.id);
+            const dp       = dpFee(artist.id);
+            const owed     = outstanding(artist.id);
+            const paidPct  = total > 0 ? (paid / total) * 100 : 0;
+            const dpPct    = total > 0 ? (dp / total) * 100 : 0;
             const expanded = expandedArtist === artist.id;
-            const artistColor = `hsl(${Math.abs(artist.name.split("").reduce((h, c) => c.charCodeAt(0) + ((h << 5) - h), 0)) % 360}, 65%, 50%)`;
 
             return (
               <div key={artist.id} className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
                 {/* Artist row */}
-                <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-                  <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-4 p-5">
+                  {/* Avatar + info */}
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div
                       className="flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-bold text-white shrink-0"
-                      style={{ background: artistColor }}
+                      style={{ background: avatarColor(artist.name) }}
                     >
                       {artist.name.slice(0, 1).toUpperCase()}
                     </div>
-                    <div>
-                      <p className="font-bold text-slate-900 text-xl leading-tight">{artist.name}</p>
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 text-lg leading-tight truncate">{artist.name}</p>
                       {(artist.bank || artist.rekening) && (
-                        <p className="text-sm text-slate-500 mt-0.5">{artist.bank}{artist.rekening ? ` · ${artist.rekening}` : ""}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{artist.bank}{artist.rekening ? ` · ${artist.rekening}` : ""}</p>
                       )}
-                      {artist.phone && <p className="text-sm text-slate-400">{artist.phone}</p>}
+                      {artist.phone && <p className="text-xs text-slate-400">{artist.phone}</p>}
                       {!artist.bank && !artist.phone && (
                         <p className="text-xs text-amber-500 mt-0.5">Rekening & kontak belum diisi</p>
                       )}
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-5">
-                    {/* Fee summary */}
-                    {total > 0 ? (
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 min-w-[180px]">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total Fee</span>
-                          <span className="text-base font-bold text-slate-900">{fmtIDR(total)}</span>
-                        </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                          <div className="h-full rounded-full bg-amber-300 transition-all" style={{ width: `${dpPct}%` }} />
-                          <div className="h-full rounded-full bg-emerald-500 -mt-2 transition-all" style={{ width: `${paidPct}%` }} />
-                        </div>
-                        <div className="flex justify-between mt-1.5">
-                          <span className="text-xs text-emerald-600 font-semibold">Lunas: {fmtIDR(paid)}</span>
-                          {outstanding > 0 && <span className="text-xs text-rose-500 font-semibold">Sisa: {fmtIDR(outstanding)}</span>}
-                        </div>
+                  {/* Payment progress */}
+                  {total > 0 ? (
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 min-w-[200px] max-w-[260px]">
+                      <div className="flex items-baseline justify-between mb-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Total Fee</span>
+                        <span className="text-sm font-bold text-slate-800">{fmtIDR(total)}</span>
                       </div>
-                    ) : (
-                      <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-400 text-center">
-                        Belum ada project
+                      {/* Stacked bar */}
+                      <div className="h-2.5 w-full flex overflow-hidden rounded-full bg-slate-200">
+                        {paidPct > 0 && (
+                          <div className="h-full transition-all" style={{ width: `${paidPct}%`, background: STATUS_CFG["Lunas"].bar }} />
+                        )}
+                        {dpPct > 0 && (
+                          <div className="h-full transition-all" style={{ width: `${dpPct}%`, background: STATUS_CFG["DP"].bar }} />
+                        )}
                       </div>
-                    )}
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        onClick={() => openAddProject(artist.id)}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 transition"
-                      >
-                        <Plus size={15} /> Tambah Project
-                      </button>
-                      <button
-                        onClick={() => { setEditArtist(artist); setArtistForm({ name: artist.name, bank: artist.bank || "", rekening: artist.rekening || "", phone: artist.phone || "", notes: artist.notes || "" }); setShowArtistModal(true); }}
-                        className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition"
-                      >
-                        <Edit3 size={14} /> Edit
-                      </button>
-                      <button
-                        onClick={() => setConfirmDelete(artist)}
-                        className="inline-flex items-center gap-1.5 rounded-2xl border border-rose-200 px-3 py-2.5 text-sm font-semibold text-rose-500 hover:bg-rose-50 transition"
-                      >
-                        <Trash2 size={14} /> Hapus
-                      </button>
-                      <button
-                        onClick={() => setExpandedArtist(expanded ? null : artist.id)}
-                        className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-100 transition"
-                      >
-                        {expanded ? <><ChevronUp size={15} /> Tutup</> : <><ChevronDown size={15} /> Lihat Project ({aproj.length})</>}
-                      </button>
+                      {/* Labels */}
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+                        {paid > 0 && (
+                          <span className="flex items-center gap-1 text-blue-600 font-semibold">
+                            <CheckCircle2 size={11} /> {fmtIDR(paid)}
+                          </span>
+                        )}
+                        {dp > 0 && (
+                          <span className="flex items-center gap-1 text-amber-700 font-semibold">
+                            <Clock size={11} /> DP {fmtIDR(dp)}
+                          </span>
+                        )}
+                        {owed > 0 && (
+                          <span className="flex items-center gap-1 text-slate-500 font-semibold">
+                            <Circle size={11} /> Sisa {fmtIDR(owed)}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-400 text-center min-w-[140px]">
+                      Belum ada project
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
+                    <button
+                      onClick={() => openAddProject(artist.id)}
+                      className="inline-flex items-center gap-1.5 rounded-2xl bg-violet-600 px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 transition"
+                    >
+                      <Plus size={14} /> Tambah Project
+                    </button>
+                    <button
+                      onClick={() => { setEditArtist(artist); setArtistForm({ name: artist.name, bank: artist.bank || "", rekening: artist.rekening || "", phone: artist.phone || "", notes: artist.notes || "" }); setShowArtistModal(true); }}
+                      className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition"
+                    >
+                      <Edit3 size={13} /> Edit
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(artist)}
+                      className="inline-flex items-center gap-1 rounded-2xl border border-rose-200 px-3 py-2.5 text-sm font-semibold text-rose-500 hover:bg-rose-50 transition"
+                    >
+                      <Trash2 size={13} /> Hapus
+                    </button>
+                    <button
+                      onClick={() => setExpandedArtist(expanded ? null : artist.id)}
+                      className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-100 transition"
+                    >
+                      {expanded ? <><ChevronUp size={14} /> Tutup</> : <><ChevronDown size={14} /> Project ({aproj.length})</>}
+                    </button>
                   </div>
                 </div>
 
-                {/* Expanded project list */}
+                {/* ── Expanded project list ── */}
                 {expanded && (
-                  <div className="border-t border-slate-100 px-5 pb-5 pt-3">
+                  <div className="border-t border-slate-100 px-5 pb-5 pt-4">
                     {artist.notes && (
                       <p className="mb-3 text-sm text-slate-500 italic">{artist.notes}</p>
                     )}
@@ -471,21 +533,22 @@ export default function Freelance() {
                     ) : (
                       <div className="space-y-3">
                         {aproj.map((proj) => {
-                          const remaining = (proj.fee || 0) - (proj.dp_amount || 0);
-                          const dpPct = proj.fee > 0 ? Math.round(((proj.dp_amount || 0) / proj.fee) * 100) : 0;
+                          const rem        = (proj.fee || 0) - (proj.dp_amount || 0);
+                          const dpPctProj  = proj.fee > 0 ? ((proj.dp_amount || 0) / proj.fee) * 100 : 0;
                           const linkedOrder = proj.order_id ? orders.find((o) => o.id === proj.order_id) : null;
+                          const cfg        = STATUS_CFG[proj.status_bayar] || STATUS_CFG["Belum Lunas"];
+                          const StatusIcon = cfg.icon;
 
                           if (proj.is_auto) {
-                            /* ── Auto-detected dari order ── */
                             return (
-                              <div key={proj.id} className="rounded-2xl border border-violet-100 bg-violet-50/50 p-4">
+                              <div key={proj.id} className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <p className="font-semibold text-slate-900">{proj.project_name}</p>
-                                      <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">Auto</span>
+                                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">Auto</span>
                                       {linkedOrder && (
-                                        <span className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600 border border-sky-100">
+                                        <span className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-600">
                                           <Link2 size={9} /> {linkedOrder.folder_code || linkedOrder.project}
                                         </span>
                                       )}
@@ -495,9 +558,10 @@ export default function Freelance() {
                                         ? <span className="font-semibold text-slate-900">{fmtIDR(proj.fee)}</span>
                                         : <span className="text-slate-400 italic">Fee belum diset di order</span>}
                                       {linkedOrder?.order_date && <span className="text-slate-400">{linkedOrder.order_date}</span>}
-                                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-600">Belum Lunas</span>
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 border border-slate-200">
+                                        <Circle size={9} /> Belum Bayar
+                                      </span>
                                     </div>
-                                    {proj.notes && <p className="mt-1 text-xs text-slate-400 italic">{proj.notes}</p>}
                                     <p className="mt-1.5 text-[10px] text-violet-500">Terdeteksi otomatis dari order · Catat untuk atur pembayaran</p>
                                   </div>
                                   <button
@@ -511,61 +575,89 @@ export default function Freelance() {
                             );
                           }
 
-                          /* ── Project manual ── */
+                          /* ── Manual project ── */
                           return (
-                            <div key={proj.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                            <div key={proj.id} className="rounded-2xl border border-slate-100 bg-white p-4">
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div className="flex-1 min-w-0">
+                                  {/* Name + link */}
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <p className="font-semibold text-slate-900">{proj.project_name}</p>
                                     {linkedOrder && (
-                                      <span className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600 border border-sky-100">
+                                      <span className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-600">
                                         <Link2 size={9} /> {linkedOrder.folder_code || linkedOrder.project}
                                       </span>
                                     )}
                                   </div>
-                                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                                    <span className="font-semibold text-slate-900">{fmtIDR(proj.fee)}</span>
+
+                                  {/* Fee + dates row */}
+                                  <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-xs">
+                                    <span className="text-slate-400">Fee total</span>
+                                    <span className="font-bold text-slate-900">{fmtIDR(proj.fee)}</span>
                                     {proj.dp_amount > 0 && (
                                       <>
-                                        <span>DP: <span className="font-semibold text-amber-700">{fmtIDR(proj.dp_amount)}</span></span>
-                                        {proj.dp_date && <span>Tgl DP: {proj.dp_date}</span>}
+                                        <span className="text-slate-400">DP dibayar</span>
+                                        <span className="font-semibold text-amber-700">
+                                          {fmtIDR(proj.dp_amount)}{proj.dp_date ? ` · ${proj.dp_date}` : ""}
+                                        </span>
                                       </>
                                     )}
-                                    {proj.pelunasan_date && <span>Pelunasan: {proj.pelunasan_date}</span>}
+                                    {proj.pelunasan_date && (
+                                      <>
+                                        <span className="text-slate-400">Pelunasan</span>
+                                        <span className="font-semibold text-blue-600">{proj.pelunasan_date}</span>
+                                      </>
+                                    )}
+                                    {rem > 0 && proj.status_bayar !== "Lunas" && (
+                                      <>
+                                        <span className="text-slate-400">Sisa</span>
+                                        <span className="font-bold text-slate-700">{fmtIDR(rem)}</span>
+                                      </>
+                                    )}
                                   </div>
-                                  {proj.fee > 0 && proj.status_bayar !== "Lunas" && (
-                                    <div className="mt-2">
-                                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                                        <div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${dpPct}%` }} />
+
+                                  {/* Progress bar — only when partially paid */}
+                                  {proj.fee > 0 && proj.status_bayar === "DP" && (
+                                    <div className="mt-2.5">
+                                      <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                        <span>Progress pembayaran</span>
+                                        <span>{Math.round(dpPctProj)}%</span>
                                       </div>
-                                      {remaining > 0 && (
-                                        <p className="mt-0.5 text-[10px] text-rose-500">Sisa {fmtIDR(remaining)}</p>
-                                      )}
+                                      <div className="h-2 w-full flex overflow-hidden rounded-full bg-slate-200">
+                                        <div
+                                          className="h-full transition-all"
+                                          style={{ width: `${dpPctProj}%`, background: STATUS_CFG["DP"].bar }}
+                                        />
+                                      </div>
                                     </div>
                                   )}
-                                  {proj.notes && <p className="mt-1.5 text-xs text-slate-400 italic">{proj.notes}</p>}
+
+                                  {proj.notes && <p className="mt-2 text-xs text-slate-400 italic">{proj.notes}</p>}
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
+
+                                {/* Status + actions */}
+                                <div className="flex flex-col items-end gap-2 shrink-0">
                                   <select
                                     value={proj.status_bayar}
                                     onChange={(e) => handleUpdateStatus(proj.id, e.target.value)}
-                                    className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold outline-none cursor-pointer ${statusColor[proj.status_bayar] || "bg-slate-100 text-slate-700 border-slate-200"}`}
+                                    className={`rounded-2xl border px-3 py-1.5 text-xs font-semibold outline-none cursor-pointer ${cfg.sel}`}
                                   >
                                     {STATUS_BAYAR.map((s) => <option key={s}>{s}</option>)}
                                   </select>
-                                  <button
-                                    onClick={() => openEditProject(artist.id, proj)}
-                                    className="rounded-xl p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition"
-                                  >
-                                    <Edit3 size={13} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteProject(proj.id)}
-                                    className="rounded-xl p-1.5 text-rose-400 hover:bg-rose-100 transition"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={() => openEditProject(artist.id, proj)}
+                                      className="rounded-xl p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                                    >
+                                      <Edit3 size={13} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteProject(proj.id)}
+                                      className="rounded-xl p-1.5 text-rose-400 hover:bg-rose-50 transition"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -581,7 +673,80 @@ export default function Freelance() {
         </div>
       )}
 
-      {/* Artist Modal */}
+      {/* ── Daftar Freelancer (roster) ── */}
+      {!loading && artists.length > 0 && (
+        <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <button
+            className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition"
+            onClick={() => setShowRoster((v) => !v)}
+          >
+            <div className="flex items-center gap-3">
+              <BarChart2 size={18} className="text-violet-500" />
+              <div className="text-left">
+                <p className="font-bold text-slate-900">Data Freelancer</p>
+                <p className="text-xs text-slate-400">{artists.length} freelancer terdaftar · statistik semua waktu</p>
+              </div>
+            </div>
+            {showRoster ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          </button>
+
+          {showRoster && (
+            <div className="border-t border-slate-100 px-6 pb-6 pt-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {artists.map((artist) => {
+                  const lt = artistLifetime(artist.id);
+                  const ltPct = lt.total > 0 ? Math.round((lt.paid / lt.total) * 100) : 0;
+                  return (
+                    <div key={artist.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                      {/* Avatar + name */}
+                      <div className="flex items-center gap-3 mb-3">
+                        <div
+                          className="flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold text-white shrink-0"
+                          style={{ background: avatarColor(artist.name) }}
+                        >
+                          {artist.name.slice(0, 1).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-900 truncate">{artist.name}</p>
+                          {(artist.bank || artist.rekening) && (
+                            <p className="text-xs text-slate-500 truncate">{artist.bank}{artist.rekening ? ` · ${artist.rekening}` : ""}</p>
+                          )}
+                          {artist.phone && <p className="text-xs text-slate-400">{artist.phone}</p>}
+                        </div>
+                      </div>
+
+                      {/* Stats */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl bg-white border border-slate-100 px-3 py-2">
+                          <p className="text-slate-400 mb-0.5">Total Project</p>
+                          <p className="font-bold text-slate-800 text-sm">{lt.count}</p>
+                          {lt.active > 0 && <p className="text-amber-600 text-[10px]">{lt.active} aktif</p>}
+                        </div>
+                        <div className="rounded-xl bg-white border border-slate-100 px-3 py-2">
+                          <p className="text-slate-400 mb-0.5">Total Fee</p>
+                          <p className="font-bold text-slate-800">{fmtIDR(lt.total)}</p>
+                        </div>
+                        <div className="col-span-2 rounded-xl bg-white border border-blue-100 px-3 py-2">
+                          <div className="flex justify-between mb-1.5">
+                            <span className="text-slate-400">Sudah dibayar</span>
+                            <span className="font-bold text-blue-700">{fmtIDR(lt.paid)}</span>
+                          </div>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${ltPct}%`, background: STATUS_CFG["Lunas"].bar }} />
+                          </div>
+                          <p className="mt-1 text-[10px] text-slate-400 text-right">{ltPct}% lunas</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Artist Modal ── */}
       {showArtistModal && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-md rounded-[2rem] bg-white p-6 shadow-2xl">
@@ -614,14 +779,14 @@ export default function Freelance() {
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => { setShowArtistModal(false); setEditArtist(null); }} className="rounded-2xl px-5 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">Batal</button>
-                <button type="submit" className="rounded-2xl bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-700 transition">Simpan</button>
+                <button type="submit" className="rounded-2xl bg-violet-600 px-5 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition">Simpan</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Project Modal */}
+      {/* ── Project Modal ── */}
       {showProjectModal && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -630,7 +795,6 @@ export default function Freelance() {
               <button onClick={() => { setShowProjectModal(null); setEditProject(null); setOrderSearch(""); }} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 transition"><X size={18} /></button>
             </div>
 
-            {/* Auto-link from orders */}
             {!editProject && linkedableOrders.length > 0 && (
               <div className="mb-4 rounded-2xl border border-sky-100 bg-sky-50 p-3">
                 <p className="text-xs font-semibold text-sky-700 mb-2 flex items-center gap-1"><Link2 size={12} /> Tautkan dari Order (opsional)</p>
@@ -707,7 +871,7 @@ export default function Freelance() {
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => { setShowProjectModal(null); setEditProject(null); setOrderSearch(""); }} className="rounded-2xl px-5 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">Batal</button>
-                <button type="submit" className="rounded-2xl bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-700 transition">
+                <button type="submit" className="rounded-2xl bg-violet-600 px-5 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition">
                   {editProject ? "Simpan" : "Tambah"}
                 </button>
               </div>
@@ -716,7 +880,7 @@ export default function Freelance() {
         </div>
       )}
 
-      {/* Confirm delete artist */}
+      {/* ── Confirm delete artist ── */}
       {confirmDelete && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4">
           <div className="w-full max-w-sm rounded-[2rem] bg-white p-6 shadow-2xl">
