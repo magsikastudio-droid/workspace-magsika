@@ -906,7 +906,7 @@ function AdminPerformance() {
       </div>
 
       {/* Main grid */}
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {/* Per Artist — klik untuk detail */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
@@ -1021,7 +1021,7 @@ function AdminPerformance() {
             </div>
           </div>
 
-          <div className="bg-white px-5 py-4 flex-1 overflow-y-auto" style={{ maxHeight: "520px" }}>
+          <div className="bg-white px-5 py-4 flex-1 overflow-y-auto" style={{ maxHeight: "640px" }}>
             {reportLoading ? (
               <div className="flex items-center gap-2 py-10 text-sm text-slate-400">
                 <Loader2 size={16} className="animate-spin text-violet-400" /> Memuat laporan...
