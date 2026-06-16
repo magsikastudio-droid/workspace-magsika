@@ -3,16 +3,17 @@ import { Download, Upload, MessageSquare, Plus, Trash2, ChevronLeft, ChevronRigh
 import { useChat } from "../context/ChatContext";
 import { toast } from "sonner";
 
-const CHAT_STATUSES = ["Discussing", "Follow Up", "Nego", "Lost", "Place Order"];
+const CHAT_STATUSES = ["Discussing", "Follow Up", "Nego", "Lost", "Place Order", "Spam"];
 const CHAT_TYPES = ["New Client", "Follow Up", "Repeat Client", "Referral"];
 const CHAT_ACCOUNTS = ["Magsika", "Eirene", "Etsy", "Direct"];
 
 const STATUS_STYLE = {
-  "Discussing":  { bg: "bg-sky-100",   text: "text-sky-700",   border: "border-sky-200"   },
-  "Follow Up":   { bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-200" },
-  "Nego":        { bg: "bg-purple-100",text: "text-purple-700",border: "border-purple-200"},
-  "Lost":        { bg: "bg-rose-100",  text: "text-rose-700",  border: "border-rose-200"  },
-  "Place Order": { bg: "bg-emerald-100",text: "text-emerald-700",border:"border-emerald-200"},
+  "Discussing":  { bg: "bg-sky-100",    text: "text-sky-700",    border: "border-sky-200"    },
+  "Follow Up":   { bg: "bg-amber-100",  text: "text-amber-700",  border: "border-amber-200"  },
+  "Nego":        { bg: "bg-purple-100", text: "text-purple-700", border: "border-purple-200" },
+  "Lost":        { bg: "bg-rose-100",   text: "text-rose-700",   border: "border-rose-200"   },
+  "Place Order": { bg: "bg-emerald-100",text: "text-emerald-700",border: "border-emerald-200"},
+  "Spam":        { bg: "bg-slate-100",  text: "text-slate-500",  border: "border-slate-200"  },
 };
 
 const ACCOUNT_STYLE = {

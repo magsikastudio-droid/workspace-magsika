@@ -161,9 +161,9 @@ export default function DailyReport() {
               <textarea
                 value={form.work_done}
                 onChange={(e) => setForm((p) => ({ ...p, work_done: e.target.value }))}
-                rows={3}
-                placeholder="Ceritakan pekerjaan yang sudah diselesaikan..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-none transition"
+                rows={6}
+                placeholder="Ceritakan detail pekerjaan yang sudah diselesaikan hari ini&#10;(project, task, revisi, dll)..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-y transition"
                 required
               />
             </div>
@@ -176,7 +176,7 @@ export default function DailyReport() {
                     key={f.value}
                     type="button"
                     onClick={() => setForm((p) => ({ ...p, feelings: f.value }))}
-                    className={`flex items-center gap-1.5 rounded-xl border-2 px-3 py-1.5 text-sm font-semibold transition ${
+                    className={`flex items-center gap-1.5 rounded-xl border-2 px-4 py-2 text-sm font-semibold transition ${
                       form.feelings === f.value ? f.active : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
                     }`}
                   >
@@ -191,9 +191,9 @@ export default function DailyReport() {
               <textarea
                 value={form.obstacles}
                 onChange={(e) => setForm((p) => ({ ...p, obstacles: e.target.value }))}
-                rows={2}
-                placeholder="Adakah hambatan atau tantangan yang dihadapi?"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-none transition"
+                rows={4}
+                placeholder="Adakah hambatan atau tantangan yang dihadapi?&#10;(teknis, komunikasi, resources, dll)..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-y transition"
               />
             </div>
 
@@ -202,9 +202,9 @@ export default function DailyReport() {
               <textarea
                 value={form.notes}
                 onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-                rows={2}
-                placeholder="Informasi tambahan yang ingin disampaikan..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-none transition"
+                rows={3}
+                placeholder="Informasi tambahan yang ingin disampaikan ke tim atau atasan..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-y transition"
               />
             </div>
 
