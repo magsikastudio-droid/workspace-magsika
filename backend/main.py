@@ -527,6 +527,8 @@ async def on_startup():
         scheduler.add_job(carry_forward_tasks, CronTrigger(hour=0, minute=1, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_daily_ai_reports, CronTrigger(hour=17, minute=0, timezone="Asia/Jakarta"))
         scheduler.add_job(notify_unsubmitted_daily_reports, CronTrigger(hour=16, minute=30, timezone="Asia/Jakarta"))
+        scheduler.add_job(auto_weekly_ai_reports, CronTrigger(day_of_week="fri", hour=12, minute=0, timezone="Asia/Jakarta"))
+        scheduler.add_job(auto_monthly_ai_reports, CronTrigger(day=27, hour=12, minute=0, timezone="Asia/Jakarta"))
         scheduler.start()
 
 
@@ -1227,7 +1229,11 @@ async def update_my_profile(data: UserProfileUpdate, current_user: dict = Depend
     if not username or username == "admin":
         raise HTTPException(status_code=403, detail="Akun ini tidak bisa diperbarui via endpoint ini")
     payload: dict = {}
-    for field in ["full_name", "phone", "telegram", "gender", "birthdate", "birthplace", "position", "address", "bank_account"]:
+    # Non-admin users cannot change their full_name (it is used as the data key across collections)
+    allowed_fields = ["phone", "telegram", "gender", "birthdate", "birthplace", "position", "address", "bank_account"]
+    if current_user.get("role") == "admin":
+        allowed_fields = ["full_name"] + allowed_fields
+    for field in allowed_fields:
         val = getattr(data, field, None)
         if val is not None:
             payload[field] = val
@@ -2346,7 +2352,81 @@ async def get_report_history(
     docs = await db.ai_reports.find(query).sort("created_at", -1).limit(limit).to_list(limit)
     return {"reports": [_fmt_report(d) for d in docs]}
 
-# ── Auto-generate daily reports at 17:00 WIB ─────────────────────────────────
+# ── AI prompt with daily report context ──────────────────────────────────────
+def _member_prompt_with_daily_report(name: str, tasks: list, period_orders: list, period_label: str, daily_report: dict) -> str:
+    done = sum(1 for t in tasks if t.get("status") == "done")
+    failed = sum(1 for t in tasks if t.get("status") == "failed")
+    in_progress = sum(1 for t in tasks if t.get("status") == "in progress")
+    in_revision = sum(1 for t in tasks if t.get("status") == "in_revision")
+    total_time = sum(t.get("time_elapsed", 0) for t in tasks)
+    project_names = ", ".join([o.get("project", "") for o in period_orders[:5] if o.get("project")])
+    dr_lines = ""
+    if daily_report.get("work_done"):
+        dr_lines += f"- Pekerjaan dilaporkan: {daily_report['work_done']}\n"
+    if daily_report.get("feelings"):
+        dr_lines += f"- Kondisi/perasaan: {daily_report['feelings']}\n"
+    if daily_report.get("obstacles"):
+        dr_lines += f"- Kendala: {daily_report['obstacles']}\n"
+    if daily_report.get("notes"):
+        dr_lines += f"- Catatan: {daily_report['notes']}\n"
+    return (
+        "Anda adalah analis performa profesional untuk Magsika Studio, sebuah studio kreatif 3D/2D. "
+        "Tulis laporan analisis performa anggota tim dalam bahasa Indonesia yang formal, terstruktur, dan berbasis data.\n\n"
+        f"Data Performa: {name} | Periode: {period_label}\n"
+        f"- Total task: {len(tasks)} (selesai: {done}, gagal: {failed}, sedang berjalan: {in_progress}, revisi: {in_revision})\n"
+        f"- Akumulasi waktu kerja: {total_time // 3600} jam {(total_time % 3600) // 60} menit\n"
+        f"- Jumlah order dikerjakan: {len(period_orders)}\n"
+        f"- Project yang dikerjakan: {project_names or 'belum ada data'}\n\n"
+        + (f"Laporan Harian dari {name}:\n{dr_lines}\n" if dr_lines else "")
+        + "Jangan tulis baris header laporan, nama anggota tim, atau periode di awal output. "
+        "Mulai langsung dengan section pertama berikut.\n\n"
+        "Tulis laporan dengan struktur berikut (gunakan persis heading ini):\n\n"
+        "**Ringkasan Eksekutif**\n"
+        "Gambaran umum kinerja hari ini (2-3 kalimat, sertakan kondisi anggota dari laporan harian).\n\n"
+        "**Analisis Kinerja**\n"
+        "Evaluasi pencapaian berdasarkan data dan laporan yang tersedia.\n\n"
+        "**Area yang Perlu Ditingkatkan**\n"
+        "Identifikasi kelemahan atau hambatan (termasuk kendala yang dilaporkan). Tulis 'Tidak ada catatan khusus' jika baik.\n\n"
+        "**Rekomendasi**\n"
+        "1-2 rekomendasi konkret untuk hari berikutnya berdasarkan laporan.\n\n"
+        "Gunakan bahasa Indonesia yang formal dan profesional. Maksimal 250 kata."
+    )
+
+# ── Trigger AI after daily report submission ──────────────────────────────────
+async def _generate_daily_ai_after_report(full_name: str, daily_report_doc: dict):
+    if not ANTHROPIC_API_KEY:
+        return
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    date_key = now_wib.strftime("%Y-%m-%d")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        tasks, period_orders, period_label = await _fetch_member_data(full_name, "daily", "")
+        prompt = _member_prompt_with_daily_report(full_name, tasks, period_orders, period_label, daily_report_doc)
+        text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 950)
+        await db.ai_reports.replace_one(
+            {"type": "member", "target": full_name, "period": "daily", "date_key": date_key},
+            {"type": "member", "target": full_name, "period": "daily", "date_key": date_key,
+             "content": text, "is_auto": True, "generated_by": "system",
+             "created_at": now_iso, "updated_at": now_iso},
+            upsert=True
+        )
+        try:
+            msg = "Laporan analisis performa harian Anda telah tersedia."
+            await db.user_notifications.insert_one({
+                "recipient_name": full_name, "period": "daily", "date_key": date_key, "read": False,
+                "message": msg, "created_at": now_iso,
+            })
+            _asyncio.get_event_loop().create_task(_fcm_by_full_name(
+                full_name, "📊 Laporan Performa Harian", msg, {"type": "performance_report"}
+            ))
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+# ── Auto-generate daily overall report at 17:00 WIB ──────────────────────────
+# Member daily AI reports are now triggered when the user submits their daily report
 async def auto_daily_ai_reports():
     if not ANTHROPIC_API_KEY:
         return
@@ -2355,46 +2435,117 @@ async def auto_daily_ai_reports():
     date_key = now_wib.strftime("%Y-%m-%d")
     now_iso = datetime.now(timezone.utc).isoformat()
     try:
-        tasks_today = await db.tasks.find({"date": {"$regex": f"^{date_key}"}}).to_list(1000)
-        artist_names = list({t.get("assignee") for t in tasks_today if t.get("assignee")})
+        existing_overall = await db.ai_reports.find_one({"type": "overall", "period": "daily", "date_key": date_key})
+        if not existing_overall:
+            tasks, period_orders, period_label = await _fetch_overall_data("daily", "")
+            prompt = _overall_prompt(tasks, period_orders, period_label)
+            text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 1100)
+            await db.ai_reports.replace_one(
+                {"type": "overall", "period": "daily", "date_key": date_key},
+                {"type": "overall", "target": "overall", "period": "daily", "date_key": date_key,
+                 "content": text, "is_auto": True, "generated_by": "system",
+                 "created_at": now_iso, "updated_at": now_iso},
+                upsert=True
+            )
+    except Exception:
+        pass
+
+# ── Auto-generate weekly AI reports — every Friday 12:00 WIB ─────────────────
+async def auto_weekly_ai_reports():
+    if not ANTHROPIC_API_KEY:
+        return
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    date_key = now_wib.strftime("%Y-%m-%d")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        tasks_week = await db.tasks.find({"date": {"$gte": (now_wib - timedelta(days=6)).strftime("%Y-%m-%d"), "$lte": date_key}}).to_list(2000)
+        artist_names = list({t.get("assignee") for t in tasks_week if t.get("assignee")})
         for name in artist_names:
-            existing = await db.ai_reports.find_one({"type": "member", "target": name, "period": "daily", "date_key": date_key})
+            existing = await db.ai_reports.find_one({"type": "member", "target": name, "period": "weekly", "date_key": date_key})
             if existing:
                 continue
             try:
-                tasks, period_orders, period_label = await _fetch_member_data(name, "daily", "")
+                tasks, period_orders, period_label = await _fetch_member_data(name, "weekly", "")
                 prompt = _member_prompt(name, tasks, period_orders, period_label)
                 text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 900)
                 await db.ai_reports.replace_one(
-                    {"type": "member", "target": name, "period": "daily", "date_key": date_key},
-                    {"type": "member", "target": name, "period": "daily", "date_key": date_key,
+                    {"type": "member", "target": name, "period": "weekly", "date_key": date_key},
+                    {"type": "member", "target": name, "period": "weekly", "date_key": date_key,
                      "content": text, "is_auto": True, "generated_by": "system",
                      "created_at": now_iso, "updated_at": now_iso},
                     upsert=True
                 )
                 try:
-                    _auto_msg = "Laporan performa harian Anda telah diperbarui secara otomatis."
-                    await db.user_notifications.insert_one({
-                        "recipient_name": name, "period": "daily", "date_key": date_key, "read": False,
-                        "message": _auto_msg,
-                        "created_at": now_iso,
-                    })
                     _asyncio.get_event_loop().create_task(_fcm_by_full_name(
-                        name, "📊 Laporan Performa", _auto_msg, {"type": "performance_report"}
+                        name, "📊 Laporan Mingguan", "Laporan analisis performa mingguan Anda telah tersedia.", {"type": "performance_report"}
                     ))
                 except Exception:
                     pass
             except Exception:
                 pass
-        existing_overall = await db.ai_reports.find_one({"type": "overall", "period": "daily", "date_key": date_key})
+        existing_overall = await db.ai_reports.find_one({"type": "overall", "period": "weekly", "date_key": date_key})
         if not existing_overall:
             try:
-                tasks, period_orders, period_label = await _fetch_overall_data("daily", "")
+                tasks, period_orders, period_label = await _fetch_overall_data("weekly", "")
                 prompt = _overall_prompt(tasks, period_orders, period_label)
                 text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 1100)
                 await db.ai_reports.replace_one(
-                    {"type": "overall", "period": "daily", "date_key": date_key},
-                    {"type": "overall", "target": "overall", "period": "daily", "date_key": date_key,
+                    {"type": "overall", "period": "weekly", "date_key": date_key},
+                    {"type": "overall", "target": "overall", "period": "weekly", "date_key": date_key,
+                     "content": text, "is_auto": True, "generated_by": "system",
+                     "created_at": now_iso, "updated_at": now_iso},
+                    upsert=True
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+# ── Auto-generate monthly AI reports — every 27th at 12:00 WIB ───────────────
+async def auto_monthly_ai_reports():
+    if not ANTHROPIC_API_KEY:
+        return
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    month = now_wib.strftime("%Y-%m")
+    date_key = now_wib.strftime("%Y-%m-%d")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        tasks_month = await db.tasks.find({"date": {"$regex": f"^{month}"}}).to_list(2000)
+        artist_names = list({t.get("assignee") for t in tasks_month if t.get("assignee")})
+        for name in artist_names:
+            existing = await db.ai_reports.find_one({"type": "member", "target": name, "period": "monthly", "date_key": month})
+            if existing:
+                continue
+            try:
+                tasks, period_orders, period_label = await _fetch_member_data(name, "monthly", month)
+                prompt = _member_prompt(name, tasks, period_orders, period_label)
+                text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 900)
+                await db.ai_reports.replace_one(
+                    {"type": "member", "target": name, "period": "monthly", "date_key": month},
+                    {"type": "member", "target": name, "period": "monthly", "date_key": month,
+                     "content": text, "is_auto": True, "generated_by": "system",
+                     "created_at": now_iso, "updated_at": now_iso},
+                    upsert=True
+                )
+                try:
+                    _asyncio.get_event_loop().create_task(_fcm_by_full_name(
+                        name, "📊 Laporan Bulanan", f"Laporan analisis performa bulanan {month} Anda telah tersedia.", {"type": "performance_report"}
+                    ))
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        existing_overall = await db.ai_reports.find_one({"type": "overall", "period": "monthly", "date_key": month})
+        if not existing_overall:
+            try:
+                tasks, period_orders, period_label = await _fetch_overall_data("monthly", month)
+                prompt = _overall_prompt(tasks, period_orders, period_label)
+                text = await _asyncio.get_event_loop().run_in_executor(None, _call_ai, prompt, 1100)
+                await db.ai_reports.replace_one(
+                    {"type": "overall", "period": "monthly", "date_key": month},
+                    {"type": "overall", "target": "overall", "period": "monthly", "date_key": month,
                      "content": text, "is_auto": True, "generated_by": "system",
                      "created_at": now_iso, "updated_at": now_iso},
                     upsert=True
@@ -2588,6 +2739,8 @@ async def submit_daily_report(body: DailyReportBody, current_user: dict = Depend
         doc["created_at"] = now_iso
         ins = await db.daily_reports.insert_one(doc)
         result = await db.daily_reports.find_one({"_id": ins.inserted_id})
+    # Trigger AI daily report generation in background using the report content
+    _asyncio.get_event_loop().create_task(_generate_daily_ai_after_report(full_name, doc))
     return {"report": _fmt_daily_report(result)}
 
 @app.get("/daily-reports/today-status")

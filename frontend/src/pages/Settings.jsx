@@ -93,8 +93,16 @@ function ProfileSection({ user }) {
           <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
             <User size={13} /> Nama Lengkap
           </label>
-          <input value={profile.full_name} onChange={set("full_name")}
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+          {user?.role === "admin" ? (
+            <input value={profile.full_name} onChange={set("full_name")}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+          ) : (
+            <>
+              <input value={profile.full_name} readOnly
+                className="w-full rounded-2xl border border-slate-100 bg-slate-100 px-4 py-2.5 text-sm text-slate-500 cursor-not-allowed" />
+              <p className="mt-1 text-[11px] text-slate-400">Nama tidak bisa diubah sendiri. Hubungi admin.</p>
+            </>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">

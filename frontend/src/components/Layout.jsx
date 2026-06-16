@@ -14,9 +14,9 @@ const NAV_SECTIONS = [
   {
     label: "Main Menu",
     items: [
-      { to: "/dashboard",    label: "Dashboard",    icon: LayoutDashboard, roles: ["admin", "pm"] },
-      { to: "/daily-chat",   label: "Daily Chat",   icon: MessageSquare,   roles: ["admin", "pm"] },
-      { to: "/orders",       label: "Orders",       icon: ClipboardList,   roles: ["admin", "pm"] },
+      { to: "/dashboard",    label: "Dashboard",    icon: LayoutDashboard, roles: ["admin"] },
+      { to: "/daily-chat",   label: "Daily Chat",   icon: MessageSquare,   roles: ["admin"] },
+      { to: "/orders",       label: "Orders",       icon: ClipboardList,   roles: ["admin"] },
       { to: "/board",        label: "Board",        icon: Kanban,          roles: ["admin", "pm", "talent"] },
       { to: "/todo",          label: "To Do",         icon: CheckSquare,  roles: ["admin", "pm", "talent"] },
       { to: "/daily-report",  label: "Daily Report",  icon: BookOpen,     roles: ["admin", "pm", "talent"] },
@@ -26,9 +26,9 @@ const NAV_SECTIONS = [
   {
     label: "Keuangan",
     items: [
-      { to: "/invoice",      label: "Invoice",      icon: FileText,        roles: ["admin", "pm"] },
-      { to: "/earnings",     label: "Earnings",     icon: DollarSign,      roles: ["admin", "pm"] },
-      { to: "/freelance",    label: "Freelance",    icon: Users,           roles: ["admin", "pm"] },
+      { to: "/invoice",      label: "Invoice",      icon: FileText,        roles: ["admin"] },
+      { to: "/earnings",     label: "Earnings",     icon: DollarSign,      roles: ["admin"] },
+      { to: "/freelance",    label: "Freelance",    icon: Users,           roles: ["admin"] },
     ],
   },
   {
@@ -135,17 +135,19 @@ export default function Layout({ children }) {
         )}
       </nav>
 
-      <div className="border-t border-slate-100 dark:border-white/[0.06] px-4 py-3">
-        <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-white/5 px-3 py-2">
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tampilkan harga</span>
-          <button
-            onClick={() => setCurrency(currency === "IDR" ? "USD" : "IDR")}
-            className="rounded-lg bg-white dark:bg-white/10 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-100 dark:hover:bg-white/20 transition"
-          >
-            {currency}
-          </button>
+      {role === "admin" && (
+        <div className="border-t border-slate-100 dark:border-white/[0.06] px-4 py-3">
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-white/5 px-3 py-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tampilkan harga</span>
+            <button
+              onClick={() => setCurrency(currency === "IDR" ? "USD" : "IDR")}
+              className="rounded-lg bg-white dark:bg-white/10 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-100 dark:hover:bg-white/20 transition"
+            >
+              {currency}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="border-t border-slate-100 dark:border-white/[0.06] px-4 py-4">
         <div className="flex items-center justify-between gap-3">
