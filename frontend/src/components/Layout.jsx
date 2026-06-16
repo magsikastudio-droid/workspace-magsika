@@ -156,9 +156,10 @@ export default function Layout({ children }) {
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
+  const effectiveRole = user?.is_superadmin ? "superadmin" : role;
   const visibleSections = NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => item.roles.includes(role)),
+    items: section.items.filter((item) => item.roles.includes(role) || item.roles.includes(effectiveRole)),
   })).filter((section) => section.items.length > 0);
 
   const allVisibleItems = visibleSections.flatMap((s) => s.items);

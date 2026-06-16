@@ -37,7 +37,8 @@ import { useAuth } from "./context/AuthContext";
 function RoleGuard({ allowedRoles, children }) {
   const { user } = useAuth();
   const role = (user?.role || "talent").toLowerCase();
-  if (!allowedRoles.includes(role)) {
+  const effectiveRole = user?.is_superadmin ? "superadmin" : role;
+  if (!allowedRoles.includes(role) && !allowedRoles.includes(effectiveRole)) {
     return <Navigate to="/todo" replace />;
   }
   return children;
