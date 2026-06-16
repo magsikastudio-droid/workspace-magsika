@@ -526,6 +526,7 @@ async def on_startup():
         scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
         scheduler.add_job(carry_forward_tasks, CronTrigger(hour=0, minute=1, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_daily_ai_reports, CronTrigger(hour=17, minute=0, timezone="Asia/Jakarta"))
+        scheduler.add_job(notify_unsubmitted_daily_reports, CronTrigger(hour=16, minute=30, timezone="Asia/Jakarta"))
         scheduler.start()
 
 
@@ -2545,3 +2546,108 @@ async def ai_overall_insight(month: str, period: str = "monthly", current_user: 
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+
+
+# ── Daily Reports ─────────────────────────────────────────────────────────────
+
+class DailyReportBody(BaseModel):
+    work_done: str = ""
+    feelings: str = ""
+    obstacles: str = ""
+    notes: str = ""
+
+def _fmt_daily_report(doc: dict) -> dict:
+    d = {k: v for k, v in doc.items() if k != "_id"}
+    d["id"] = str(doc["_id"])
+    return d
+
+@app.post("/daily-reports")
+async def submit_daily_report(body: DailyReportBody, current_user: dict = Depends(get_current_user)):
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    date_key = now_wib.strftime("%Y-%m-%d")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    username = current_user.get("username", "")
+    full_name = current_user.get("full_name", username)
+    doc = {
+        "username": username,
+        "full_name": full_name,
+        "date": date_key,
+        "work_done": body.work_done,
+        "feelings": body.feelings,
+        "obstacles": body.obstacles,
+        "notes": body.notes,
+        "updated_at": now_iso,
+    }
+    existing = await db.daily_reports.find_one({"username": username, "date": date_key})
+    if existing:
+        await db.daily_reports.update_one({"_id": existing["_id"]}, {"$set": doc})
+        doc["created_at"] = existing.get("created_at", now_iso)
+        result = await db.daily_reports.find_one({"_id": existing["_id"]})
+    else:
+        doc["created_at"] = now_iso
+        ins = await db.daily_reports.insert_one(doc)
+        result = await db.daily_reports.find_one({"_id": ins.inserted_id})
+    return {"report": _fmt_daily_report(result)}
+
+@app.get("/daily-reports/today-status")
+async def get_today_daily_status(current_user: dict = Depends(get_current_user)):
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    date_key = now_wib.strftime("%Y-%m-%d")
+    username = current_user.get("username", "")
+    doc = await db.daily_reports.find_one({"username": username, "date": date_key})
+    return {"submitted": doc is not None, "date": date_key}
+
+@app.get("/daily-reports")
+async def list_daily_reports(
+    date: Optional[str] = None,
+    talent_name: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    role = current_user.get("role")
+    query: Dict[str, Any] = {}
+    if role == "talent":
+        query["username"] = current_user.get("username", "")
+    else:
+        if talent_name:
+            query["full_name"] = talent_name
+    if date:
+        query["date"] = date
+    docs = await db.daily_reports.find(query).sort("date", -1).limit(100).to_list(100)
+    return {"reports": [_fmt_daily_report(d) for d in docs]}
+
+async def notify_unsubmitted_daily_reports():
+    from datetime import timedelta
+    now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    date_key = now_wib.strftime("%Y-%m-%d")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        talent_users = await db.users.find({"role": "talent"}).to_list(200)
+        for u in talent_users:
+            username = u.get("username", "")
+            full_name = u.get("full_name", username)
+            submitted = await db.daily_reports.find_one({"username": username, "date": date_key})
+            if not submitted:
+                try:
+                    await db.user_notifications.insert_one({
+                        "username": username,
+                        "title": "⚠️ Daily Report Belum Disubmit",
+                        "message": f"Kamu belum mengisi daily report hari ini ({date_key}). Isi sebelum pukul 17.00 WIB.",
+                        "type": "daily_report_reminder",
+                        "is_read": False,
+                        "created_at": now_iso,
+                    })
+                except Exception:
+                    pass
+                try:
+                    _asyncio.get_event_loop().create_task(_fcm_by_full_name(
+                        full_name,
+                        "📋 Daily Report Belum Diisi",
+                        "Kamu belum mengisi daily report hari ini. Isi sekarang!",
+                        {"type": "daily_report_reminder"},
+                    ))
+                except Exception:
+                    pass
+    except Exception:
+        pass

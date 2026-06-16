@@ -4,8 +4,8 @@ import { api } from "../lib/api";
 import { useOrders } from "../context/OrdersContext";
 import { useAuth } from "../context/AuthContext";
 import {
-  ArrowLeft, Bot, CheckCircle2, ChevronLeft, ChevronRight,
-  Loader2, Pencil, Search, Sparkles, Trash2,
+  ArrowLeft, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  History, Loader2, Pencil, Search, Sparkles, Trash2,
 } from "lucide-react";
 import { normalizeStatus } from "../lib/constants";
 import { monthLabel } from "../lib/format";
@@ -112,6 +112,9 @@ export default function TeamMemberPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
+  const [reportHistory, setReportHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [expandedHistId, setExpandedHistId] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -167,6 +170,17 @@ export default function TeamMemberPage() {
       .catch(() => {})
       .finally(() => setReportLoading(false));
   }, [artistName, aiPeriod, monthStr, isAdminOrPM]);
+
+  // Load AI report history
+  useEffect(() => {
+    if (!isAdminOrPM) return;
+    setReportHistory([]);
+    setShowHistory(false);
+    setExpandedHistId(null);
+    api.get("/ai/reports/history", { params: { type: "member", target: artistName, period: aiPeriod } })
+      .then((r) => setReportHistory(r.data.reports || []))
+      .catch(() => {});
+  }, [artistName, aiPeriod, isAdminOrPM]);
 
   const prevMonth = () => {
     if (selMonth === 0) { setSelYear((y) => y - 1); setSelMonth(11); }
@@ -500,7 +514,7 @@ export default function TeamMemberPage() {
               </div>
 
               {/* Report body */}
-              <div className="px-5 py-4">
+              <div className="px-5 py-4 max-h-[60vh] overflow-y-auto">
                 {reportLoading ? (
                   <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
                     <Loader2 size={16} className="animate-spin text-violet-400" />
@@ -600,6 +614,45 @@ export default function TeamMemberPage() {
                   </div>
                 )}
               </div>
+
+              {/* History section */}
+              {reportHistory.length > 0 && (
+                <div className="border-t border-slate-100 px-5 py-3">
+                  <button
+                    onClick={() => setShowHistory((v) => !v)}
+                    className="flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-violet-600 transition w-full"
+                  >
+                    <History size={13} />
+                    Riwayat Laporan ({reportHistory.length})
+                    <ChevronDown size={13} className={`ml-auto transition-transform ${showHistory ? "rotate-180" : ""}`} />
+                  </button>
+                  {showHistory && (
+                    <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
+                      {reportHistory.map((h) => (
+                        <div key={h.id} className="rounded-xl border border-slate-100 bg-slate-50 overflow-hidden">
+                          <button
+                            onClick={() => setExpandedHistId(expandedHistId === h.id ? null : h.id)}
+                            className="flex items-center justify-between w-full px-3 py-2 text-left hover:bg-slate-100 transition"
+                          >
+                            <div>
+                              <p className="text-xs font-semibold text-slate-700">{fmtDateKey(h.date_key, h.period)}</p>
+                              <p className="text-[10px] text-slate-400">{h.is_auto ? "Auto-generated" : `Oleh ${h.generated_by}`}</p>
+                            </div>
+                            <ChevronDown size={12} className={`text-slate-400 transition-transform shrink-0 ${expandedHistId === h.id ? "rotate-180" : ""}`} />
+                          </button>
+                          {expandedHistId === h.id && (
+                            <div className="border-t border-slate-100 px-3 py-2 text-xs text-slate-600 leading-relaxed max-h-48 overflow-y-auto">
+                              {cleanReportContent(h.content).split("\n").map((line, i) => (
+                                <p key={i} className="mb-0.5">{line || <br />}</p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

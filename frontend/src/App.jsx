@@ -29,6 +29,7 @@ import Schedule from "./pages/Schedule";
 import Notifications from "./pages/Notifications";
 import RencanaStrategis from "./pages/RencanaStrategis";
 import TeamMemberPage from "./pages/TeamMemberPage";
+import DailyReport from "./pages/DailyReport";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "./context/AuthContext";
 
@@ -74,6 +75,7 @@ function App() {
                               <Route path="/todo" element={<Todo />} />
                               <Route path="/performance" element={<Performance />} />
                               <Route path="/performance/team/:artistName" element={<TeamMemberPage />} />
+                              <Route path="/daily-report" element={<DailyReport />} />
                               <Route path="/pengumuman" element={<Pengumuman />} />
                               <Route path="/schedule" element={<Schedule />} />
                               <Route path="/notifications" element={<RoleGuard allowedRoles={["admin","pm"]}><Notifications /></RoleGuard>} />
