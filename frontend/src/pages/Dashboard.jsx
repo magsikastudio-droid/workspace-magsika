@@ -14,7 +14,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
 
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // default bulan ini
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth()); // 0-indexed, Juni=5
 
   const availableYears = useMemo(() => {
     const years = new Set([now.getFullYear()]);
