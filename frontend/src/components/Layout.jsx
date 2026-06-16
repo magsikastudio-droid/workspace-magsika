@@ -28,6 +28,16 @@ const isAfterDeadlineLock = (h, m) => {
   const wibM = now.getUTCMinutes();
   return wibH > h || (wibH === h && wibM >= m);
 };
+const LOCK_MIN_CHARS = 100;
+const LockCharCount = ({ val }) => {
+  const n = (val || "").trim().length;
+  const ok = n >= LOCK_MIN_CHARS;
+  return (
+    <span className={`text-[10px] font-semibold tabular-nums ${ok ? "text-emerald-500" : "text-rose-400"}`}>
+      {n}/{LOCK_MIN_CHARS}
+    </span>
+  );
+};
 
 const NAV_SECTIONS = [
   {
@@ -100,9 +110,17 @@ export default function Layout({ children }) {
       .catch(() => setReportSubmitted(true));
   }, [user, role, deadline]);
 
+  const validateLock = (f) => {
+    const MIN = 100;
+    if (f.work_done.trim().length < MIN) { toast.error(`Pekerjaan minimal ${MIN} karakter (${f.work_done.trim().length}/${MIN})`); return false; }
+    if (f.obstacles.trim().length < MIN) { toast.error(`Kendala minimal ${MIN} karakter (${f.obstacles.trim().length}/${MIN})`); return false; }
+    if (f.notes.trim().length < MIN)     { toast.error(`Note minimal ${MIN} karakter (${f.notes.trim().length}/${MIN})`);     return false; }
+    return true;
+  };
+
   const handleLockSubmit = async (e) => {
     e.preventDefault();
-    if (!lockForm.work_done.trim()) { toast.error("Isi dulu pekerjaan hari ini"); return; }
+    if (!validateLock(lockForm)) return;
     setLockSubmitting(true);
     try {
       await api.post("/daily-reports", lockForm);
@@ -242,7 +260,10 @@ export default function Layout({ children }) {
             </div>
             <form onSubmit={handleLockSubmit} className="px-5 py-5 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Apa yang dikerjakan hari ini? *</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-600">Apa yang dikerjakan hari ini? *</label>
+                  <LockCharCount val={lockForm.work_done} />
+                </div>
                 <textarea
                   value={lockForm.work_done}
                   onChange={(e) => setLockForm((p) => ({ ...p, work_done: e.target.value }))}
@@ -263,7 +284,10 @@ export default function Layout({ children }) {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kendala hari ini</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-600">Kendala hari ini *</label>
+                  <LockCharCount val={lockForm.obstacles} />
+                </div>
                 <textarea
                   value={lockForm.obstacles}
                   onChange={(e) => setLockForm((p) => ({ ...p, obstacles: e.target.value }))}
@@ -272,7 +296,10 @@ export default function Layout({ children }) {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Note tambahan</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-600">Note tambahan *</label>
+                  <LockCharCount val={lockForm.notes} />
+                </div>
                 <textarea
                   value={lockForm.notes}
                   onChange={(e) => setLockForm((p) => ({ ...p, notes: e.target.value }))}
