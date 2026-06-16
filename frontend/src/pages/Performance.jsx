@@ -122,6 +122,9 @@ function TalentPerformance({ user }) {
   const [aiPeriod, setAiPeriod] = useState("daily");
   const [aiReport, setAiReport] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [myHistory, setMyHistory] = useState([]);
+  const [showMyHistory, setShowMyHistory] = useState(false);
+  const [expandedMyHistId, setExpandedMyHistId] = useState(null);
 
   useEffect(() => {
     api.get("/users/me").then((r) => setProfile(r.data?.user || null)).catch(() => {});
@@ -145,6 +148,13 @@ function TalentPerformance({ user }) {
       .catch(() => {})
       .finally(() => setAiLoading(false));
   }, [myName, aiPeriod, monthStr]);
+
+  useEffect(() => {
+    if (!myName) return;
+    api.get("/ai/reports/history", { params: { type: "member", target: myName, period: aiPeriod } })
+      .then((r) => setMyHistory(r.data?.reports || []))
+      .catch(() => {});
+  }, [myName, aiPeriod]);
 
   useEffect(() => {
     setLoading(true);
@@ -241,7 +251,7 @@ function TalentPerformance({ user }) {
           </div>
           <div className="flex items-center gap-1 rounded-xl border border-white/20 bg-white/10 p-1">
             {[{ value: "daily", label: "Harian" }, { value: "weekly", label: "Mingguan" }, { value: "monthly", label: "Bulanan" }].map(({ value, label }) => (
-              <button key={value} onClick={() => setAiPeriod(value)}
+              <button key={value} onClick={() => { setAiPeriod(value); setExpandedMyHistId(null); }}
                 className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${aiPeriod === value ? "bg-white text-violet-700 shadow-sm" : "text-white/80 hover:bg-white/10"}`}>
                 {label}
               </button>
@@ -250,7 +260,7 @@ function TalentPerformance({ user }) {
         </div>
         {aiReport && (
           <p className="mt-3 text-[11px] font-bold uppercase tracking-widest text-white/90">
-            Laporan Analisis Performa {displayName}, {fmtDateKey(aiReport.date_key, aiReport.period)}
+            {fmtDateKey(aiReport.date_key, aiReport.period)}
           </p>
         )}
       </div>
@@ -274,6 +284,42 @@ function TalentPerformance({ user }) {
           </div>
         )}
       </div>
+      {/* Riwayat laporan pribadi */}
+      {myHistory.length > 0 && (
+        <div className="border-t border-slate-100">
+          <button
+            onClick={() => setShowMyHistory((v) => !v)}
+            className="flex w-full items-center justify-between px-5 py-3 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition"
+          >
+            <span className="flex items-center gap-2"><Activity size={13} /> Riwayat ({myHistory.length})</span>
+            <ChevronRight size={13} className={`transition-transform ${showMyHistory ? "rotate-90" : ""}`} />
+          </button>
+          {showMyHistory && (
+            <div className="px-5 pb-4 space-y-2">
+              {myHistory.map((r) => (
+                <div key={r.id} className={`rounded-xl border text-xs transition ${r.id === aiReport?.id ? "border-violet-200 bg-violet-50/40" : "border-slate-100 bg-slate-50"}`}>
+                  <button className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left" onClick={() => setExpandedMyHistId(expandedMyHistId === r.id ? null : r.id)}>
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-semibold text-slate-800">{fmtDateKey(r.date_key, r.period)}</span>
+                        <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${r.is_auto ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700"}`}>{r.is_auto ? "Auto" : "Admin"}</span>
+                        {r.id === aiReport?.id && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">Terbaru</span>}
+                      </div>
+                      <p className="text-[10px] text-slate-400">{new Date(r.created_at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
+                    </div>
+                    <ChevronRight size={12} className={`shrink-0 text-slate-400 transition-transform ${expandedMyHistId === r.id ? "rotate-90" : ""}`} />
+                  </button>
+                  {expandedMyHistId === r.id && (
+                    <div className="border-t border-slate-100 px-3 py-3 space-y-0.5">
+                      {renderInsight(cleanReportContent(r.content))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -624,6 +670,10 @@ function AdminPerformance() {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
+  const [reportHistory, setReportHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [expandedHistId, setExpandedHistId] = useState(null);
   const isAdmin = user?.role === "admin";
 
   const goToArtist = useCallback((name) => {
@@ -680,6 +730,14 @@ function AdminPerformance() {
       .catch(() => {})
       .finally(() => setReportLoading(false));
   }, [aiPeriod, monthStr]);
+
+  useEffect(() => {
+    setHistoryLoading(true);
+    api.get("/ai/reports/history", { params: { type: "overall", period: aiPeriod } })
+      .then((r) => setReportHistory(r.data.reports || []))
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }, [aiPeriod]);
 
   useEffect(() => {
     setLoadingTasks(true);
@@ -845,6 +903,179 @@ function AdminPerformance() {
         <MetCard icon={Activity}    label="Tasks Selesai"  value={summary.artists.reduce((s,a)=>s+a.done,0)} sub={`dari ${summary.total_tasks} task total`} accent="border-l-emerald-500" iconBg="bg-emerald-50 text-emerald-600" />
         <MetCard icon={Clock}       label="Total Waktu"    value={fmtTime(summary.total_time)} sub="akumulasi timer semua artist" accent="border-l-sky-500" iconBg="bg-sky-50 text-sky-600" />
         <MetCard icon={Timer}       label="Avg Waktu/Project" value={avgTimePerProject > 0 ? fmtTime(avgTimePerProject) : "—"} sub={`dari ${orderTaskStats.filter(o=>o.time>0).length} project`} accent="border-l-amber-500" iconBg="bg-amber-50 text-amber-600" />
+      </div>
+
+      {/* AI Overall Report — posisi utama, mudah diakses */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 shrink-0">
+                <Bot size={18} className="text-white" />
+              </div>
+              <div>
+                <p className="font-bold text-white text-sm">Laporan Analisis Tim AI</p>
+                <p className="text-xs text-violet-200">Keseluruhan tim — oleh Claude AI</p>
+              </div>
+            </div>
+            {isAdmin && (
+              <button
+                onClick={generateReport}
+                disabled={generating}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/20 hover:bg-white/30 border border-white/20 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
+              >
+                {generating
+                  ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
+                  : <><Sparkles size={14} /> Generate Laporan</>
+                }
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1 w-fit rounded-xl border border-white/20 bg-white/10 p-1">
+            {[
+              { value: "daily", label: "Harian" },
+              { value: "weekly", label: "Mingguan" },
+              { value: "monthly", label: "Bulanan" },
+            ].map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => { setAiPeriod(value); setIsEditing(false); setExpandedHistId(null); }}
+                className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
+                  aiPeriod === value ? "bg-white text-violet-700 shadow-sm" : "text-white/70 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Body — laporan terbaru */}
+        <div className="px-6 py-5">
+          {reportLoading ? (
+            <div className="flex items-center gap-3 py-8 text-sm text-slate-400">
+              <Loader2 size={16} className="animate-spin text-violet-400" />
+              Memuat laporan...
+            </div>
+          ) : aiReport ? (
+            <>
+              <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <p className="text-xs font-semibold text-slate-700">{fmtDateKey(aiReport.date_key, aiReport.period)}</p>
+                  <p className="text-[10px] text-slate-400">
+                    {aiReport.is_auto ? "Auto-generated (sistem)" : `Dibuat oleh ${aiReport.generated_by}`}
+                    {" · "}{new Date(aiReport.created_at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}
+                  </p>
+                </div>
+                {isAdmin && !isEditing && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      onClick={() => { setEditContent(aiReport.content); setIsEditing(true); }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                    >
+                      <Pencil size={11} /> Edit
+                    </button>
+                    <button
+                      onClick={deleteReport}
+                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-50 transition"
+                    >
+                      <Trash2 size={11} /> Hapus
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isEditing ? (
+                <>
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    rows={14}
+                    className="w-full rounded-xl border border-violet-200 bg-violet-50/30 p-3 text-sm text-slate-700 outline-none focus:border-violet-400 resize-none leading-relaxed"
+                  />
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button onClick={() => setIsEditing(false)} className="rounded-xl border border-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition">Batal</button>
+                    <button onClick={saveEdit} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60 transition">
+                      {saving && <Loader2 size={12} className="animate-spin" />} Simpan
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-0.5">{renderInsight(aiReport.content)}</div>
+              )}
+            </>
+          ) : (
+            <div className="py-10 text-center">
+              <Sparkles size={28} className="mx-auto mb-3 text-violet-200" />
+              <p className="text-sm font-medium text-slate-500">Belum ada laporan</p>
+              <p className="text-xs text-slate-400 mt-1">
+                {aiPeriod === "daily" ? "Laporan harian dibuat otomatis jam 17.00 WIB." : "Klik Generate Laporan untuk membuat."}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Riwayat Laporan */}
+        {reportHistory.length > 0 && (
+          <div className="border-t border-slate-100">
+            <button
+              onClick={() => setShowHistory((v) => !v)}
+              className="flex w-full items-center justify-between px-6 py-3 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition"
+            >
+              <span className="flex items-center gap-2">
+                <Activity size={13} />
+                Riwayat Laporan ({reportHistory.length} laporan tersimpan)
+              </span>
+              <ChevronRight size={14} className={`transition-transform ${showHistory ? "rotate-90" : ""}`} />
+            </button>
+            {showHistory && (
+              <div className="px-6 pb-5 space-y-2">
+                {historyLoading ? (
+                  <div className="flex items-center gap-2 py-4 text-xs text-slate-400"><Loader2 size={13} className="animate-spin" /> Memuat riwayat...</div>
+                ) : (
+                  reportHistory.map((r) => (
+                    <div key={r.id} className={`rounded-2xl border transition ${r.id === aiReport?.id ? "border-violet-200 bg-violet-50/40" : "border-slate-100 bg-slate-50"}`}>
+                      <button
+                        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                        onClick={() => setExpandedHistId(expandedHistId === r.id ? null : r.id)}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-slate-800">{fmtDateKey(r.date_key, r.period)}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${r.is_auto ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700"}`}>
+                              {r.is_auto ? "Auto" : r.generated_by}
+                            </span>
+                            {r.id === aiReport?.id && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Terbaru</span>}
+                          </div>
+                          <p className="mt-0.5 text-[10px] text-slate-400">
+                            {new Date(r.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                          </p>
+                          {expandedHistId !== r.id && (
+                            <p className="mt-1 text-xs text-slate-500 line-clamp-2">{r.content?.replace(/\*\*/g, "").slice(0, 150)}...</p>
+                          )}
+                        </div>
+                        <ChevronRight size={13} className={`shrink-0 text-slate-400 transition-transform ${expandedHistId === r.id ? "rotate-90" : ""}`} />
+                      </button>
+                      {expandedHistId === r.id && (
+                        <div className="border-t border-slate-100 px-4 py-3 space-y-0.5">
+                          {renderInsight(cleanReportContent(r.content))}
+                          {isAdmin && (
+                            <button
+                              onClick={() => { if (window.confirm("Hapus laporan ini dari riwayat?")) api.delete(`/ai/reports/${r.id}`).then(() => { setReportHistory((h) => h.filter((x) => x.id !== r.id)); if (aiReport?.id === r.id) setAiReport(null); toast.success("Laporan dihapus."); }).catch(() => toast.error("Gagal menghapus.")); }}
+                              className="mt-2 inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-50 transition"
+                            >
+                              <Trash2 size={11} /> Hapus dari Riwayat
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main grid */}
@@ -1065,140 +1296,6 @@ function AdminPerformance() {
 
       <PipelineHealth pipeline={pipeline} />
       <AllTimeSection orders={orders} formatMoney={formatMoney} onSelectArtist={goToArtist} />
-
-      {/* AI Overall Report */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/20 shrink-0">
-                <Bot size={18} className="text-white" />
-              </div>
-              <div>
-                <p className="font-bold text-white text-sm">Laporan Analisis Tim AI</p>
-                <p className="text-xs text-violet-200">Keseluruhan tim — oleh Claude AI</p>
-              </div>
-            </div>
-            {isAdmin && !aiReport && !reportLoading && (
-              <button
-                onClick={generateReport}
-                disabled={generating}
-                className="inline-flex items-center gap-2 rounded-xl bg-white/20 hover:bg-white/30 border border-white/20 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 transition"
-              >
-                {generating
-                  ? <><Loader2 size={14} className="animate-spin" /> Generating...</>
-                  : <><Sparkles size={14} /> Generate Laporan</>
-                }
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-1 w-fit rounded-xl border border-white/20 bg-white/10 p-1">
-            {[
-              { value: "daily", label: "Harian" },
-              { value: "weekly", label: "Mingguan" },
-              { value: "monthly", label: "Bulanan" },
-            ].map(({ value, label }) => (
-              <button
-                key={value}
-                onClick={() => { setAiPeriod(value); setIsEditing(false); }}
-                className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
-                  aiPeriod === value ? "bg-white text-violet-700 shadow-sm" : "text-white/70 hover:text-white"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="px-6 py-5">
-          {reportLoading ? (
-            <div className="flex items-center gap-3 py-8 text-sm text-slate-400">
-              <Loader2 size={16} className="animate-spin text-violet-400" />
-              Memuat laporan...
-            </div>
-          ) : aiReport ? (
-            <>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-[10px] text-slate-400">
-                    {aiReport.is_auto ? "Auto-generated (sistem)" : `Dibuat oleh ${aiReport.generated_by}`}
-                  </p>
-                  <p className="text-[10px] text-slate-400">{aiReport.date_key}</p>
-                </div>
-                {isAdmin && !isEditing && (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => { setEditContent(aiReport.content); setIsEditing(true); }}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
-                    >
-                      <Pencil size={11} /> Edit
-                    </button>
-                    <button
-                      onClick={deleteReport}
-                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-500 hover:bg-rose-50 transition"
-                    >
-                      <Trash2 size={11} /> Hapus
-                    </button>
-                    <button
-                      onClick={generateReport}
-                      disabled={generating}
-                      className="inline-flex items-center gap-1 rounded-lg border border-violet-200 px-2.5 py-1 text-xs font-semibold text-violet-600 hover:bg-violet-50 disabled:opacity-60 transition"
-                    >
-                      {generating ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                      Perbarui
-                    </button>
-                  </div>
-                )}
-              </div>
-              {isEditing ? (
-                <>
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    rows={14}
-                    className="w-full rounded-xl border border-violet-200 bg-violet-50/30 p-3 text-sm text-slate-700 outline-none focus:border-violet-400 resize-none leading-relaxed"
-                  />
-                  <div className="mt-3 flex justify-end gap-2">
-                    <button
-                      onClick={() => setIsEditing(false)}
-                      className="rounded-xl border border-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
-                    >
-                      Batal
-                    </button>
-                    <button
-                      onClick={saveEdit}
-                      disabled={saving}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60 transition"
-                    >
-                      {saving && <Loader2 size={12} className="animate-spin" />}
-                      Simpan
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-0.5">
-                  {renderInsight(aiReport.content)}
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="py-10 text-center">
-              <Sparkles size={28} className="mx-auto mb-3 text-violet-200" />
-              <p className="text-sm font-medium text-slate-500">Belum ada laporan</p>
-              <p className="text-xs text-slate-400 mt-1">
-                {aiPeriod === "daily"
-                  ? "Laporan harian dibuat otomatis jam 17.00 WIB."
-                  : isAdmin
-                    ? "Pilih periode lalu klik Generate Laporan."
-                    : "Laporan akan dibuat oleh admin."}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

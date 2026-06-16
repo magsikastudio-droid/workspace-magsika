@@ -2226,7 +2226,8 @@ async def get_member_report(name: str, period: str = "monthly", month: str = "",
     if role not in ["admin", "pm"] and current_user.get("full_name") != name:
         raise HTTPException(status_code=403, detail="Forbidden")
     date_key = _current_date_key(period, month)
-    doc = await db.ai_reports.find_one({"type": "member", "target": name, "period": period, "date_key": date_key})
+    docs = await db.ai_reports.find({"type": "member", "target": name, "period": period, "date_key": date_key}).sort("created_at", -1).limit(1).to_list(1)
+    doc = docs[0] if docs else None
     return {"report": _fmt_report(doc) if doc else None}
 
 # ── POST generate + save member report (admin only) ───────────────────────────
@@ -2247,7 +2248,7 @@ async def generate_member_report(name: str, period: str = "monthly", month: str 
     doc = {"type": "member", "target": name, "period": period, "date_key": date_key,
            "content": text, "is_auto": False, "generated_by": current_user.get("username", "admin"),
            "created_at": now, "updated_at": now}
-    await db.ai_reports.replace_one({"type": "member", "target": name, "period": period, "date_key": date_key}, doc, upsert=True)
+    await db.ai_reports.insert_one(doc)
     _period_id = {"daily": "harian", "weekly": "mingguan", "monthly": "bulanan"}
     try:
         _notif_msg = f"Laporan performa {_period_id.get(period, period)} Anda telah diperbarui oleh admin."
@@ -2261,8 +2262,7 @@ async def generate_member_report(name: str, period: str = "monthly", month: str 
         ))
     except Exception:
         pass
-    result = await db.ai_reports.find_one({"type": "member", "target": name, "period": period, "date_key": date_key})
-    return {"report": _fmt_report(result)}
+    return {"report": _fmt_report(doc)}
 
 # ── GET saved overall report ──────────────────────────────────────────────────
 @app.get("/ai/reports/overall")
@@ -2270,7 +2270,8 @@ async def get_overall_report(period: str = "monthly", month: str = "", current_u
     if current_user.get("role") not in ["admin", "pm"]:
         raise HTTPException(status_code=403, detail="Forbidden")
     date_key = _current_date_key(period, month)
-    doc = await db.ai_reports.find_one({"type": "overall", "period": period, "date_key": date_key})
+    docs = await db.ai_reports.find({"type": "overall", "period": period, "date_key": date_key}).sort("created_at", -1).limit(1).to_list(1)
+    doc = docs[0] if docs else None
     return {"report": _fmt_report(doc) if doc else None}
 
 # ── POST generate + save overall report (admin only) ─────────────────────────
@@ -2291,9 +2292,8 @@ async def generate_overall_report(period: str = "monthly", month: str = "", curr
     doc = {"type": "overall", "target": "overall", "period": period, "date_key": date_key,
            "content": text, "is_auto": False, "generated_by": current_user.get("username", "admin"),
            "created_at": now, "updated_at": now}
-    await db.ai_reports.replace_one({"type": "overall", "period": period, "date_key": date_key}, doc, upsert=True)
-    result = await db.ai_reports.find_one({"type": "overall", "period": period, "date_key": date_key})
-    return {"report": _fmt_report(result)}
+    await db.ai_reports.insert_one(doc)
+    return {"report": _fmt_report(doc)}
 
 # ── PUT edit report content (admin only) ─────────────────────────────────────
 class UpdateReportBody(BaseModel):
@@ -2322,6 +2322,28 @@ async def delete_ai_report(report_id: str, current_user: dict = Depends(get_curr
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan.")
     return {"ok": True}
+
+# ── GET report history ───────────────────────────────────────────────────────
+@app.get("/ai/reports/history")
+async def get_report_history(
+    type: str = "overall",
+    target: Optional[str] = None,
+    period: Optional[str] = None,
+    limit: int = 30,
+    current_user: dict = Depends(get_current_user),
+):
+    role = current_user.get("role")
+    query: Dict[str, Any] = {"type": type}
+    if type == "member":
+        if not target:
+            target = current_user.get("full_name", "")
+        if role not in ["admin", "pm"] and current_user.get("full_name") != target:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        query["target"] = target
+    if period:
+        query["period"] = period
+    docs = await db.ai_reports.find(query).sort("created_at", -1).limit(limit).to_list(limit)
+    return {"reports": [_fmt_report(d) for d in docs]}
 
 # ── Auto-generate daily reports at 17:00 WIB ─────────────────────────────────
 async def auto_daily_ai_reports():
