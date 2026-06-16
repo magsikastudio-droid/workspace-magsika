@@ -5,10 +5,29 @@ import {
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
+  Send, Loader2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { api } from "../lib/api";
+import { toast } from "sonner";
+
+const FEELINGS_LOCK = [
+  { value: "Semangat", emoji: "😊", active: "border-emerald-400 bg-emerald-50 text-emerald-700" },
+  { value: "Biasa",    emoji: "😐", active: "border-amber-400 bg-amber-50 text-amber-700"    },
+  { value: "Lelah",    emoji: "😔", active: "border-rose-400 bg-rose-50 text-rose-700"       },
+];
+
+const todayStrLock = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
+const isAfterDeadlineLock = (h, m) => {
+  const now = new Date();
+  const wibH = (now.getUTCHours() + 7) % 24;
+  const wibM = now.getUTCMinutes();
+  return wibH > h || (wibH === h && wibM >= m);
+};
 
 const NAV_SECTIONS = [
   {
@@ -59,6 +78,44 @@ export default function Layout({ children }) {
   const location = useLocation();
 
   const role = user?.role || "talent";
+
+  // Daily report lock (talent + pm)
+  const [deadline, setDeadline] = useState({ hour: 16, minute: 30 });
+  const [reportSubmitted, setReportSubmitted] = useState(true);
+  const [lockForm, setLockForm] = useState({ work_done: "", feelings: "Semangat", obstacles: "", notes: "" });
+  const [lockSubmitting, setLockSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!user || !["talent", "pm"].includes(role)) return;
+    api.get("/settings/daily-report-deadline")
+      .then((r) => setDeadline({ hour: r.data.hour ?? 16, minute: r.data.minute ?? 30 }))
+      .catch(() => {});
+  }, [user, role]);
+
+  useEffect(() => {
+    if (!user || !["talent", "pm"].includes(role)) return;
+    if (!isAfterDeadlineLock(deadline.hour, deadline.minute)) { setReportSubmitted(true); return; }
+    api.get("/daily-reports/today-status")
+      .then((r) => setReportSubmitted(r.data.submitted))
+      .catch(() => setReportSubmitted(true));
+  }, [user, role, deadline]);
+
+  const handleLockSubmit = async (e) => {
+    e.preventDefault();
+    if (!lockForm.work_done.trim()) { toast.error("Isi dulu pekerjaan hari ini"); return; }
+    setLockSubmitting(true);
+    try {
+      await api.post("/daily-reports", lockForm);
+      setReportSubmitted(true);
+      toast.success("Daily report berhasil disubmit!");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal submit daily report.");
+    } finally {
+      setLockSubmitting(false);
+    }
+  };
+
+  const isLocked = ["talent", "pm"].includes(role) && isAfterDeadlineLock(deadline.hour, deadline.minute) && reportSubmitted === false;
 
   useEffect(() => {
     if (!user) return;
@@ -167,6 +224,74 @@ export default function Layout({ children }) {
       </div>
     </div>
   );
+
+  if (isLocked) {
+    const deadlineLabel = `${String(deadline.hour).padStart(2,"0")}:${String(deadline.minute).padStart(2,"0")}`;
+    return (
+      <div className="fixed inset-0 overflow-y-auto bg-gradient-to-br from-violet-950 via-violet-900 to-slate-900 flex items-start justify-center py-8 px-4">
+        <div className="w-full max-w-lg">
+          <div className="text-center mb-6">
+            <img src="/logo.png" alt="Magsika Studio" className="h-10 w-auto object-contain mx-auto mb-4 opacity-80" />
+            <h1 className="text-2xl font-bold text-white">Akses Terkunci</h1>
+            <p className="text-violet-300 text-sm mt-1">Sudah pukul {deadlineLabel} WIB — isi daily report untuk melanjutkan</p>
+          </div>
+          <div className="rounded-[2rem] bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-violet-600 to-violet-700 px-5 py-4">
+              <h2 className="text-white font-bold text-lg">Daily Report Hari Ini</h2>
+              <p className="text-violet-200 text-xs mt-0.5">{todayStrLock()}</p>
+            </div>
+            <form onSubmit={handleLockSubmit} className="px-5 py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Apa yang dikerjakan hari ini? *</label>
+                <textarea
+                  value={lockForm.work_done}
+                  onChange={(e) => setLockForm((p) => ({ ...p, work_done: e.target.value }))}
+                  rows={6} required
+                  placeholder="Ceritakan detail pekerjaan yang sudah diselesaikan hari ini..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-y transition"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Perasaan hari ini</label>
+                <div className="flex gap-2">
+                  {FEELINGS_LOCK.map((f) => (
+                    <button key={f.value} type="button" onClick={() => setLockForm((p) => ({ ...p, feelings: f.value }))}
+                      className={`flex items-center gap-1.5 rounded-xl border-2 px-4 py-2 text-sm font-semibold transition ${lockForm.feelings === f.value ? f.active : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"}`}>
+                      {f.emoji} {f.value}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kendala hari ini</label>
+                <textarea
+                  value={lockForm.obstacles}
+                  onChange={(e) => setLockForm((p) => ({ ...p, obstacles: e.target.value }))}
+                  rows={4} placeholder="Adakah hambatan atau tantangan yang dihadapi?"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-y transition"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Note tambahan</label>
+                <textarea
+                  value={lockForm.notes}
+                  onChange={(e) => setLockForm((p) => ({ ...p, notes: e.target.value }))}
+                  rows={3} placeholder="Informasi lain yang ingin disampaikan..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-y transition"
+                />
+              </div>
+              <button type="submit" disabled={lockSubmitting}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-600 hover:bg-violet-700 px-6 py-3 text-sm font-bold text-white disabled:opacity-60 transition">
+                {lockSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                {lockSubmitting ? "Mengirim..." : "Submit Daily Report"}
+              </button>
+            </form>
+          </div>
+          <p className="text-center text-violet-400 text-xs mt-4">Setelah submit, semua menu akan terbuka kembali.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 flex overflow-hidden bg-slate-50 dark:bg-[#0f0f0f]">
