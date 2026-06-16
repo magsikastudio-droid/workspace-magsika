@@ -79,7 +79,7 @@ const NAV_SECTIONS = [
   {
     label: "Admin",
     items: [
-      { to: "/lokasi-tim", label: "Lokasi Tim", icon: MapPin, roles: ["admin"] },
+      { to: "/lokasi-tim", label: "Lokasi Tim", icon: MapPin, roles: ["superadmin"] },
     ],
   },
 ];
