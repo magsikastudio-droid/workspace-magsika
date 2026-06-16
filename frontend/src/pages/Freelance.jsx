@@ -91,8 +91,48 @@ export default function Freelance() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  /* Auto-projects: orders with freelance contribution not yet recorded manually */
+  const autoProjectsMap = useMemo(() => {
+    const result = {};
+    artists.forEach((artist) => {
+      const linkedOrderIds = new Set(
+        projects.filter((p) => p.artist_id === artist.id && p.order_id).map((p) => p.order_id)
+      );
+      const autoProjs = [];
+      orders.forEach((o) => {
+        if (linkedOrderIds.has(o.id)) return;
+        const contrib = (o.artist_contributions || []).find(
+          (c) => c.type === "Freelance" && c.name?.trim() === artist.name?.trim()
+        );
+        if (!contrib) return;
+        const pct = Number(contrib.percent) > 0 ? Number(contrib.percent) : 100;
+        autoProjs.push({
+          id: `auto_${o.id}_${artist.id}`,
+          artist_id: artist.id,
+          project_name: o.project || "",
+          fee: ((o.fee_freelance || 0) * pct) / 100,
+          dp_amount: 0,
+          dp_date: null,
+          pelunasan_date: null,
+          status_bayar: "Belum Lunas",
+          notes: o.folder_code || "",
+          order_id: o.id,
+          is_auto: true,
+          _order: o,
+        });
+      });
+      result[artist.id] = autoProjs;
+    });
+    return result;
+  }, [artists, projects, orders]);
+
+  const allProjectsForArtist = (artistId) => [
+    ...projects.filter((p) => p.artist_id === artistId),
+    ...(autoProjectsMap[artistId] || []),
+  ];
+
   const artistProjects = (artistId) => {
-    const all = projects.filter((p) => p.artist_id === artistId);
+    const all = allProjectsForArtist(artistId);
     if (monthFilter === "all") return all;
     return all.filter((p) => {
       const linked = p.order_id ? orders.find((o) => o.id === p.order_id) : null;
@@ -106,22 +146,21 @@ export default function Freelance() {
 
   const availableMonths = useMemo(() => {
     const set = new Set();
-    projects.forEach((p) => {
+    [...projects, ...Object.values(autoProjectsMap).flat()].forEach((p) => {
       const linked = p.order_id ? orders.find((o) => o.id === p.order_id) : null;
       const date = linked?.order_date || p.dp_date || p.pelunasan_date;
       if (date) set.add(date.slice(0, 7));
     });
     return [...set].sort().reverse();
-  }, [projects, orders]);
+  }, [projects, autoProjectsMap, orders]);
 
-  /* Global summary — always all-time, ignores monthFilter */
-  const allTimeArtistProjects = (artistId) => projects.filter((p) => p.artist_id === artistId);
-  const globalTotal = artists.reduce((s, a) => s + allTimeArtistProjects(a.id).reduce((t, p) => t + (p.fee || 0), 0), 0);
-  const globalPaid  = artists.reduce((s, a) => s + allTimeArtistProjects(a.id).filter((p) => p.status_bayar === "Lunas").reduce((t, p) => t + (p.fee || 0), 0), 0);
+  /* Global summary — all-time, ignores monthFilter */
+  const globalTotal = artists.reduce((s, a) => s + allProjectsForArtist(a.id).reduce((t, p) => t + (p.fee || 0), 0), 0);
+  const globalPaid  = artists.reduce((s, a) => s + allProjectsForArtist(a.id).filter((p) => p.status_bayar === "Lunas").reduce((t, p) => t + (p.fee || 0), 0), 0);
   const globalOutstanding = (() => {
     let out = 0;
     artists.forEach((a) => {
-      allTimeArtistProjects(a.id).filter((p) => p.status_bayar !== "Lunas").forEach((p) => {
+      allProjectsForArtist(a.id).filter((p) => p.status_bayar !== "Lunas").forEach((p) => {
         out += (p.fee || 0) - (p.dp_amount || 0);
       });
     });
@@ -197,9 +236,24 @@ export default function Freelance() {
     } catch { toast.error("Gagal menghapus"); }
   };
 
-  const openAddProject = (artistId) => {
+  const openAddProject = (artistId, prefillOrder = null) => {
     setEditProject(null);
-    setProjectForm(EMPTY_PROJECT);
+    if (prefillOrder) {
+      const artist = artists.find((a) => a.id === artistId);
+      const contrib = (prefillOrder.artist_contributions || []).find(
+        (c) => c.type === "Freelance" && c.name?.trim() === artist?.name?.trim()
+      );
+      const pct = Number(contrib?.percent) > 0 ? Number(contrib.percent) : 100;
+      setProjectForm({
+        ...EMPTY_PROJECT,
+        project_name: prefillOrder.project || "",
+        fee: (((prefillOrder.fee_freelance || 0) * pct) / 100).toString(),
+        notes: prefillOrder.folder_code || "",
+        order_id: prefillOrder.id,
+      });
+    } else {
+      setProjectForm(EMPTY_PROJECT);
+    }
     setOrderSearch("");
     setShowProjectModal(artistId);
   };
@@ -421,6 +475,44 @@ export default function Freelance() {
                           const remaining = (proj.fee || 0) - (proj.dp_amount || 0);
                           const dpPct = proj.fee > 0 ? Math.round(((proj.dp_amount || 0) / proj.fee) * 100) : 0;
                           const linkedOrder = proj.order_id ? orders.find((o) => o.id === proj.order_id) : null;
+
+                          if (proj.is_auto) {
+                            /* ── Auto-detected dari order ── */
+                            return (
+                              <div key={proj.id} className="rounded-2xl border border-violet-100 bg-violet-50/50 p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <p className="font-semibold text-slate-900">{proj.project_name}</p>
+                                      <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">Auto</span>
+                                      {linkedOrder && (
+                                        <span className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600 border border-sky-100">
+                                          <Link2 size={9} /> {linkedOrder.folder_code || linkedOrder.project}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs">
+                                      {proj.fee > 0
+                                        ? <span className="font-semibold text-slate-900">{formatMoney(proj.fee)}</span>
+                                        : <span className="text-slate-400 italic">Fee belum diset di order</span>}
+                                      {linkedOrder?.order_date && <span className="text-slate-400">{linkedOrder.order_date}</span>}
+                                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-600">Belum Lunas</span>
+                                    </div>
+                                    {proj.notes && <p className="mt-1 text-xs text-slate-400 italic">{proj.notes}</p>}
+                                    <p className="mt-1.5 text-[10px] text-violet-500">Terdeteksi otomatis dari order · Catat untuk atur pembayaran</p>
+                                  </div>
+                                  <button
+                                    onClick={() => openAddProject(artist.id, proj._order)}
+                                    className="inline-flex items-center gap-1.5 rounded-2xl bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700 transition shrink-0"
+                                  >
+                                    <Plus size={12} /> Catat
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          /* ── Project manual ── */
                           return (
                             <div key={proj.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -455,7 +547,6 @@ export default function Freelance() {
                                   )}
                                   {proj.notes && <p className="mt-1.5 text-xs text-slate-400 italic">{proj.notes}</p>}
                                 </div>
-
                                 <div className="flex items-center gap-2 shrink-0">
                                   <select
                                     value={proj.status_bayar}
