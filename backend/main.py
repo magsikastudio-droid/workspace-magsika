@@ -526,7 +526,15 @@ async def on_startup():
         scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
         scheduler.add_job(carry_forward_tasks, CronTrigger(hour=0, minute=1, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_daily_ai_reports, CronTrigger(hour=17, minute=0, timezone="Asia/Jakarta"))
-        scheduler.add_job(notify_unsubmitted_daily_reports, CronTrigger(hour=16, minute=30, timezone="Asia/Jakarta"))
+        # Load deadline from DB (default 16:30)
+        _deadline = {"hour": 16, "minute": 30}
+        try:
+            _doc = await db.settings.find_one({"key": "daily_report_deadline"})
+            if _doc:
+                _deadline = {"hour": _doc.get("hour", 16), "minute": _doc.get("minute", 30)}
+        except Exception:
+            pass
+        scheduler.add_job(notify_unsubmitted_daily_reports, CronTrigger(hour=_deadline["hour"], minute=_deadline["minute"], timezone="Asia/Jakarta"), id="notify_daily_report")
         scheduler.add_job(auto_weekly_ai_reports, CronTrigger(day_of_week="fri", hour=12, minute=0, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_monthly_ai_reports, CronTrigger(day=27, hour=12, minute=0, timezone="Asia/Jakarta"))
         scheduler.start()
@@ -1382,6 +1390,45 @@ async def update_bank_info(data: BankInfoUpdate, current_user: dict = Depends(ge
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─── Daily Report Deadline Settings ─────────────────────────────────────────
+
+class DeadlineUpdate(BaseModel):
+    hour: int
+    minute: int
+
+@app.get("/settings/daily-report-deadline")
+async def get_daily_report_deadline(current_user: dict = Depends(get_current_user)):
+    try:
+        doc = await db.settings.find_one({"key": "daily_report_deadline"})
+        if doc:
+            return {"hour": doc.get("hour", 16), "minute": doc.get("minute", 30)}
+        return {"hour": 16, "minute": 30}
+    except Exception:
+        return {"hour": 16, "minute": 30}
+
+@app.put("/settings/daily-report-deadline")
+async def update_daily_report_deadline(data: DeadlineUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not (0 <= data.hour <= 23 and 0 <= data.minute <= 59):
+        raise HTTPException(status_code=400, detail="Waktu tidak valid")
+    try:
+        await db.settings.update_one(
+            {"key": "daily_report_deadline"},
+            {"$set": {"key": "daily_report_deadline", "hour": data.hour, "minute": data.minute}},
+            upsert=True,
+        )
+        # Reschedule the notification job
+        if scheduler:
+            try:
+                scheduler.reschedule_job("notify_daily_report", trigger=CronTrigger(hour=data.hour, minute=data.minute, timezone="Asia/Jakarta"))
+            except Exception:
+                pass
+        return {"ok": True, "hour": data.hour, "minute": data.minute}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Telegram Send ────────────────────────────────────────────────────────────
 
 class TelegramSendBody(BaseModel):
@@ -2143,7 +2190,8 @@ def _member_prompt(name: str, tasks: list, period_orders: list, period_label: st
     project_names = ", ".join([o.get("project", "") for o in period_orders[:5] if o.get("project")])
     return (
         "Anda adalah analis performa profesional untuk Magsika Studio, sebuah studio kreatif 3D/2D. "
-        "Tulis laporan analisis performa anggota tim dalam bahasa Indonesia yang formal, terstruktur, dan berbasis data.\n\n"
+        "Tugas Anda adalah menulis evaluasi performa yang OBJEKTIF dan BERBASIS DATA — bukan untuk menyemangati atau memanjakan anggota tim. "
+        "Jangan beri pujian yang tidak didukung data. Jika performa baik, cukup nyatakan fakta. Jika ada kekurangan, ungkapkan dengan jelas dan langsung.\n\n"
         f"Data Performa: {name} | Periode: {period_label}\n"
         f"- Total task: {len(tasks)} (selesai: {done}, gagal: {failed}, sedang berjalan: {in_progress}, revisi: {in_revision})\n"
         f"- Akumulasi waktu kerja: {total_time // 3600} jam {(total_time % 3600) // 60} menit\n"
@@ -2153,14 +2201,14 @@ def _member_prompt(name: str, tasks: list, period_orders: list, period_label: st
         "Mulai langsung dengan section pertama berikut.\n\n"
         "Tulis laporan dengan struktur berikut (gunakan persis heading ini):\n\n"
         "**Ringkasan Eksekutif**\n"
-        "Gambaran umum kinerja secara keseluruhan (2-3 kalimat).\n\n"
+        "Gambaran umum kinerja secara keseluruhan (2-3 kalimat berbasis angka, bukan kesan umum).\n\n"
         "**Analisis Kinerja**\n"
-        "Evaluasi pencapaian berdasarkan data yang tersedia.\n\n"
+        "Evaluasi pencapaian berdasarkan data. Sebutkan angka secara eksplisit. Hindari generalisasi positif tanpa dasar.\n\n"
         "**Area yang Perlu Ditingkatkan**\n"
-        "Identifikasi kelemahan atau hambatan (tulis 'Tidak ada catatan khusus' jika kinerja baik).\n\n"
+        "Identifikasi kelemahan atau hambatan secara spesifik. Jangan tulis 'Tidak ada catatan khusus' jika ada task gagal atau revisi.\n\n"
         "**Rekomendasi**\n"
-        "1-2 rekomendasi konkret dan terukur untuk periode berikutnya.\n\n"
-        "Gunakan bahasa Indonesia yang formal dan profesional. Maksimal 220 kata."
+        "1-2 tindakan konkret dan terukur untuk periode berikutnya. Rekomendasi harus relevan dengan data di atas.\n\n"
+        "Gunakan bahasa Indonesia yang formal. Maksimal 220 kata. Tidak perlu kalimat penutup yang memotivasi."
     )
 
 async def _fetch_overall_data(period: str, month: str):
@@ -2206,7 +2254,8 @@ def _overall_prompt(tasks: list, period_orders: list, period_label: str) -> str:
     ])
     return (
         "Anda adalah analis manajemen senior untuk Magsika Studio (studio kreatif 3D/2D). "
-        "Tulis laporan analisis performa tim dalam bahasa Indonesia yang formal dan komprehensif untuk pimpinan studio.\n\n"
+        "Tulis laporan performa tim yang OBJEKTIF untuk pimpinan studio — berbasis data, tidak memanjakan, tidak memberi pujian tanpa dasar angka. "
+        "Jika ada anggota yang kinerjanya rendah, sebutkan secara eksplisit. Jika target tidak tercapai, nyatakan dengan jelas.\n\n"
         f"Data Tim — Periode: {period_label}\n"
         f"- Order: {len(period_orders)} masuk, {done_orders} selesai, {active_orders} aktif\n"
         f"- Estimasi Revenue: Rp {total_revenue:,.0f}\n"
@@ -2214,16 +2263,16 @@ def _overall_prompt(tasks: list, period_orders: list, period_label: str) -> str:
         f"Rincian per Anggota Tim:\n{artist_lines or 'Belum ada data'}\n\n"
         "Tulis laporan dengan struktur berikut (gunakan persis heading ini):\n\n"
         "**Ringkasan Eksekutif**\n"
-        "Kondisi umum tim pada periode ini (2-3 kalimat).\n\n"
+        "Kondisi objektif tim pada periode ini berdasarkan angka (2-3 kalimat).\n\n"
         "**Pencapaian Tim**\n"
-        "Highlight kinerja terbaik dan pencapaian signifikan.\n\n"
+        "Fakta pencapaian yang didukung data. Bukan pujian umum — sebutkan siapa, berapa, apa.\n\n"
         "**Analisis Per Anggota**\n"
-        "Evaluasi singkat kontribusi masing-masing anggota berdasarkan data.\n\n"
+        "Evaluasi kontribusi masing-masing berdasarkan data. Sebutkan yang perlu perhatian khusus.\n\n"
         "**Area Perhatian**\n"
-        "Risiko atau tantangan yang perlu diantisipasi.\n\n"
+        "Risiko, hambatan, atau anggota yang kinerjanya di bawah rata-rata.\n\n"
         "**Rekomendasi Strategis**\n"
-        "2-3 rekomendasi konkret untuk periode berikutnya.\n\n"
-        "Gunakan bahasa Indonesia yang formal dan profesional. Maksimal 300 kata."
+        "2-3 tindakan konkret untuk periode berikutnya. Harus spesifik dan terukur.\n\n"
+        "Gunakan bahasa Indonesia yang formal. Maksimal 300 kata. Tidak perlu kalimat penutup yang memotivasi."
     )
 
 # ── GET saved member report ───────────────────────────────────────────────────
@@ -2371,7 +2420,8 @@ def _member_prompt_with_daily_report(name: str, tasks: list, period_orders: list
         dr_lines += f"- Catatan: {daily_report['notes']}\n"
     return (
         "Anda adalah analis performa profesional untuk Magsika Studio, sebuah studio kreatif 3D/2D. "
-        "Tulis laporan analisis performa anggota tim dalam bahasa Indonesia yang formal, terstruktur, dan berbasis data.\n\n"
+        "Tugas Anda adalah menulis evaluasi performa yang OBJEKTIF dan BERBASIS DATA — bukan untuk menyemangati atau memanjakan anggota tim. "
+        "Jangan beri pujian yang tidak didukung data. Jika ada kekurangan atau kendala, ungkapkan dengan jelas dan langsung.\n\n"
         f"Data Performa: {name} | Periode: {period_label}\n"
         f"- Total task: {len(tasks)} (selesai: {done}, gagal: {failed}, sedang berjalan: {in_progress}, revisi: {in_revision})\n"
         f"- Akumulasi waktu kerja: {total_time // 3600} jam {(total_time % 3600) // 60} menit\n"
@@ -2382,14 +2432,14 @@ def _member_prompt_with_daily_report(name: str, tasks: list, period_orders: list
         "Mulai langsung dengan section pertama berikut.\n\n"
         "Tulis laporan dengan struktur berikut (gunakan persis heading ini):\n\n"
         "**Ringkasan Eksekutif**\n"
-        "Gambaran umum kinerja hari ini (2-3 kalimat, sertakan kondisi anggota dari laporan harian).\n\n"
+        "Gambaran kinerja hari ini berdasarkan angka dan laporan harian (2-3 kalimat, bukan kesan umum).\n\n"
         "**Analisis Kinerja**\n"
-        "Evaluasi pencapaian berdasarkan data dan laporan yang tersedia.\n\n"
+        "Evaluasi pencapaian berdasarkan data dan laporan. Sebutkan angka secara eksplisit. Jika ada kendala yang dilaporkan, analisis dampaknya terhadap produktivitas.\n\n"
         "**Area yang Perlu Ditingkatkan**\n"
-        "Identifikasi kelemahan atau hambatan (termasuk kendala yang dilaporkan). Tulis 'Tidak ada catatan khusus' jika baik.\n\n"
+        "Identifikasi kelemahan atau hambatan secara spesifik dari data dan laporan harian. Jangan tulis 'Tidak ada catatan khusus' jika ada kendala yang dilaporkan atau task gagal.\n\n"
         "**Rekomendasi**\n"
-        "1-2 rekomendasi konkret untuk hari berikutnya berdasarkan laporan.\n\n"
-        "Gunakan bahasa Indonesia yang formal dan profesional. Maksimal 250 kata."
+        "1-2 tindakan konkret untuk hari berikutnya. Harus relevan dengan kendala atau kekurangan yang ditemukan.\n\n"
+        "Gunakan bahasa Indonesia yang formal. Maksimal 250 kata. Tidak perlu kalimat penutup yang memotivasi."
     )
 
 # ── Trigger AI after daily report submission ──────────────────────────────────

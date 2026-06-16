@@ -329,6 +329,9 @@ export default function SettingsPage() {
   const [bankLoaded, setBankLoaded] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
 
+  const [deadlineTime, setDeadlineTime] = useState("16:30");
+  const [savingDeadline, setSavingDeadline] = useState(false);
+
   const [users, setUsers] = useState([]);
   const [whitelist, setWhitelist] = useState([]);
   const [newEmail, setNewEmail] = useState("");
@@ -350,7 +353,15 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (isAdmin) { fetchUsers(); fetchWhitelist(); }
+    if (isAdmin) {
+      fetchUsers();
+      fetchWhitelist();
+      api.get("/settings/daily-report-deadline").then((res) => {
+        const h = String(res.data.hour).padStart(2, "0");
+        const m = String(res.data.minute).padStart(2, "0");
+        setDeadlineTime(`${h}:${m}`);
+      }).catch(() => {});
+    }
     if (isAdminOrPM) {
       api.get("/settings/bank-info").then((res) => {
         const d = res.data;
@@ -670,6 +681,46 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
+
+          {isAdmin && (
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <Clock size={18} className="text-violet-500" />
+                <h2 className="text-lg font-semibold">Batas Waktu Daily Report</h2>
+              </div>
+              <p className="text-sm text-slate-500 mb-5">
+                Atur waktu batas pengiriman daily report. Setelah waktu ini, Tim yang belum submit akan mendapat notifikasi dan To Do dikunci.
+              </p>
+              <div className="flex items-end gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Pukul (WIB)</label>
+                  <input
+                    type="time"
+                    value={deadlineTime}
+                    onChange={(e) => setDeadlineTime(e.target.value)}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400"
+                  />
+                </div>
+                <button
+                  disabled={savingDeadline}
+                  onClick={async () => {
+                    const [h, m] = deadlineTime.split(":").map(Number);
+                    if (isNaN(h) || isNaN(m)) { toast.error("Format waktu tidak valid"); return; }
+                    setSavingDeadline(true);
+                    try {
+                      await api.put("/settings/daily-report-deadline", { hour: h, minute: m });
+                      toast.success(`Batas waktu disimpan: ${deadlineTime} WIB`);
+                    } catch { toast.error("Gagal menyimpan"); }
+                    finally { setSavingDeadline(false); }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
+                >
+                  <Save size={14} /> {savingDeadline ? "Menyimpan..." : "Simpan"}
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-400">Notifikasi otomatis dikirim ke talent yang belum submit pada waktu ini.</p>
+            </div>
+          )}
 
           {isAdmin && <TelegramSection />}
 
