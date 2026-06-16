@@ -1634,6 +1634,48 @@ async def delete_schedule_event(event_id: str, current_user: dict = Depends(get_
     return {"deleted": True}
 
 
+# ─── Location Tracking ───────────────────────────────────────────────────────
+
+class LocationUpdate(BaseModel):
+    lat: float
+    lng: float
+    accuracy: Optional[float] = None
+
+@app.post("/location/update")
+async def update_location(req: LocationUpdate, current_user: dict = Depends(get_current_user)):
+    username = current_user.get("username")
+    await db.locations.update_one(
+        {"username": username},
+        {"$set": {
+            "username": username,
+            "full_name": current_user.get("full_name", username),
+            "lat": req.lat,
+            "lng": req.lng,
+            "accuracy": req.accuracy,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
+
+@app.get("/location/team")
+async def get_team_locations(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    docs = await db.locations.find().to_list(200)
+    return [
+        {
+            "username": d["username"],
+            "full_name": d.get("full_name", d["username"]),
+            "lat": d["lat"],
+            "lng": d["lng"],
+            "accuracy": d.get("accuracy"),
+            "updated_at": d.get("updated_at"),
+        }
+        for d in docs
+    ]
+
+
 # ─── FCM Token ───────────────────────────────────────────────────────────────
 
 class FCMTokenRequest(BaseModel):

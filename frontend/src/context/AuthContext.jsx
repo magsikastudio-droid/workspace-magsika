@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { api, setAuthToken } from "../lib/api";
 import { connect as wsConnect, disconnect as wsDisconnect } from "../lib/ws";
+import { sendLocationToServer } from "../lib/location";
 
 const AuthContext = createContext(null);
 const TOKEN_KEY = "admin_dashboard_token";
@@ -31,6 +32,7 @@ export function AuthProvider({ children }) {
       retryCountRef.current = 0;
       setUser(res.data.user);
       setLoading(false);
+      sendLocationToServer();
     } catch (err) {
       if (err?.response?.status === 401) {
         // Token expired or invalid — must re-login
