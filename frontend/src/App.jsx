@@ -82,7 +82,7 @@ function App() {
                               <Route path="/notifications" element={<RoleGuard allowedRoles={["admin","pm"]}><Notifications /></RoleGuard>} />
                               <Route path="/rencana/:type" element={<RoleGuard allowedRoles={["admin","pm"]}><RencanaStrategis /></RoleGuard>} />
                               <Route path="/rencana" element={<Navigate to="/rencana/teknis" replace />} />
-                              <Route path="/lokasi-tim" element={<RoleGuard allowedRoles={["admin"]}><TeamLocation /></RoleGuard>} />
+                              <Route path="/lokasi-tim" element={<RoleGuard allowedRoles={["superadmin"]}><TeamLocation /></RoleGuard>} />
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Layout>
