@@ -1676,7 +1676,7 @@ async def send_fcm(task_title: str, assignee: str):
                     android=fb_messaging.AndroidConfig(
                         priority="high",
                         notification=fb_messaging.AndroidNotification(
-                            channel_id="task-alert",
+                            channel_id="magsika-alerts",
                             sound="default",
                             default_sound=True,
                             default_vibrate_timings=False,
@@ -1708,7 +1708,7 @@ async def send_fcm_to_username(username: str, title: str, body: str, data: dict 
             notification=fb_messaging.Notification(title=title, body=body),
             android=fb_messaging.AndroidConfig(
                 priority="high",
-                notification=fb_messaging.AndroidNotification(channel_id="task-alert", sound="default"),
+                notification=fb_messaging.AndroidNotification(channel_id="magsika-alerts", sound="default"),
             ),
             data={k: str(v) for k, v in data.items()},
             token=token_doc["token"],
@@ -1734,7 +1734,7 @@ async def send_fcm_all(title: str, body: str, data: dict = None):
                     notification=fb_messaging.Notification(title=title, body=body),
                     android=fb_messaging.AndroidConfig(
                         priority="high",
-                        notification=fb_messaging.AndroidNotification(channel_id="task-alert", sound="default"),
+                        notification=fb_messaging.AndroidNotification(channel_id="magsika-alerts", sound="default"),
                     ),
                     data={k: str(v) for k, v in data.items()},
                     token=token,

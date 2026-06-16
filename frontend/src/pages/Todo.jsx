@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
-  BookOpen, CheckCircle2, ClipboardList, GripVertical, Kanban, Loader2, Pause, Pencil, Play,
+  CheckCircle2, ClipboardList, GripVertical, Kanban, Loader2, Pause, Pencil, Play,
   Plus, Search, Send, X, Zap, Clock, CheckCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -71,18 +70,6 @@ const KANBAN_COLS = [
   { key: "failed",          label: "Gagal",       color: "border-t-rose-400"    },
 ];
 
-const isAfterDeadlineWIB = (hour, minute) => {
-  const now = new Date();
-  const wibH = (now.getUTCHours() + 7) % 24;
-  const wibM = now.getUTCMinutes();
-  return wibH > hour || (wibH === hour && wibM >= minute);
-};
-
-const FEELINGS_TODO = [
-  { value: "Semangat", emoji: "😊", active: "border-emerald-400 bg-emerald-50 text-emerald-700" },
-  { value: "Biasa",    emoji: "😐", active: "border-amber-400 bg-amber-50 text-amber-700"    },
-  { value: "Lelah",    emoji: "😔", active: "border-rose-400 bg-rose-50 text-rose-700"       },
-];
 
 /* ─── global 1-second tick ─────────────────────────────────────── */
 function useNow() {
@@ -112,7 +99,6 @@ const getElapsed = (task, now) => {
 export default function Todo() {
   const { user } = useAuth();
   const { tasks, loading, fetchTasks, createTask, updateTask, deleteTask } = useTasks();
-  const navigate = useNavigate();
   const { orders } = useOrders();
   const now = useNow();
 
@@ -134,29 +120,7 @@ export default function Todo() {
   const dragIdRef = useRef(null);
   const dragOverRef = useRef(null);
 
-  // Daily-report lock (talent only)
-  const [reportSubmitted, setReportSubmitted] = useState(null); // null=loading
-  const [lockForm, setLockForm] = useState({ work_done: "", feelings: "Semangat", obstacles: "", notes: "" });
-  const [lockSubmitting, setLockSubmitting] = useState(false);
-  const [deadline, setDeadline] = useState({ hour: 16, minute: 30 });
-
   useEffect(() => { if (user) fetchTasks(date); }, [date, fetchTasks, user]);
-
-  // Fetch deadline once on mount
-  useEffect(() => {
-    api.get("/settings/daily-report-deadline")
-      .then((r) => setDeadline({ hour: r.data.hour ?? 16, minute: r.data.minute ?? 30 }))
-      .catch(() => {});
-  }, []);
-
-  // Check daily-report submission status for talent role
-  useEffect(() => {
-    if (!user || role !== "talent") return;
-    if (!isAfterDeadlineWIB(deadline.hour, deadline.minute) || date !== todayStr()) { setReportSubmitted(true); return; }
-    api.get("/daily-reports/today-status")
-      .then((r) => setReportSubmitted(r.data.submitted))
-      .catch(() => setReportSubmitted(true));
-  }, [user, role, date, deadline]);
 
   const visibleTasks = useMemo(() => tasks.filter((t) => t.date === date), [tasks, date]);
 
@@ -335,124 +299,7 @@ export default function Todo() {
     });
   }, [taskMap, updateTask, fetchTasks, date]);
 
-  const handleLockSubmit = async (e) => {
-    e.preventDefault();
-    setLockSubmitting(true);
-    try {
-      await api.post("/daily-reports", lockForm);
-      setReportSubmitted(true);
-      toast.success("Daily report berhasil disubmit! To Do terbuka kembali.");
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || "Gagal submit daily report.");
-    } finally {
-      setLockSubmitting(false);
-    }
-  };
-
-  /* ── lock screen (talent, past deadline, report not yet submitted) ── */
-  const isLocked = role === "talent" && date === todayStr() && isAfterDeadlineWIB(deadline.hour, deadline.minute) && reportSubmitted === false;
-
   /* ── render ─────────────── */
-  if (isLocked) {
-    return (
-      <div className="space-y-5 max-w-2xl mx-auto">
-        <div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
-              <BookOpen size={20} className="text-amber-600" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-amber-900">To Do Terkunci</h1>
-              <p className="text-xs text-amber-700">Sudah pukul {String(deadline.hour).padStart(2,"0")}:{String(deadline.minute).padStart(2,"0")} — isi daily report dulu untuk membuka To Do</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="bg-violet-600 px-5 py-4">
-            <div className="flex items-center gap-3">
-              <BookOpen size={18} className="text-white" />
-              <p className="font-bold text-white">Daily Report Hari Ini</p>
-            </div>
-            <p className="mt-1 text-violet-200 text-xs">Isi laporan di bawah ini untuk membuka To Do kembali</p>
-          </div>
-
-          <form onSubmit={handleLockSubmit} className="px-5 py-4 space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Apa yang dikerjakan hari ini? *</label>
-              <textarea
-                value={lockForm.work_done}
-                onChange={(e) => setLockForm((p) => ({ ...p, work_done: e.target.value }))}
-                rows={6}
-                placeholder="Ceritakan detail pekerjaan yang sudah diselesaikan hari ini..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-y transition"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Perasaan hari ini</label>
-              <div className="flex gap-2">
-                {FEELINGS_TODO.map((f) => (
-                  <button
-                    key={f.value}
-                    type="button"
-                    onClick={() => setLockForm((p) => ({ ...p, feelings: f.value }))}
-                    className={`flex items-center gap-1.5 rounded-xl border-2 px-4 py-2 text-sm font-semibold transition ${
-                      lockForm.feelings === f.value ? f.active : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
-                    }`}
-                  >
-                    {f.emoji} {f.value}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kendala hari ini</label>
-              <textarea
-                value={lockForm.obstacles}
-                onChange={(e) => setLockForm((p) => ({ ...p, obstacles: e.target.value }))}
-                rows={4}
-                placeholder="Adakah hambatan atau tantangan yang dihadapi?"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-y transition"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Note tambahan</label>
-              <textarea
-                value={lockForm.notes}
-                onChange={(e) => setLockForm((p) => ({ ...p, notes: e.target.value }))}
-                rows={3}
-                placeholder="Informasi tambahan yang ingin disampaikan..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 focus:bg-white resize-y transition"
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={lockSubmitting}
-                className="inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 transition"
-              >
-                {lockSubmitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                Submit & Buka To Do
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/daily-report")}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
-              >
-                Buka Halaman Daily Report
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-5">
       {/* Header */}
