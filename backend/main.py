@@ -415,9 +415,15 @@ async def auto_fail_tasks():
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
     today = jkt_now.strftime("%Y-%m-%d")
     try:
+        # Task hari ini yang belum selesai → gagal
         await db.tasks.update_many(
             {"date": today, "status": {"$in": ["pending", "in progress"]}},
             {"$set": {"status": "failed", "timer_started": None}},
+        )
+        # Task dari hari-hari sebelumnya yang masih pending (belum pernah dimulai) → gagal
+        await db.tasks.update_many(
+            {"date": {"$lt": today}, "status": "pending"},
+            {"$set": {"status": "failed"}},
         )
     except Exception as e:
         print(f"[auto_fail] Error: {e}")
@@ -441,8 +447,7 @@ async def carry_forward_tasks():
             assignee = t.get("assignee", "")
             existing = await db.tasks.find_one({
                 "date": today_str, "assignee": assignee,
-                "order_id": order_id_str if order_id_str else None,
-                "title": t.get("title"),
+                "order_id": t.get("order_id"),
             })
             if existing:
                 continue
@@ -466,7 +471,9 @@ async def carry_forward_tasks():
 
 
 async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
-    today = target_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from datetime import timedelta
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    today = target_date or jkt_now.strftime("%Y-%m-%d")
     created = 0
     skipped = 0
     try:
@@ -488,25 +495,27 @@ async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
             artist_name = contrib.get("name", "").strip()
             if not artist_name:
                 continue
-            existing = await db.tasks.find_one({"order_id": order_id_str, "assignee": artist_name, "date": today})
-            if existing:
-                skipped += 1
-                continue
-            # Count existing tasks for this assignee today to set order_num
             count = await db.tasks.count_documents({"assignee": artist_name, "date": today})
-            await db.tasks.insert_one({
-                "title": f"{order.get('project', '')} — {artist_name}",
-                "assignee": artist_name,
-                "assignee_type": "freelance" if contrib.get("type") == "Freelance" else "tim",
-                "status": "pending",
-                "date": today,
-                "notes": order.get("folder_code", ""),
-                "order_id": order_id_str,
-                "time_elapsed": 0,
-                "timer_started": None,
-                "order_num": count,
-            })
-            created += 1
+            result = await db.tasks.update_one(
+                {"order_id": order_id_str, "assignee": artist_name, "date": today},
+                {"$setOnInsert": {
+                    "title": f"{order.get('project', '')} — {artist_name}",
+                    "assignee": artist_name,
+                    "assignee_type": "freelance" if contrib.get("type") == "Freelance" else "tim",
+                    "status": "pending",
+                    "date": today,
+                    "notes": order.get("folder_code", ""),
+                    "order_id": order_id_str,
+                    "time_elapsed": 0,
+                    "timer_started": None,
+                    "order_num": count,
+                }},
+                upsert=True,
+            )
+            if result.upserted_id:
+                created += 1
+            else:
+                skipped += 1
     return {"created": created, "skipped": skipped}
 
 
