@@ -71,11 +71,11 @@ const KANBAN_COLS = [
   { key: "failed",          label: "Gagal",       color: "border-t-rose-400"    },
 ];
 
-const isAfter1630WIB = () => {
+const isAfterDeadlineWIB = (hour, minute) => {
   const now = new Date();
   const wibH = (now.getUTCHours() + 7) % 24;
   const wibM = now.getUTCMinutes();
-  return wibH > 16 || (wibH === 16 && wibM >= 30);
+  return wibH > hour || (wibH === hour && wibM >= minute);
 };
 
 const FEELINGS_TODO = [
@@ -138,17 +138,25 @@ export default function Todo() {
   const [reportSubmitted, setReportSubmitted] = useState(null); // null=loading
   const [lockForm, setLockForm] = useState({ work_done: "", feelings: "Semangat", obstacles: "", notes: "" });
   const [lockSubmitting, setLockSubmitting] = useState(false);
+  const [deadline, setDeadline] = useState({ hour: 16, minute: 30 });
 
   useEffect(() => { if (user) fetchTasks(date); }, [date, fetchTasks, user]);
+
+  // Fetch deadline once on mount
+  useEffect(() => {
+    api.get("/settings/daily-report-deadline")
+      .then((r) => setDeadline({ hour: r.data.hour ?? 16, minute: r.data.minute ?? 30 }))
+      .catch(() => {});
+  }, []);
 
   // Check daily-report submission status for talent role
   useEffect(() => {
     if (!user || role !== "talent") return;
-    if (!isAfter1630WIB() || date !== todayStr()) { setReportSubmitted(true); return; }
+    if (!isAfterDeadlineWIB(deadline.hour, deadline.minute) || date !== todayStr()) { setReportSubmitted(true); return; }
     api.get("/daily-reports/today-status")
       .then((r) => setReportSubmitted(r.data.submitted))
       .catch(() => setReportSubmitted(true));
-  }, [user, role, date]);
+  }, [user, role, date, deadline]);
 
   const visibleTasks = useMemo(() => tasks.filter((t) => t.date === date), [tasks, date]);
 
@@ -341,8 +349,8 @@ export default function Todo() {
     }
   };
 
-  /* ── lock screen (talent, past 16:30, report not yet submitted) ── */
-  const isLocked = role === "talent" && date === todayStr() && isAfter1630WIB() && reportSubmitted === false;
+  /* ── lock screen (talent, past deadline, report not yet submitted) ── */
+  const isLocked = role === "talent" && date === todayStr() && isAfterDeadlineWIB(deadline.hour, deadline.minute) && reportSubmitted === false;
 
   /* ── render ─────────────── */
   if (isLocked) {
@@ -355,7 +363,7 @@ export default function Todo() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-amber-900">To Do Terkunci</h1>
-              <p className="text-xs text-amber-700">Sudah pukul 16:30 — isi daily report dulu untuk membuka To Do</p>
+              <p className="text-xs text-amber-700">Sudah pukul {String(deadline.hour).padStart(2,"0")}:{String(deadline.minute).padStart(2,"0")} — isi daily report dulu untuk membuka To Do</p>
             </div>
           </div>
         </div>
