@@ -27,6 +27,7 @@ const NAV_SECTIONS = [
     items: [
       { to: "/invoice",      label: "Invoice",      icon: FileText,        roles: ["admin", "pm"] },
       { to: "/earnings",     label: "Earnings",     icon: DollarSign,      roles: ["admin", "pm"] },
+      { to: "/freelance",    label: "Freelance",    icon: Users,           roles: ["admin", "pm"] },
     ],
   },
   {
@@ -35,7 +36,6 @@ const NAV_SECTIONS = [
       { to: "/pengumuman",   label: "Pengumuman",   icon: Megaphone,       roles: ["admin", "pm", "talent"] },
       { to: "/schedule",     label: "Schedule",     icon: CalendarDays,    roles: ["admin", "pm", "talent"] },
       { to: "/notifications",label: "Notifikasi",   icon: Bell,            roles: ["admin", "pm"] },
-      { to: "/freelance",    label: "Freelance",    icon: Users,           roles: ["admin", "pm"] },
       { to: "/settings",     label: "Settings",     icon: SettingsIcon,    roles: ["admin", "pm", "talent"] },
     ],
   },

@@ -5,7 +5,6 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useOrders } from "../context/OrdersContext";
-import { useCurrency } from "../context/CurrencyContext";
 import { toast } from "sonner";
 
 const STATUS_BAYAR = ["Belum Lunas", "DP", "Lunas"];
@@ -25,7 +24,7 @@ const EMPTY_ARTIST = { name: "", bank: "", rekening: "", phone: "", notes: "" };
 const EMPTY_PROJECT = { project_name: "", fee: "", dp_amount: "", dp_date: "", pelunasan_date: "", status_bayar: "Belum Lunas", notes: "", order_id: "" };
 
 export default function Freelance() {
-  const { formatMoney } = useCurrency();
+  const fmtIDR = (v) => (v || v === 0) ? `Rp ${Number(v).toLocaleString("id-ID")}` : "—";
   const [artists, setArtists] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -323,17 +322,17 @@ export default function Freelance() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-[2rem] border border-slate-200 bg-white px-5 py-4 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Total Fee</p>
-            <p className="mt-2 text-2xl font-bold text-slate-900">{formatMoney(globalTotal)}</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{fmtIDR(globalTotal)}</p>
             <p className="mt-1 text-xs text-slate-400">{artists.length} artist freelance</p>
           </div>
           <div className="rounded-[2rem] border border-emerald-100 bg-emerald-50 px-5 py-4 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-widest text-emerald-500">Sudah Lunas</p>
-            <p className="mt-2 text-2xl font-bold text-emerald-700">{formatMoney(globalPaid)}</p>
+            <p className="mt-2 text-2xl font-bold text-emerald-700">{fmtIDR(globalPaid)}</p>
             <p className="mt-1 text-xs text-emerald-500">{globalTotal > 0 ? Math.round((globalPaid / globalTotal) * 100) : 0}% dari total</p>
           </div>
           <div className="rounded-[2rem] border border-rose-100 bg-rose-50 px-5 py-4 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-widest text-rose-400">Outstanding</p>
-            <p className="mt-2 text-2xl font-bold text-rose-600">{formatMoney(globalOutstanding)}</p>
+            <p className="mt-2 text-2xl font-bold text-rose-600">{fmtIDR(globalOutstanding)}</p>
             <p className="mt-1 text-xs text-rose-400">belum/DP sisa</p>
           </div>
         </div>
@@ -412,15 +411,15 @@ export default function Freelance() {
                       <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 min-w-[180px]">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total Fee</span>
-                          <span className="text-base font-bold text-slate-900">{formatMoney(total)}</span>
+                          <span className="text-base font-bold text-slate-900">{fmtIDR(total)}</span>
                         </div>
                         <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
                           <div className="h-full rounded-full bg-amber-300 transition-all" style={{ width: `${dpPct}%` }} />
                           <div className="h-full rounded-full bg-emerald-500 -mt-2 transition-all" style={{ width: `${paidPct}%` }} />
                         </div>
                         <div className="flex justify-between mt-1.5">
-                          <span className="text-xs text-emerald-600 font-semibold">Lunas: {formatMoney(paid)}</span>
-                          {outstanding > 0 && <span className="text-xs text-rose-500 font-semibold">Sisa: {formatMoney(outstanding)}</span>}
+                          <span className="text-xs text-emerald-600 font-semibold">Lunas: {fmtIDR(paid)}</span>
+                          {outstanding > 0 && <span className="text-xs text-rose-500 font-semibold">Sisa: {fmtIDR(outstanding)}</span>}
                         </div>
                       </div>
                     ) : (
@@ -493,7 +492,7 @@ export default function Freelance() {
                                     </div>
                                     <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs">
                                       {proj.fee > 0
-                                        ? <span className="font-semibold text-slate-900">{formatMoney(proj.fee)}</span>
+                                        ? <span className="font-semibold text-slate-900">{fmtIDR(proj.fee)}</span>
                                         : <span className="text-slate-400 italic">Fee belum diset di order</span>}
                                       {linkedOrder?.order_date && <span className="text-slate-400">{linkedOrder.order_date}</span>}
                                       <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-600">Belum Lunas</span>
@@ -526,10 +525,10 @@ export default function Freelance() {
                                     )}
                                   </div>
                                   <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                                    <span className="font-semibold text-slate-900">{formatMoney(proj.fee)}</span>
+                                    <span className="font-semibold text-slate-900">{fmtIDR(proj.fee)}</span>
                                     {proj.dp_amount > 0 && (
                                       <>
-                                        <span>DP: <span className="font-semibold text-amber-700">{formatMoney(proj.dp_amount)}</span></span>
+                                        <span>DP: <span className="font-semibold text-amber-700">{fmtIDR(proj.dp_amount)}</span></span>
                                         {proj.dp_date && <span>Tgl DP: {proj.dp_date}</span>}
                                       </>
                                     )}
@@ -541,7 +540,7 @@ export default function Freelance() {
                                         <div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${dpPct}%` }} />
                                       </div>
                                       {remaining > 0 && (
-                                        <p className="mt-0.5 text-[10px] text-rose-500">Sisa {formatMoney(remaining)}</p>
+                                        <p className="mt-0.5 text-[10px] text-rose-500">Sisa {fmtIDR(remaining)}</p>
                                       )}
                                     </div>
                                   )}
