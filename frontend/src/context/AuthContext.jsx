@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { api, setAuthToken } from "../lib/api";
 import { connect as wsConnect, disconnect as wsDisconnect } from "../lib/ws";
-import { sendLocationToServer } from "../lib/location";
+import { sendLocationToServer, startLocationTracking } from "../lib/location";
 
 const AuthContext = createContext(null);
 const TOKEN_KEY = "admin_dashboard_token";
@@ -63,8 +63,10 @@ export function AuthProvider({ children }) {
     } else {
       setLoading(false);
     }
+    const stopTracking = startLocationTracking();
     return () => {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      stopTracking();
     };
   }, [fetchUser]);
 

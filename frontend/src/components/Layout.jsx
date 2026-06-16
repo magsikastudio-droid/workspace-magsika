@@ -93,7 +93,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const role = user?.role || "talent";
+  const role = (user?.role || "talent").toLowerCase();
 
   // Daily report lock (talent + pm)
   const [deadline, setDeadline] = useState({ hour: 16, minute: 30 });

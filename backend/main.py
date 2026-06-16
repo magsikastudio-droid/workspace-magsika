@@ -1662,7 +1662,7 @@ async def update_location(req: LocationUpdate, current_user: dict = Depends(get_
 
 @app.get("/location/team")
 async def get_team_locations(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "superadmin":
+    if (current_user.get("role") or "").lower() != "superadmin":
         raise HTTPException(status_code=403, detail="Superadmin only")
     docs = await db.locations.find().to_list(200)
     return [
