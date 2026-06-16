@@ -2770,6 +2770,51 @@ async def list_daily_reports(
     docs = await db.daily_reports.find(query).sort("date", -1).limit(100).to_list(100)
     return {"reports": [_fmt_daily_report(d) for d in docs]}
 
+class UpdateDailyReportBody(BaseModel):
+    work_done: str = ""
+    feelings: str = ""
+    obstacles: str = ""
+    notes: str = ""
+
+@app.put("/daily-reports/{report_id}")
+async def update_daily_report(report_id: str, body: UpdateDailyReportBody, current_user: dict = Depends(get_current_user)):
+    from bson import ObjectId
+    try:
+        oid = ObjectId(report_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid report ID")
+    doc = await db.daily_reports.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Report tidak ditemukan")
+    role = current_user.get("role")
+    username = current_user.get("username", "")
+    if role not in ["admin", "pm"] and doc.get("username") != username:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.daily_reports.update_one({"_id": oid}, {"$set": {
+        "work_done": body.work_done, "feelings": body.feelings,
+        "obstacles": body.obstacles, "notes": body.notes, "updated_at": now_iso,
+    }})
+    result = await db.daily_reports.find_one({"_id": oid})
+    return {"report": _fmt_daily_report(result)}
+
+@app.delete("/daily-reports/{report_id}")
+async def delete_daily_report(report_id: str, current_user: dict = Depends(get_current_user)):
+    from bson import ObjectId
+    try:
+        oid = ObjectId(report_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid report ID")
+    doc = await db.daily_reports.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Report tidak ditemukan")
+    role = current_user.get("role")
+    username = current_user.get("username", "")
+    if role not in ["admin", "pm"] and doc.get("username") != username:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    await db.daily_reports.delete_one({"_id": oid})
+    return {"ok": True}
+
 async def notify_unsubmitted_daily_reports():
     from datetime import timedelta
     now_wib = datetime.now(timezone.utc) + timedelta(hours=7)

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
-import { BookOpen, Calendar, CheckCircle2, ChevronDown, Clock, Loader2, Send } from "lucide-react";
+import { BookOpen, Calendar, CheckCircle2, ChevronDown, Clock, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 
 const FEELINGS = [
   { value: "Semangat", emoji: "😊", active: "border-emerald-400 bg-emerald-50 text-emerald-700" },
@@ -39,11 +39,17 @@ export default function DailyReport() {
 
   /* ── Talent state ── */
   const [todayStatus, setTodayStatus] = useState(null);
+  const [todayReportId, setTodayReportId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [myHistory, setMyHistory] = useState([]);
   const [histLoading, setHistLoading] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [editingHistId, setEditingHistId] = useState(null);
+  const [editHistForm, setEditHistForm] = useState(EMPTY_FORM);
+  const [editHistSaving, setEditHistSaving] = useState(false);
+  const [histRefreshKey, setHistRefreshKey] = useState(0);
 
   /* ── Admin/PM state ── */
   const [dateFilter, setDateFilter] = useState(todayWIB());
@@ -67,7 +73,10 @@ export default function DailyReport() {
     api.get("/daily-reports", { params: { date: todayWIB() } })
       .then((r) => {
         const rep = r.data.reports?.[0];
-        if (rep) setForm({ work_done: rep.work_done || "", feelings: rep.feelings || "Semangat", obstacles: rep.obstacles || "", notes: rep.notes || "" });
+        if (rep) {
+          setForm({ work_done: rep.work_done || "", feelings: rep.feelings || "Semangat", obstacles: rep.obstacles || "", notes: rep.notes || "" });
+          setTodayReportId(rep.id);
+        }
       })
       .catch(() => {});
   }, [todayStatus, isAdminOrPM]);
@@ -80,7 +89,7 @@ export default function DailyReport() {
       .then((r) => setMyHistory(r.data.reports || []))
       .catch(() => {})
       .finally(() => setHistLoading(false));
-  }, [todayStatus, isAdminOrPM]);
+  }, [todayStatus, isAdminOrPM, histRefreshKey]);
 
   /* ── Reports list (admin) ── */
   useEffect(() => {
@@ -107,8 +116,10 @@ export default function DailyReport() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post("/daily-reports", form);
+      const res = await api.post("/daily-reports", form);
       setTodayStatus(true);
+      setTodayReportId(res.data.report?.id || null);
+      setHistRefreshKey((k) => k + 1);
       toast.success("Daily report berhasil disubmit!");
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Gagal submit daily report.");
@@ -116,6 +127,50 @@ export default function DailyReport() {
       setSubmitting(false);
     }
   }, [form]);
+
+  const handleDeleteToday = useCallback(async () => {
+    if (!todayReportId) return;
+    if (!window.confirm("Hapus daily report hari ini?")) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/daily-reports/${todayReportId}`);
+      setTodayStatus(false);
+      setTodayReportId(null);
+      setForm(EMPTY_FORM);
+      setHistRefreshKey((k) => k + 1);
+      toast.success("Report dihapus.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal menghapus.");
+    } finally {
+      setDeleting(false);
+    }
+  }, [todayReportId]);
+
+  const handleDeleteHist = useCallback(async (reportId) => {
+    if (!window.confirm("Hapus laporan ini?")) return;
+    try {
+      await api.delete(`/daily-reports/${reportId}`);
+      setHistRefreshKey((k) => k + 1);
+      setExpandedId(null);
+      toast.success("Laporan dihapus.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal menghapus.");
+    }
+  }, []);
+
+  const handleSaveHistEdit = useCallback(async (reportId) => {
+    setEditHistSaving(true);
+    try {
+      await api.put(`/daily-reports/${reportId}`, editHistForm);
+      setHistRefreshKey((k) => k + 1);
+      setEditingHistId(null);
+      toast.success("Laporan diperbarui.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Gagal menyimpan.");
+    } finally {
+      setEditHistSaving(false);
+    }
+  }, [editHistForm]);
 
   /* ═══════════════════════════════════════════════
      TALENT VIEW
@@ -208,14 +263,27 @@ export default function DailyReport() {
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 transition"
-            >
-              {submitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-              {todayStatus ? "Update Report" : "Submit Report"}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 transition"
+              >
+                {submitting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                {todayStatus ? "Update Report" : "Submit Report"}
+              </button>
+              {todayStatus && todayReportId && (
+                <button
+                  type="button"
+                  onClick={handleDeleteToday}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-500 hover:bg-rose-50 disabled:opacity-60 transition"
+                >
+                  {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  Hapus
+                </button>
+              )}
+            </div>
           </form>
         </div>
 
@@ -236,7 +304,7 @@ export default function DailyReport() {
               {myHistory.map((r) => (
                 <div key={r.id}>
                   <button
-                    onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
+                    onClick={() => { setExpandedId(expandedId === r.id ? null : r.id); setEditingHistId(null); }}
                     className="flex items-center justify-between w-full px-5 py-3.5 text-left hover:bg-slate-50 transition"
                   >
                     <div className="flex items-center gap-3">
@@ -249,10 +317,69 @@ export default function DailyReport() {
                     <ChevronDown size={15} className={`text-slate-400 transition-transform ${expandedId === r.id ? "rotate-180" : ""}`} />
                   </button>
                   {expandedId === r.id && (
-                    <div className="px-5 pb-4 space-y-3 bg-slate-50/50 border-t border-slate-100">
-                      {r.work_done && <ReportField label="Pekerjaan" value={r.work_done} />}
-                      {r.obstacles && <ReportField label="Kendala" value={r.obstacles} />}
-                      {r.notes && <ReportField label="Note" value={r.notes} />}
+                    <div className="border-t border-slate-100 bg-slate-50/50">
+                      {editingHistId === r.id ? (
+                        /* ── Inline edit form ── */
+                        <div className="px-5 py-4 space-y-3">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Pekerjaan</label>
+                            <textarea value={editHistForm.work_done} onChange={(e) => setEditHistForm((p) => ({ ...p, work_done: e.target.value }))}
+                              rows={4} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-violet-400 resize-y" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Perasaan</label>
+                            <div className="flex gap-2">
+                              {FEELINGS.map((f) => (
+                                <button key={f.value} type="button" onClick={() => setEditHistForm((p) => ({ ...p, feelings: f.value }))}
+                                  className={`flex items-center gap-1 rounded-xl border-2 px-3 py-1.5 text-xs font-semibold transition ${editHistForm.feelings === f.value ? f.active : "border-slate-200 bg-white text-slate-500"}`}>
+                                  {f.emoji} {f.value}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Kendala</label>
+                            <textarea value={editHistForm.obstacles} onChange={(e) => setEditHistForm((p) => ({ ...p, obstacles: e.target.value }))}
+                              rows={3} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-violet-400 resize-y" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Note</label>
+                            <textarea value={editHistForm.notes} onChange={(e) => setEditHistForm((p) => ({ ...p, notes: e.target.value }))}
+                              rows={2} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-violet-400 resize-y" />
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => handleSaveHistEdit(r.id)} disabled={editHistSaving}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60 transition">
+                              {editHistSaving ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Simpan
+                            </button>
+                            <button onClick={() => setEditingHistId(null)}
+                              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition">
+                              Batal
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* ── View mode ── */
+                        <div className="px-5 pb-4 space-y-3">
+                          {r.work_done && <ReportField label="Pekerjaan" value={r.work_done} />}
+                          {r.obstacles && <ReportField label="Kendala" value={r.obstacles} />}
+                          {r.notes && <ReportField label="Note" value={r.notes} />}
+                          <div className="flex gap-2 pt-2">
+                            <button
+                              onClick={() => { setEditingHistId(r.id); setEditHistForm({ work_done: r.work_done || "", feelings: r.feelings || "Semangat", obstacles: r.obstacles || "", notes: r.notes || "" }); }}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                            >
+                              <Pencil size={12} /> Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteHist(r.id)}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-50 transition"
+                            >
+                              <Trash2 size={12} /> Hapus
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
