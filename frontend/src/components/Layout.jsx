@@ -238,7 +238,7 @@ export default function Layout({ children }) {
             </div>
             <div>
               <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{user?.name || user?.full_name || "Admin"}</p>
-              <p className="text-[10px] text-slate-400 dark:text-slate-600 capitalize">{user?.role || "admin"}</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-600 capitalize">{user?.is_superadmin ? "Superadmin" : (user?.role || "admin")}</p>
             </div>
           </div>
           <button onClick={logout} title="Logout" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-rose-500 transition">
