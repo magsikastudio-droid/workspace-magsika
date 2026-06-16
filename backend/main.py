@@ -2757,6 +2757,20 @@ class DailyReportBody(BaseModel):
     obstacles: str = ""
     notes: str = ""
 
+def _validate_daily_report(body) -> None:
+    MIN = 100
+    errors = []
+    if len(body.work_done.strip()) < MIN:
+        errors.append(f"Pekerjaan minimal {MIN} karakter (saat ini {len(body.work_done.strip())})")
+    if len(body.obstacles.strip()) < MIN:
+        errors.append(f"Kendala minimal {MIN} karakter (saat ini {len(body.obstacles.strip())})")
+    if len(body.notes.strip()) < MIN:
+        errors.append(f"Note minimal {MIN} karakter (saat ini {len(body.notes.strip())})")
+    if not body.feelings.strip():
+        errors.append("Perasaan harus dipilih")
+    if errors:
+        raise HTTPException(status_code=422, detail="; ".join(errors))
+
 def _fmt_daily_report(doc: dict) -> dict:
     d = {k: v for k, v in doc.items() if k != "_id"}
     d["id"] = str(doc["_id"])
@@ -2764,6 +2778,7 @@ def _fmt_daily_report(doc: dict) -> dict:
 
 @app.post("/daily-reports")
 async def submit_daily_report(body: DailyReportBody, current_user: dict = Depends(get_current_user)):
+    _validate_daily_report(body)
     from datetime import timedelta
     now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
     date_key = now_wib.strftime("%Y-%m-%d")
@@ -2840,6 +2855,7 @@ async def update_daily_report(report_id: str, body: UpdateDailyReportBody, curre
     username = current_user.get("username", "")
     if role not in ["admin", "pm"] and doc.get("username") != username:
         raise HTTPException(status_code=403, detail="Forbidden")
+    _validate_daily_report(body)
     now_iso = datetime.now(timezone.utc).isoformat()
     await db.daily_reports.update_one({"_id": oid}, {"$set": {
         "work_done": body.work_done, "feelings": body.feelings,

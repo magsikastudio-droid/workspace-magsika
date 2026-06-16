@@ -30,6 +30,18 @@ const fmtDate = (str) => {
   return `${parseInt(d)} ${MONTHS[parseInt(m) - 1]} ${y}`;
 };
 
+const MIN_CHARS = 100;
+
+const CharCount = ({ val }) => {
+  const n = (val || "").trim().length;
+  const ok = n >= MIN_CHARS;
+  return (
+    <span className={`text-[10px] font-semibold tabular-nums ${ok ? "text-emerald-500" : "text-rose-400"}`}>
+      {n}/{MIN_CHARS}
+    </span>
+  );
+};
+
 const EMPTY_FORM = { work_done: "", feelings: "Semangat", obstacles: "", notes: "" };
 
 export default function DailyReport() {
@@ -112,8 +124,17 @@ export default function DailyReport() {
       .catch(() => {});
   }, [isAdminOrPM]);
 
+  const validateReport = (f) => {
+    const MIN = 100;
+    if (f.work_done.trim().length < MIN) { toast.error(`Pekerjaan minimal ${MIN} karakter (${f.work_done.trim().length}/${MIN})`); return false; }
+    if (f.obstacles.trim().length < MIN) { toast.error(`Kendala minimal ${MIN} karakter (${f.obstacles.trim().length}/${MIN})`); return false; }
+    if (f.notes.trim().length < MIN)     { toast.error(`Note minimal ${MIN} karakter (${f.notes.trim().length}/${MIN})`);     return false; }
+    return true;
+  };
+
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
+    if (!validateReport(form)) return;
     setSubmitting(true);
     try {
       const res = await api.post("/daily-reports", form);
@@ -159,6 +180,7 @@ export default function DailyReport() {
   }, []);
 
   const handleSaveHistEdit = useCallback(async (reportId) => {
+    if (!validateReport(editHistForm)) return;
     setEditHistSaving(true);
     try {
       await api.put(`/daily-reports/${reportId}`, editHistForm);
@@ -212,7 +234,10 @@ export default function DailyReport() {
 
           <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Apa yang dikerjakan hari ini? *</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-600">Apa yang dikerjakan hari ini? *</label>
+                <CharCount val={form.work_done} />
+              </div>
               <textarea
                 value={form.work_done}
                 onChange={(e) => setForm((p) => ({ ...p, work_done: e.target.value }))}
@@ -224,7 +249,7 @@ export default function DailyReport() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Perasaan hari ini</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Perasaan hari ini *</label>
               <div className="flex gap-2">
                 {FEELINGS.map((f) => (
                   <button
@@ -242,7 +267,10 @@ export default function DailyReport() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kendala hari ini</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-600">Kendala hari ini *</label>
+                <CharCount val={form.obstacles} />
+              </div>
               <textarea
                 value={form.obstacles}
                 onChange={(e) => setForm((p) => ({ ...p, obstacles: e.target.value }))}
@@ -253,7 +281,10 @@ export default function DailyReport() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Note tambahan</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-600">Note tambahan *</label>
+                <CharCount val={form.notes} />
+              </div>
               <textarea
                 value={form.notes}
                 onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
@@ -322,7 +353,10 @@ export default function DailyReport() {
                         /* ── Inline edit form ── */
                         <div className="px-5 py-4 space-y-3">
                           <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Pekerjaan</label>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Pekerjaan</label>
+                              <CharCount val={editHistForm.work_done} />
+                            </div>
                             <textarea value={editHistForm.work_done} onChange={(e) => setEditHistForm((p) => ({ ...p, work_done: e.target.value }))}
                               rows={4} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-violet-400 resize-y" />
                           </div>
@@ -338,12 +372,18 @@ export default function DailyReport() {
                             </div>
                           </div>
                           <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Kendala</label>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Kendala</label>
+                              <CharCount val={editHistForm.obstacles} />
+                            </div>
                             <textarea value={editHistForm.obstacles} onChange={(e) => setEditHistForm((p) => ({ ...p, obstacles: e.target.value }))}
                               rows={3} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-violet-400 resize-y" />
                           </div>
                           <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Note</label>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Note</label>
+                              <CharCount val={editHistForm.notes} />
+                            </div>
                             <textarea value={editHistForm.notes} onChange={(e) => setEditHistForm((p) => ({ ...p, notes: e.target.value }))}
                               rows={2} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-violet-400 resize-y" />
                           </div>
