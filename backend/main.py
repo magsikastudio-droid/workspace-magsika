@@ -610,7 +610,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         user = None
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "talent"), "status": user.get("status", "active")}
+    raw_role = user.get("role", "talent")
+    is_superadmin = raw_role == "superadmin"
+    return {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": "admin" if is_superadmin else raw_role, "is_superadmin": is_superadmin, "status": user.get("status", "active")}
 
 
 @app.post("/auth/login")

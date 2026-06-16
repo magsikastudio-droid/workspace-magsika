@@ -11,9 +11,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const ROLE_OPTIONS = ["admin", "pm", "talent"];
+const ROLE_OPTIONS = ["superadmin", "admin", "pm", "talent"];
 
 const ROLE_COLORS = {
+  superadmin: "bg-purple-100 text-purple-800",
   admin: "bg-violet-100 text-violet-700",
   pm: "bg-sky-100 text-sky-700",
   talent: "bg-amber-100 text-amber-700",
