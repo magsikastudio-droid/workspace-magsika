@@ -47,8 +47,8 @@ const fmtClock = (seconds) => {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
 const getCountdown = (task, now) => {
-  if (!task.deadline_time) return null;
-  return Math.floor((new Date(task.deadline_time).getTime() - now) / 1000);
+  if (!task.duration_seconds) return null;
+  return task.duration_seconds - getElapsed(task, now);
 };
 const fmtCountdown = (secs) => {
   if (secs <= 0) return "Overdue";
@@ -128,7 +128,7 @@ export default function Todo() {
   const [detailTaskId, setDetailTaskId] = useState(null);
   const [taskInput, setTaskInput] = useState({
     title: "", assignee: "", assignee_type: "tim", status: "pending", date: todayStr(), notes: "",
-    deadline_time: "", target_progress: "",
+    duration_seconds: null, target_progress: "",
   });
   const alarmFiredRef = useRef(new Set());
 
@@ -140,16 +140,17 @@ export default function Todo() {
 
   const visibleTasks = useMemo(() => tasks.filter((t) => t.date === date), [tasks, date]);
 
-  // Alarm: fire when any active task's deadline is crossed
+  // Alarm: fire when a running task's time budget runs out
   useEffect(() => {
     visibleTasks.forEach((task) => {
-      if (!task.deadline_time) return;
+      if (!task.duration_seconds) return;
       if (["done", "failed"].includes(task.status)) return;
+      if (!task.timer_started) return; // only alarm while timer is running
       const countdown = getCountdown(task, now);
       if (countdown !== null && countdown <= 0 && !alarmFiredRef.current.has(task.id)) {
         alarmFiredRef.current.add(task.id);
-        showLocalNotification("⏰ Deadline Habis!", `${task.title} — ${task.assignee}`);
-        toast.error(`Deadline habis: ${task.title}`, { description: `Assignee: ${task.assignee}` });
+        showLocalNotification("⏰ Waktu Habis!", `${task.title} — ${task.assignee}`);
+        toast.error(`Waktu habis: ${task.title}`, { description: `Assignee: ${task.assignee}` });
       }
     });
   }, [now, visibleTasks]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -214,7 +215,7 @@ export default function Todo() {
     e.preventDefault();
     await createTask({ ...taskInput, date });
     setShowAdd(false);
-    setTaskInput({ title: "", assignee: "", assignee_type: "tim", status: "pending", date, notes: "", deadline_time: "", target_progress: "" });
+    setTaskInput({ title: "", assignee: "", assignee_type: "tim", status: "pending", date, notes: "", duration_seconds: null, target_progress: "" });
     fetchTasks(date);
   };
 
@@ -281,7 +282,7 @@ export default function Todo() {
     const payload = {
       title: editTask.title, notes: editTask.notes,
       assignee: editTask.assignee, assignee_type: editTask.assignee_type, status: editTask.status,
-      deadline_time: editTask.deadline_time || null,
+      duration_seconds: editTask.duration_seconds || null,
       target_progress: editTask.target_progress || null,
     };
     if (["done", "failed", "menunggu_review"].includes(editTask.status) && editTask.timer_started) {
@@ -585,8 +586,9 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
   const isActive = task.status === "pending" || task.status === "in progress" || isRevision;
 
   const countdown = getCountdown(task, now);
-  const isOverdue = !isFinished && countdown !== null && countdown <= 0;
-  const isUrgent  = !isFinished && countdown !== null && countdown > 0 && countdown <= 1800;
+  const hasStarted = elapsed > 0 || !!task.timer_started;
+  const isOverdue = !isFinished && countdown !== null && countdown <= 0 && hasStarted;
+  const isUrgent  = !isFinished && countdown !== null && countdown > 0 && countdown <= 1800 && hasStarted;
 
   const stopProp = (fn) => (e) => { e.stopPropagation(); fn(); };
 
@@ -663,8 +665,8 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
         </div>
       </div>
 
-      {/* Countdown bar — only when deadline_time is set and task not finished */}
-      {countdown !== null && !isFinished && (
+      {/* Countdown bar — only after timer was started at least once */}
+      {countdown !== null && !isFinished && hasStarted && (
         <div className={`mx-4 mt-2 flex items-center gap-1.5 rounded-xl px-3 py-1.5 ${
           isOverdue ? "bg-rose-100" : isUrgent ? "bg-orange-100" : "bg-sky-50"
         }`}>
@@ -755,9 +757,11 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
   const elapsed = getElapsed(task, now);
   const linkedOrder = orders.find((o) => o.id === task.order_id);
   const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
+  const elapsed2 = getElapsed(task, now);
   const countdown = getCountdown(task, now);
-  const isOverdue = countdown !== null && countdown <= 0 && !["done","failed"].includes(task.status);
-  const isUrgent  = countdown !== null && countdown > 0 && countdown <= 1800 && !["done","failed"].includes(task.status);
+  const hasStarted2 = elapsed2 > 0 || !!task.timer_started;
+  const isOverdue = countdown !== null && countdown <= 0 && hasStarted2 && !["done","failed"].includes(task.status);
+  const isUrgent  = countdown !== null && countdown > 0 && countdown <= 1800 && hasStarted2 && !["done","failed"].includes(task.status);
 
   const [orderTotal, setOrderTotal] = useState(null);
   useEffect(() => {
@@ -787,20 +791,20 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
         </div>
 
         <div className="px-6 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
-          {/* Countdown / deadline block */}
-          {countdown !== null && (
+          {/* Countdown block — shown once timer has been started */}
+          {countdown !== null && hasStarted2 && (
             <div className={`rounded-2xl border px-4 py-3 ${isOverdue ? "border-rose-200 bg-rose-50" : isUrgent ? "border-orange-200 bg-orange-50" : "border-sky-100 bg-sky-50"}`}>
               <div className="flex items-center gap-2">
                 <AlarmClock size={14} className={isOverdue ? "text-rose-500" : isUrgent ? "text-orange-500" : "text-sky-500"} />
                 <div className="flex-1">
                   <p className={`text-[10px] font-bold uppercase tracking-widest ${isOverdue ? "text-rose-400" : isUrgent ? "text-orange-400" : "text-sky-400"}`}>
-                    {isOverdue ? "Deadline Terlewat" : "Sisa Waktu"}
+                    {isOverdue ? "Waktu Terlewat" : "Sisa Waktu"}
                   </p>
                   <p className={`text-base font-mono font-bold ${isOverdue ? "text-rose-600" : isUrgent ? "text-orange-600" : "text-sky-600"}`}>
-                    {isOverdue ? `${fmtCountdown(Math.abs(countdown))} lalu` : fmtCountdown(countdown)}
+                    {isOverdue ? `+${fmtCountdown(Math.abs(countdown))}` : fmtCountdown(countdown)}
                   </p>
                 </div>
-                <p className="text-xs text-slate-400 font-mono">{new Date(task.deadline_time).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
+                <p className="text-xs text-slate-400 font-mono">dari {Math.floor(task.duration_seconds / 3600)}j {Math.floor((task.duration_seconds % 3600) / 60)}m</p>
               </div>
             </div>
           )}
@@ -1029,26 +1033,54 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
             </label>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
-              Deadline Waktu
-              <input
-                type="datetime-local"
-                value={data.deadline_time ? data.deadline_time.slice(0, 16) : ""}
-                onChange={(e) => onChange((p) => ({ ...p, deadline_time: e.target.value ? new Date(e.target.value).toISOString() : "" }))}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
-              />
-            </label>
-            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
-              Target Progres
-              <input
-                value={data.target_progress || ""}
-                onChange={(e) => onChange((p) => ({ ...p, target_progress: e.target.value }))}
-                placeholder="Mis: Modeling selesai 100%"
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
-              />
-            </label>
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Durasi (Countdown)</p>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-1">
+                <input
+                  type="number" min="0" max="23"
+                  value={Math.floor((data.duration_seconds || 0) / 3600)}
+                  onChange={(e) => {
+                    const h = Math.max(0, parseInt(e.target.value) || 0);
+                    const m = Math.floor(((data.duration_seconds || 0) % 3600) / 60);
+                    onChange((p) => ({ ...p, duration_seconds: h * 3600 + m * 60 || null }));
+                  }}
+                  className="w-16 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-center text-slate-900 outline-none focus:border-indigo-300"
+                />
+                <span className="text-xs text-slate-400">jam</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-1">
+                <input
+                  type="number" min="0" max="59"
+                  value={Math.floor(((data.duration_seconds || 0) % 3600) / 60)}
+                  onChange={(e) => {
+                    const h = Math.floor((data.duration_seconds || 0) / 3600);
+                    const m = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
+                    onChange((p) => ({ ...p, duration_seconds: h * 3600 + m * 60 || null }));
+                  }}
+                  className="w-16 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-center text-slate-900 outline-none focus:border-indigo-300"
+                />
+                <span className="text-xs text-slate-400">menit</span>
+              </div>
+              {data.duration_seconds > 0 && (
+                <button type="button" onClick={() => onChange((p) => ({ ...p, duration_seconds: null }))} className="text-slate-300 hover:text-rose-400">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            {data.duration_seconds > 0 && (
+              <p className="text-xs text-indigo-500">Countdown mulai saat tombol Start ditekan</p>
+            )}
           </div>
+          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+            Target Progres
+            <input
+              value={data.target_progress || ""}
+              onChange={(e) => onChange((p) => ({ ...p, target_progress: e.target.value }))}
+              placeholder="Mis: Modeling selesai 100%"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
+            />
+          </label>
 
           <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
             Catatan

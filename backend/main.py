@@ -208,7 +208,7 @@ def format_task(record: dict) -> dict:
         "time_elapsed": record.get("time_elapsed", 0),
         "timer_started": record.get("timer_started"),
         "order_num": record.get("order_num", 999),
-        "deadline_time": record.get("deadline_time"),
+        "duration_seconds": record.get("duration_seconds"),
         "target_progress": record.get("target_progress"),
     }
 
@@ -352,7 +352,7 @@ class TaskBase(BaseModel):
     time_elapsed: int = 0
     timer_started: Optional[str] = None
     order_num: Optional[int] = None
-    deadline_time: Optional[str] = None
+    duration_seconds: Optional[int] = None
     target_progress: Optional[str] = None
 
 
@@ -370,7 +370,7 @@ class TaskUpdate(BaseModel):
     time_elapsed: Optional[int] = None
     timer_started: Optional[str] = None
     order_num: Optional[int] = None
-    deadline_time: Optional[str] = None
+    duration_seconds: Optional[int] = None
     target_progress: Optional[str] = None
 
 
@@ -989,8 +989,9 @@ async def tasks_summary(month: Optional[str] = None, from_date: Optional[str] = 
         elif st == "in progress": artist_map[a]["in_progress"] += 1
         else:                   artist_map[a]["pending"] += 1
         artist_map[a]["time"] += t.get("time_elapsed", 0) or 0
-        dl = t.get("deadline_time")
-        if dl and st not in ("done", "failed") and dl < now_iso:
+        dur = t.get("duration_seconds")
+        elapsed = t.get("time_elapsed", 0) or 0
+        if dur and st not in ("done", "failed") and elapsed >= dur:
             artist_map[a]["overdue"] += 1
         oid = t.get("order_id")
         if oid:
