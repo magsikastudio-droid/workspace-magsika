@@ -42,7 +42,7 @@ jobs:
 
       - name: Copy frontend build to VPS
         run: |
-          ssh vps "rm -rf /root/admin-dashboard/frontend/dist && mkdir -p /root/admin-dashboard/frontend/dist"
+          ssh vps "rm -rf /root/admin-dashboard/frontend/dist && mkdir -p /root/admin-dashboard/frontend/dist/assets"
           scp -r frontend/dist/* vps:/root/admin-dashboard/frontend/dist/
 
       - name: Copy backend to VPS
