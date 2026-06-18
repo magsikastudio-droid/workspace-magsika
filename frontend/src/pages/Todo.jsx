@@ -8,7 +8,6 @@ import { useTasks } from "../context/TasksContext";
 import { useOrders } from "../context/OrdersContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
-import { showLocalNotification } from "../lib/notifications";
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 const todayStr = () => {
@@ -130,8 +129,6 @@ export default function Todo() {
     title: "", assignee: "", assignee_type: "tim", status: "pending", date: todayStr(), notes: "",
     duration_seconds: null, target_progress: "",
   });
-  const alarmFiredRef = useRef(new Set());
-
   const [dragState, setDragState] = useState({});
   const dragIdRef = useRef(null);
   const dragOverRef = useRef(null);
@@ -139,21 +136,6 @@ export default function Todo() {
   useEffect(() => { if (user) fetchTasks(date); }, [date, fetchTasks, user]);
 
   const visibleTasks = useMemo(() => tasks.filter((t) => t.date === date), [tasks, date]);
-
-  // Alarm: fire when a running task's time budget runs out
-  useEffect(() => {
-    visibleTasks.forEach((task) => {
-      if (!task.duration_seconds) return;
-      if (["done", "failed"].includes(task.status)) return;
-      if (!task.timer_started) return; // only alarm while timer is running
-      const countdown = getCountdown(task, now);
-      if (countdown !== null && countdown <= 0 && !alarmFiredRef.current.has(task.id)) {
-        alarmFiredRef.current.add(task.id);
-        showLocalNotification("⏰ Waktu Habis!", `${task.title} — ${task.assignee}`);
-        toast.error(`Waktu habis: ${task.title}`, { description: `Assignee: ${task.assignee}` });
-      }
-    });
-  }, [now, visibleTasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const grouped = useMemo(() => {
     return visibleTasks.reduce((acc, task) => {
