@@ -6,7 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import {
   Activity, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock,
-  Users, FolderOpen, Loader2, Pencil, Timer,
+  Users, FolderOpen, Loader2, Pencil, Timer, AlarmClock,
   Search, Sparkles, Trash2, X,
 } from "lucide-react";
 import { normalizeStatus } from "../lib/constants";
@@ -565,6 +565,15 @@ function ArtistDetailPanel({ artistName, summary, orderById, monthStr, selMonth,
             <p className="text-2xl font-bold text-sky-700">{fmtTime(avgTimePerOrder) === "—" ? "0" : fmtTime(avgTimePerOrder)}</p>
             <p className="text-xs text-slate-400 mt-0.5">Avg/Project</p>
           </div>
+          {(stats.overdue ?? 0) > 0 && (
+            <div className="col-span-2 rounded-2xl bg-rose-50 border border-rose-100 p-3 flex items-center gap-3">
+              <AlarmClock size={18} className="text-rose-500 shrink-0" />
+              <div>
+                <p className="text-lg font-bold text-rose-700">{stats.overdue} task overdue</p>
+                <p className="text-xs text-rose-400">melewati deadline yang ditetapkan</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Progress bar done rate */}
@@ -897,13 +906,19 @@ function AdminPerformance() {
         </div>
       </div>
 
-      {/* Metrics — revenue diganti avg waktu/project */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetCard icon={FolderOpen}  label="Orders Masuk"   value={monthOrders.length} sub={`${doneOrders} selesai · ${activeOrds} aktif`}  accent="border-l-violet-500" iconBg="bg-violet-50 text-violet-600" />
-        <MetCard icon={Activity}    label="Tasks Selesai"  value={summary.artists.reduce((s,a)=>s+a.done,0)} sub={`dari ${summary.total_tasks} task total`} accent="border-l-emerald-500" iconBg="bg-emerald-50 text-emerald-600" />
-        <MetCard icon={Clock}       label="Total Waktu"    value={fmtTime(summary.total_time)} sub="akumulasi timer semua artist" accent="border-l-sky-500" iconBg="bg-sky-50 text-sky-600" />
-        <MetCard icon={Timer}       label="Avg Waktu/Project" value={avgTimePerProject > 0 ? fmtTime(avgTimePerProject) : "—"} sub={`dari ${orderTaskStats.filter(o=>o.time>0).length} project`} accent="border-l-amber-500" iconBg="bg-amber-50 text-amber-600" />
-      </div>
+      {/* Metrics */}
+      {(() => {
+        const totalOverdue = summary.artists.reduce((s, a) => s + (a.overdue || 0), 0);
+        return (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <MetCard icon={FolderOpen}  label="Orders Masuk"   value={monthOrders.length} sub={`${doneOrders} selesai · ${activeOrds} aktif`}  accent="border-l-violet-500" iconBg="bg-violet-50 text-violet-600" />
+            <MetCard icon={Activity}    label="Tasks Selesai"  value={summary.artists.reduce((s,a)=>s+a.done,0)} sub={`dari ${summary.total_tasks} task total`} accent="border-l-emerald-500" iconBg="bg-emerald-50 text-emerald-600" />
+            <MetCard icon={Clock}       label="Total Waktu"    value={fmtTime(summary.total_time)} sub="akumulasi timer semua artist" accent="border-l-sky-500" iconBg="bg-sky-50 text-sky-600" />
+            <MetCard icon={Timer}       label="Avg Waktu/Project" value={avgTimePerProject > 0 ? fmtTime(avgTimePerProject) : "—"} sub={`dari ${orderTaskStats.filter(o=>o.time>0).length} project`} accent="border-l-amber-500" iconBg="bg-amber-50 text-amber-600" />
+            <MetCard icon={AlarmClock}  label="Task Overdue"   value={totalOverdue} sub="melewati deadline" accent="border-l-rose-500" iconBg="bg-rose-50 text-rose-600" />
+          </div>
+        );
+      })()}
 
       {/* Main grid */}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -956,6 +971,11 @@ function AdminPerformance() {
                           {artist.failed > 0 && <span className="inline-flex items-center rounded-lg bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700">✗ {artist.failed} gagal</span>}
                           {artist.in_progress > 0 && <span className="inline-flex items-center rounded-lg bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">◌ {artist.in_progress} jalan</span>}
                           {artist.time > 0 && <span className="inline-flex items-center rounded-lg bg-indigo-50 px-2 py-1 text-xs font-mono font-semibold text-indigo-700">⏱ {fmtTime(artist.time)}</span>}
+                          {artist.overdue > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700">
+                              <AlarmClock size={10} /> {artist.overdue} overdue
+                            </span>
+                          )}
                         </div>
                         {(avgTurnaround !== null || onTimeRate !== null || avgRevision !== null) && (
                           <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 px-3 py-2">
