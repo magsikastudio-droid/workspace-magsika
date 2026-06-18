@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2, ClipboardList, GripVertical, Kanban, Loader2, Pause, Pencil, Play,
-  Plus, Search, Send, X, Zap, Clock, CheckCheck,
+  Plus, Search, Send, X, Zap, Clock, CheckCheck, AlarmClock, Target,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
 import { useOrders } from "../context/OrdersContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { showLocalNotification } from "../lib/notifications";
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 const todayStr = () => {
@@ -45,6 +46,19 @@ const fmtClock = (seconds) => {
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
+const getCountdown = (task, now) => {
+  if (!task.deadline_time) return null;
+  return Math.floor((new Date(task.deadline_time).getTime() - now) / 1000);
+};
+const fmtCountdown = (secs) => {
+  if (secs <= 0) return "Overdue";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
+
 const avatarColors = ["bg-indigo-500","bg-emerald-500","bg-amber-500","bg-rose-500","bg-purple-500","bg-cyan-500"];
 const avatarColor = (name) => {
   let h = 0;
@@ -114,7 +128,9 @@ export default function Todo() {
   const [detailTaskId, setDetailTaskId] = useState(null);
   const [taskInput, setTaskInput] = useState({
     title: "", assignee: "", assignee_type: "tim", status: "pending", date: todayStr(), notes: "",
+    deadline_time: "", target_progress: "",
   });
+  const alarmFiredRef = useRef(new Set());
 
   const [dragState, setDragState] = useState({});
   const dragIdRef = useRef(null);
@@ -123,6 +139,20 @@ export default function Todo() {
   useEffect(() => { if (user) fetchTasks(date); }, [date, fetchTasks, user]);
 
   const visibleTasks = useMemo(() => tasks.filter((t) => t.date === date), [tasks, date]);
+
+  // Alarm: fire when any active task's deadline is crossed
+  useEffect(() => {
+    visibleTasks.forEach((task) => {
+      if (!task.deadline_time) return;
+      if (["done", "failed"].includes(task.status)) return;
+      const countdown = getCountdown(task, now);
+      if (countdown !== null && countdown <= 0 && !alarmFiredRef.current.has(task.id)) {
+        alarmFiredRef.current.add(task.id);
+        showLocalNotification("⏰ Deadline Habis!", `${task.title} — ${task.assignee}`);
+        toast.error(`Deadline habis: ${task.title}`, { description: `Assignee: ${task.assignee}` });
+      }
+    });
+  }, [now, visibleTasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const grouped = useMemo(() => {
     return visibleTasks.reduce((acc, task) => {
@@ -184,7 +214,7 @@ export default function Todo() {
     e.preventDefault();
     await createTask({ ...taskInput, date });
     setShowAdd(false);
-    setTaskInput({ title: "", assignee: "", assignee_type: "tim", status: "pending", date, notes: "" });
+    setTaskInput({ title: "", assignee: "", assignee_type: "tim", status: "pending", date, notes: "", deadline_time: "", target_progress: "" });
     fetchTasks(date);
   };
 
@@ -251,6 +281,8 @@ export default function Todo() {
     const payload = {
       title: editTask.title, notes: editTask.notes,
       assignee: editTask.assignee, assignee_type: editTask.assignee_type, status: editTask.status,
+      deadline_time: editTask.deadline_time || null,
+      target_progress: editTask.target_progress || null,
     };
     if (["done", "failed", "menunggu_review"].includes(editTask.status) && editTask.timer_started) {
       payload.time_elapsed = getElapsed(editTask, Date.now());
@@ -548,9 +580,13 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
   const isFailed = task.status === "failed";
   const isReview = task.status === "menunggu_review";
   const isRevision = task.status === "in_revision";
-  const isFinished = isDone || isFailed || isReview;
+  const isFinished = isDone || isFailed;
   const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
   const isActive = task.status === "pending" || task.status === "in progress" || isRevision;
+
+  const countdown = getCountdown(task, now);
+  const isOverdue = !isFinished && countdown !== null && countdown <= 0;
+  const isUrgent  = !isFinished && countdown !== null && countdown > 0 && countdown <= 1800;
 
   const stopProp = (fn) => (e) => { e.stopPropagation(); fn(); };
 
@@ -561,7 +597,11 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
       onDragOver={compact ? undefined : (e) => onDragOver(e, task.id)}
       onClick={() => onDetail(task)}
       className={`rounded-2xl border transition cursor-pointer ${
-        isRunning
+        isOverdue
+          ? "border-rose-400 bg-rose-50/60"
+          : isUrgent
+          ? "border-orange-400 bg-orange-50/60"
+          : isRunning
           ? "border-sky-300 bg-sky-50"
           : isDone
           ? "border-emerald-300 bg-emerald-50 opacity-70"
@@ -574,10 +614,12 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
           : "border-slate-200 bg-white hover:border-slate-300"
       } ${!compact ? "active:cursor-grabbing" : ""}`}
     >
+      {isOverdue   && <div className="h-1 rounded-t-2xl bg-rose-500" />}
+      {!isOverdue && isUrgent && <div className="h-1 rounded-t-2xl bg-orange-400" />}
       {isDone      && <div className="h-1 rounded-t-2xl bg-emerald-400" />}
       {isFailed    && <div className="h-1 rounded-t-2xl bg-rose-400" />}
-      {isReview    && <div className="h-1 rounded-t-2xl bg-orange-400" />}
-      {isRevision  && <div className="h-1 rounded-t-2xl bg-violet-400" />}
+      {isReview    && !isOverdue && !isUrgent && <div className="h-1 rounded-t-2xl bg-orange-400" />}
+      {isRevision  && !isOverdue && !isUrgent && <div className="h-1 rounded-t-2xl bg-violet-400" />}
 
       {/* Top row: title + edit/delete */}
       <div className="flex items-start gap-2 px-4 pt-3">
@@ -585,16 +627,22 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
         <div className="flex-1 min-w-0 overflow-hidden">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1 overflow-hidden">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${sm.dot}`} />
                 {isDone && <span className="text-emerald-500 text-xs font-bold shrink-0">✓</span>}
                 {isReview && <span className="text-orange-500 text-xs font-bold shrink-0">⏳</span>}
+                {isOverdue && <span className="text-xs font-bold text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded-full shrink-0">Overdue</span>}
                 <p className={`text-sm font-semibold break-words min-w-0 ${
                   isDone || isFailed ? "line-through text-slate-400" : "text-slate-900"
                 }`}>
                   {task.title}
                 </p>
               </div>
+              {task.target_progress && (
+                <p className="mt-1 flex items-center gap-1 text-xs text-violet-600 font-medium">
+                  <Target size={10} className="shrink-0" />{task.target_progress}
+                </p>
+              )}
               {task.notes && (
                 <p className="mt-1 text-xs text-slate-500 font-mono whitespace-pre-wrap break-words break-all leading-relaxed">
                   {task.notes}
@@ -614,6 +662,19 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
           </div>
         </div>
       </div>
+
+      {/* Countdown bar — only when deadline_time is set and task not finished */}
+      {countdown !== null && !isFinished && (
+        <div className={`mx-4 mt-2 flex items-center gap-1.5 rounded-xl px-3 py-1.5 ${
+          isOverdue ? "bg-rose-100" : isUrgent ? "bg-orange-100" : "bg-sky-50"
+        }`}>
+          <AlarmClock size={12} className={isOverdue ? "text-rose-500 shrink-0" : isUrgent ? "text-orange-500 shrink-0" : "text-sky-500 shrink-0"} />
+          <span className={`text-xs font-mono font-bold ${isOverdue ? "text-rose-600" : isUrgent ? "text-orange-600" : "text-sky-600"}`}>
+            {isOverdue ? `Overdue ${fmtCountdown(Math.abs(countdown))} lalu` : fmtCountdown(countdown)}
+          </span>
+          {isUrgent && <span className="ml-auto text-[10px] text-orange-500 font-semibold animate-pulse">Segera!</span>}
+        </div>
+      )}
 
       {/* Bottom row: aksi kiri + status kanan */}
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 px-4 py-2.5">
@@ -649,7 +710,7 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
               className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition"
             >
               <CheckCircle2 size={12} />
-              <span>{isAdminOrPM ? "Done" : "Done"}</span>
+              <span>Done</span>
             </button>
           )}
 
@@ -694,6 +755,9 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
   const elapsed = getElapsed(task, now);
   const linkedOrder = orders.find((o) => o.id === task.order_id);
   const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
+  const countdown = getCountdown(task, now);
+  const isOverdue = countdown !== null && countdown <= 0 && !["done","failed"].includes(task.status);
+  const isUrgent  = countdown !== null && countdown > 0 && countdown <= 1800 && !["done","failed"].includes(task.status);
 
   const [orderTotal, setOrderTotal] = useState(null);
   useEffect(() => {
@@ -723,6 +787,30 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
         </div>
 
         <div className="px-6 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
+          {/* Countdown / deadline block */}
+          {countdown !== null && (
+            <div className={`rounded-2xl border px-4 py-3 ${isOverdue ? "border-rose-200 bg-rose-50" : isUrgent ? "border-orange-200 bg-orange-50" : "border-sky-100 bg-sky-50"}`}>
+              <div className="flex items-center gap-2">
+                <AlarmClock size={14} className={isOverdue ? "text-rose-500" : isUrgent ? "text-orange-500" : "text-sky-500"} />
+                <div className="flex-1">
+                  <p className={`text-[10px] font-bold uppercase tracking-widest ${isOverdue ? "text-rose-400" : isUrgent ? "text-orange-400" : "text-sky-400"}`}>
+                    {isOverdue ? "Deadline Terlewat" : "Sisa Waktu"}
+                  </p>
+                  <p className={`text-base font-mono font-bold ${isOverdue ? "text-rose-600" : isUrgent ? "text-orange-600" : "text-sky-600"}`}>
+                    {isOverdue ? `${fmtCountdown(Math.abs(countdown))} lalu` : fmtCountdown(countdown)}
+                  </p>
+                </div>
+                <p className="text-xs text-slate-400 font-mono">{new Date(task.deadline_time).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
+              </div>
+            </div>
+          )}
+          {/* Target progress */}
+          {task.target_progress && (
+            <div className="rounded-2xl border border-violet-100 bg-violet-50 px-4 py-3">
+              <p className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-violet-400">Target Progres</p>
+              <p className="text-sm font-semibold text-violet-800">{task.target_progress}</p>
+            </div>
+          )}
           {task.notes && (
             <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
               <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Catatan</p>
@@ -940,6 +1028,27 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
               </select>
             </label>
           )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+              Deadline Waktu
+              <input
+                type="datetime-local"
+                value={data.deadline_time ? data.deadline_time.slice(0, 16) : ""}
+                onChange={(e) => onChange((p) => ({ ...p, deadline_time: e.target.value ? new Date(e.target.value).toISOString() : "" }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
+              />
+            </label>
+            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+              Target Progres
+              <input
+                value={data.target_progress || ""}
+                onChange={(e) => onChange((p) => ({ ...p, target_progress: e.target.value }))}
+                placeholder="Mis: Modeling selesai 100%"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-normal normal-case text-slate-900 outline-none focus:border-indigo-300 tracking-normal"
+              />
+            </label>
+          </div>
 
           <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
             Catatan

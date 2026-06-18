@@ -208,6 +208,8 @@ def format_task(record: dict) -> dict:
         "time_elapsed": record.get("time_elapsed", 0),
         "timer_started": record.get("timer_started"),
         "order_num": record.get("order_num", 999),
+        "deadline_time": record.get("deadline_time"),
+        "target_progress": record.get("target_progress"),
     }
 
 
@@ -350,6 +352,8 @@ class TaskBase(BaseModel):
     time_elapsed: int = 0
     timer_started: Optional[str] = None
     order_num: Optional[int] = None
+    deadline_time: Optional[str] = None
+    target_progress: Optional[str] = None
 
 
 class TaskCreate(TaskBase):
@@ -366,6 +370,8 @@ class TaskUpdate(BaseModel):
     time_elapsed: Optional[int] = None
     timer_started: Optional[str] = None
     order_num: Optional[int] = None
+    deadline_time: Optional[str] = None
+    target_progress: Optional[str] = None
 
 
 app = FastAPI(title="Admin Dashboard API")
@@ -969,12 +975,13 @@ async def tasks_summary(month: Optional[str] = None, from_date: Optional[str] = 
         records = await db.tasks.find(query).to_list(2000)
     except Exception:
         records = []
+    now_iso = datetime.now(timezone.utc).isoformat()
     artist_map: Dict[str, Any] = {}
     order_map: Dict[str, Any] = {}
     for t in records:
         a = t.get("assignee", "?")
         if a not in artist_map:
-            artist_map[a] = {"tasks": 0, "done": 0, "failed": 0, "in_progress": 0, "pending": 0, "time": 0, "assignee_type": t.get("assignee_type", "tim")}
+            artist_map[a] = {"tasks": 0, "done": 0, "failed": 0, "in_progress": 0, "pending": 0, "time": 0, "overdue": 0, "assignee_type": t.get("assignee_type", "tim")}
         artist_map[a]["tasks"] += 1
         st = t.get("status", "pending")
         if st == "done":        artist_map[a]["done"] += 1
@@ -982,6 +989,9 @@ async def tasks_summary(month: Optional[str] = None, from_date: Optional[str] = 
         elif st == "in progress": artist_map[a]["in_progress"] += 1
         else:                   artist_map[a]["pending"] += 1
         artist_map[a]["time"] += t.get("time_elapsed", 0) or 0
+        dl = t.get("deadline_time")
+        if dl and st not in ("done", "failed") and dl < now_iso:
+            artist_map[a]["overdue"] += 1
         oid = t.get("order_id")
         if oid:
             if oid not in order_map:
