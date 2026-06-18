@@ -11,6 +11,8 @@ import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { showLocalNotification } from "../lib/notifications";
+import OverdueAlarmBanner from "./OverdueAlarmBanner";
 
 const FEELINGS_LOCK = [
   { value: "Semangat", emoji: "😊", active: "border-emerald-400 bg-emerald-50 text-emerald-700" },
@@ -29,6 +31,14 @@ const isAfterDeadlineLock = (h, m) => {
   return wibH > h || (wibH === h && wibM >= m);
 };
 const LOCK_MIN_CHARS = 100;
+
+const computeElapsedForAlarm = (task) => {
+  let base = task.time_elapsed || 0;
+  if (task.timer_started) {
+    base += Math.floor((Date.now() - new Date(task.timer_started).getTime()) / 1000);
+  }
+  return Math.max(0, base);
+};
 const LockCharCount = ({ val }) => {
   const n = (val || "").trim().length;
   const ok = n >= LOCK_MIN_CHARS;
@@ -153,6 +163,43 @@ export default function Layout({ children }) {
     const id = setInterval(poll, 20000);
     return () => clearInterval(id);
   }, [user]);
+
+  // Overdue alarm — global, fires for all roles on any page
+  const [overdueAlarms, setOverdueAlarms] = useState([]);
+  const [alarmBannerVisible, setAlarmBannerVisible] = useState(false);
+  const overdueAlarmFiredRef = useRef(new Set());
+
+  useEffect(() => {
+    if (!user) return;
+    const checkOverdue = async () => {
+      try {
+        const today = todayStrLock();
+        const res = await api.get("/tasks", { params: { date: today } });
+        const tasks = res.data?.tasks || [];
+        const overdue = [];
+        let hasNew = false;
+        tasks.forEach((t) => {
+          if (!t.duration_seconds) return;
+          if (["done", "failed"].includes(t.status)) return;
+          const elapsed = computeElapsedForAlarm(t);
+          if (elapsed <= 0) return; // never started
+          if (elapsed < t.duration_seconds) return; // not yet overdue
+          overdue.push({ ...t, _overtime: elapsed - t.duration_seconds });
+          if (!overdueAlarmFiredRef.current.has(t.id)) {
+            overdueAlarmFiredRef.current.add(t.id);
+            showLocalNotification("⏰ Waktu Habis!", `${t.title} — ${t.assignee}`);
+            hasNew = true;
+          }
+        });
+        setOverdueAlarms(overdue);
+        if (hasNew) setAlarmBannerVisible(true);
+        if (overdue.length === 0) setAlarmBannerVisible(false);
+      } catch {}
+    };
+    checkOverdue();
+    const id = setInterval(checkOverdue, 10000);
+    return () => clearInterval(id);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
@@ -329,6 +376,12 @@ export default function Layout({ children }) {
 
   return (
     <div className="fixed inset-0 flex overflow-hidden bg-slate-50 dark:bg-[#0f0f0f]">
+      {alarmBannerVisible && (
+        <OverdueAlarmBanner
+          tasks={overdueAlarms}
+          onDismiss={() => setAlarmBannerVisible(false)}
+        />
+      )}
       <aside className="hidden w-56 shrink-0 overflow-hidden border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d0d0d] lg:flex lg:flex-col">
         <SidebarContent />
       </aside>
