@@ -468,6 +468,7 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
   const [manualFolder, setManualFolder] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dynamicContribs, setDynamicContribs] = useState(null);
+  const [totalCurrency, setTotalCurrency] = useState("USD");
 
   useEffect(() => {
     if (!order.id) return;
@@ -508,6 +509,14 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
     next[idx] = { ...next[idx], [field]: value };
     return { ...p, artist_contributions: next };
   });
+
+  const drawerDisplayTotal = totalCurrency === "IDR"
+    ? (form.total ? Math.round(Number(form.total) * exchangeRate) : "")
+    : (form.total ?? "");
+  const handleDrawerTotalChange = (e) => {
+    const v = e.target.value;
+    setForm((p) => ({ ...p, total: totalCurrency === "IDR" ? (v ? Number(v) / exchangeRate : "") : v }));
+  };
 
   const rebalance = (list) => {
     const n = list.length;
@@ -773,9 +782,20 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
                 <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Keuangan</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <p className="text-xs font-medium text-slate-500">Nilai Order (USD)</p>
-                    <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">$</span><input type="number" min="0" value={form.total} onChange={set("total")} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-7 pr-3 text-sm outline-none focus:border-indigo-300" /></div>
-                    <p className="text-xs text-slate-400">= Rp{totalIdr.toLocaleString("id-ID")}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-slate-500">Nilai Order</p>
+                      <div className="flex overflow-hidden rounded-lg border border-slate-200 text-[10px] font-bold">
+                        <button type="button" onClick={() => setTotalCurrency("USD")} className={`px-2 py-0.5 transition ${totalCurrency === "USD" ? "bg-violet-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>USD</button>
+                        <button type="button" onClick={() => setTotalCurrency("IDR")} className={`px-2 py-0.5 transition ${totalCurrency === "IDR" ? "bg-violet-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>IDR</button>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">{totalCurrency === "IDR" ? "Rp" : "$"}</span>
+                      <input type="number" min="0" value={drawerDisplayTotal} onChange={handleDrawerTotalChange} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-7 pr-3 text-sm outline-none focus:border-indigo-300" />
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      {totalCurrency === "IDR" ? `≈ $${(Number(form.total) || 0).toFixed(2)}` : `= Rp${Math.round((Number(form.total) || 0) * exchangeRate).toLocaleString("id-ID")}`}
+                    </p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-500">Fee Freelance (Rp)</p>
@@ -830,8 +850,16 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
   const [manualFolder, setManualFolder] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sendingTg, setSendingTg] = useState(false);
+  const [totalCurrency, setTotalCurrency] = useState("USD");
 
   const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
+  const modalDisplayTotal = totalCurrency === "IDR"
+    ? (form.total ? Math.round(Number(form.total) * exchangeRate) : "")
+    : (form.total ?? "");
+  const handleModalTotalChange = (e) => {
+    const v = e.target.value;
+    setForm((p) => ({ ...p, total: totalCurrency === "IDR" ? (v ? Number(v) / exchangeRate : "") : v }));
+  };
 
   const orderDate = form.order_date || new Date().toISOString().slice(0, 10);
   const orderNumToday = (ordersOnDay ? ordersOnDay(orderDate) : 0) + 1;
@@ -1041,12 +1069,20 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
             <SectionHeader icon={Flame} label="Keuangan" color="text-orange-600" />
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-1.5">
-                <p className="text-xs font-medium text-slate-600">Nilai order (USD)</p>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">$</span>
-                  <input type="number" min="0" value={form.total} onChange={set("total")} className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-7 pr-4 text-sm outline-none focus:border-indigo-300 focus:bg-white" />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium text-slate-600">Nilai order</p>
+                  <div className="flex overflow-hidden rounded-lg border border-slate-200 text-[10px] font-bold">
+                    <button type="button" onClick={() => setTotalCurrency("USD")} className={`px-2 py-0.5 transition ${totalCurrency === "USD" ? "bg-violet-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>USD</button>
+                    <button type="button" onClick={() => setTotalCurrency("IDR")} className={`px-2 py-0.5 transition ${totalCurrency === "IDR" ? "bg-violet-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>IDR</button>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-400">= Rp{totalIdr.toLocaleString("id-ID")}</p>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">{totalCurrency === "IDR" ? "Rp" : "$"}</span>
+                  <input type="number" min="0" value={modalDisplayTotal} onChange={handleModalTotalChange} className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-7 pr-4 text-sm outline-none focus:border-indigo-300 focus:bg-white" />
+                </div>
+                <p className="text-xs text-slate-400">
+                  {totalCurrency === "IDR" ? `≈ $${(Number(form.total) || 0).toFixed(2)}` : `= Rp${Math.round((Number(form.total) || 0) * exchangeRate).toLocaleString("id-ID")}`}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-slate-600">Fee Freelance (Rp)</p>
