@@ -1,9 +1,8 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { FileText, Printer, Search, X } from "lucide-react";
-
-const BANK_INFO = { nama: "Ivo Febrian Pratama", bank: "BCA", rekening: "8030651287" };
+import { api } from "../lib/api";
 
 function buildInvoiceNumber(orders, selectedIds) {
   if (!selectedIds.length) return "";
@@ -31,6 +30,14 @@ export default function Invoice() {
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("Semua Klien");
   const [monthFilter, setMonthFilter] = useState("Semua Bulan");
+  const [bankInfo, setBankInfo] = useState({ nama: "", bank: "", rekening: "" });
+
+  useEffect(() => {
+    api.get("/settings/bank-info").then((res) => {
+      const d = res.data;
+      setBankInfo({ nama: d.nama || "", bank: d.bank || "", rekening: d.rekening || "" });
+    }).catch(() => {});
+  }, []);
 
   /* ─── filter list ─── */
   const allClients = useMemo(() => [...new Set(orders.map((o) => o.client).filter(Boolean))].sort(), [orders]);
@@ -261,9 +268,9 @@ export default function Invoice() {
               <div>
                 <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.15em", color: "#94a3b8", marginBottom: "8px" }}>Pembayaran Ditransfer Ke</p>
                 <div style={{ display: "flex", gap: "40px" }}>
-                  <div><p style={{ fontSize: "11px", color: "#94a3b8" }}>BANK</p><p style={{ fontSize: "14px", fontWeight: 700 }}>{BANK_INFO.bank}</p></div>
-                  <div><p style={{ fontSize: "11px", color: "#94a3b8" }}>NO. REKENING</p><p style={{ fontSize: "14px", fontWeight: 700, fontFamily: "monospace" }}>{BANK_INFO.rekening}</p></div>
-                  <div><p style={{ fontSize: "11px", color: "#94a3b8" }}>ATAS NAMA</p><p style={{ fontSize: "14px", fontWeight: 700 }}>{BANK_INFO.nama}</p></div>
+                  <div><p style={{ fontSize: "11px", color: "#94a3b8" }}>BANK</p><p style={{ fontSize: "14px", fontWeight: 700 }}>{bankInfo.bank}</p></div>
+                  <div><p style={{ fontSize: "11px", color: "#94a3b8" }}>NO. REKENING</p><p style={{ fontSize: "14px", fontWeight: 700, fontFamily: "monospace" }}>{bankInfo.rekening}</p></div>
+                  <div><p style={{ fontSize: "11px", color: "#94a3b8" }}>ATAS NAMA</p><p style={{ fontSize: "14px", fontWeight: 700 }}>{bankInfo.nama}</p></div>
                 </div>
               </div>
             </div>
