@@ -31,6 +31,8 @@ export default function Invoice() {
   const [clientFilter, setClientFilter] = useState("Semua Klien");
   const [monthFilter, setMonthFilter] = useState("Semua Bulan");
   const [bankInfo, setBankInfo] = useState({ nama: "", bank: "", rekening: "" });
+  const [invoicePayMode, setInvoicePayMode] = useState("auto"); // "auto" | "lunas" | "dp"
+  const [dpInput, setDpInput] = useState("");
 
   useEffect(() => {
     api.get("/settings/bank-info").then((res) => {
@@ -69,8 +71,12 @@ export default function Invoice() {
 
   const invoiceNum = buildInvoiceNumber(orders, selected);
   const totalTagihan = selectedOrders.reduce((s, o) => s + (o.total || 0), 0);
-  const sudahDibayar = selectedOrders.filter((o) => o.payment_status === "Lunas").reduce((s, o) => s + (o.total || 0), 0);
-  const sisaTagihan = totalTagihan - sudahDibayar;
+  const sudahDibayarAuto = selectedOrders.filter((o) => o.payment_status === "Lunas").reduce((s, o) => s + (o.total || 0), 0);
+  const dpInUsd = currency === "IDR" ? (Number(dpInput) || 0) / exchangeRate : (Number(dpInput) || 0);
+  const sudahDibayar = invoicePayMode === "auto" ? sudahDibayarAuto
+    : invoicePayMode === "lunas" ? totalTagihan
+    : dpInUsd;
+  const sisaTagihan = Math.max(0, totalTagihan - sudahDibayar);
   const invoiceDate = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit" });
 
   /* ─── print ─── */
@@ -181,6 +187,60 @@ export default function Invoice() {
         </div>
       </div>
 
+      {/* Payment settings */}
+      {selected.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm px-5 py-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">Pengaturan Pembayaran Invoice</p>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex rounded-xl border border-slate-200 overflow-hidden text-sm font-semibold">
+              {[
+                { key: "auto", label: "Otomatis" },
+                { key: "lunas", label: "Lunas" },
+                { key: "dp", label: "DP Sebagian" },
+              ].map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => setInvoicePayMode(m.key)}
+                  className={`px-4 py-2 transition ${invoicePayMode === m.key ? "bg-violet-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {invoicePayMode === "dp" && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-slate-500 whitespace-nowrap">Jumlah DP</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">
+                    {currency === "IDR" ? "Rp" : "$"}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={dpInput}
+                    onChange={(e) => setDpInput(e.target.value)}
+                    placeholder="0"
+                    className="w-44 rounded-xl border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-sm outline-none focus:border-violet-400 focus:bg-white"
+                  />
+                </div>
+                {dpInUsd > 0 && (
+                  <span className="text-xs text-slate-400">
+                    {currency === "IDR" ? `≈ $${dpInUsd.toFixed(2)}` : `= Rp${Math.round(dpInUsd * exchangeRate).toLocaleString("id-ID")}`}
+                  </span>
+                )}
+              </div>
+            )}
+            {invoicePayMode === "lunas" && (
+              <p className="text-xs text-emerald-600 font-semibold">✓ Invoice ditandai Lunas Penuh</p>
+            )}
+            {invoicePayMode === "auto" && (
+              <p className="text-xs text-slate-400">Status diambil dari data payment_status tiap order</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Invoice preview */}
       {selected.length > 0 ? (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -246,15 +306,28 @@ export default function Invoice() {
 
             {/* Totals */}
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "24px" }}>
-              <div style={{ minWidth: "240px" }}>
-                {[
-                  { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
-                  { label: "Sudah Dibayar", value: formatMoney(sudahDibayar), bold: false },
-                  { label: "Sisa Tagihan", value: formatMoney(sisaTagihan), bold: true },
-                ].map((row) => (
+              <div style={{ minWidth: "260px" }}>
+                {(invoicePayMode === "lunas"
+                  ? [
+                      { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
+                      { label: "Lunas", value: formatMoney(totalTagihan), bold: false, green: true },
+                      { label: "Sisa Tagihan", value: formatMoney(0), bold: true },
+                    ]
+                  : invoicePayMode === "dp" && sudahDibayar > 0
+                  ? [
+                      { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
+                      { label: "DP Diterima", value: formatMoney(sudahDibayar), bold: false, green: true },
+                      { label: "Sisa Tagihan", value: formatMoney(sisaTagihan), bold: true },
+                    ]
+                  : [
+                      { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
+                      { label: "Sudah Dibayar", value: formatMoney(sudahDibayar), bold: false },
+                      { label: "Sisa Tagihan", value: formatMoney(sisaTagihan), bold: true },
+                    ]
+                ).map((row) => (
                   <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: row.bold ? "2px solid #e2e8f0" : "none", marginTop: row.bold ? "4px" : 0 }}>
                     <span style={{ fontSize: "13px", color: "#64748b" }}>{row.label}</span>
-                    <span style={{ fontSize: row.bold ? "16px" : "13px", fontWeight: row.bold ? 800 : 600, color: row.bold && sisaTagihan > 0 ? "#16a34a" : "#0f172a" }}>{row.value}</span>
+                    <span style={{ fontSize: row.bold ? "16px" : "13px", fontWeight: row.bold ? 800 : 600, color: row.green ? "#16a34a" : row.bold && sisaTagihan > 0 ? "#dc2626" : row.bold ? "#16a34a" : "#0f172a" }}>{row.value}</span>
                   </div>
                 ))}
               </div>
