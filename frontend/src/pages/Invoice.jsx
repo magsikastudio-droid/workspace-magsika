@@ -306,30 +306,42 @@ export default function Invoice() {
 
             {/* Totals */}
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "24px" }}>
-              <div style={{ minWidth: "260px" }}>
-                {(invoicePayMode === "lunas"
-                  ? [
-                      { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
-                      { label: "Lunas", value: formatMoney(totalTagihan), bold: false, green: true },
-                      { label: "Sisa Tagihan", value: formatMoney(0), bold: true },
-                    ]
-                  : invoicePayMode === "dp" && sudahDibayar > 0
-                  ? [
-                      { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
-                      { label: "DP Diterima", value: formatMoney(sudahDibayar), bold: false, green: true },
-                      { label: "Sisa Tagihan", value: formatMoney(sisaTagihan), bold: true },
-                    ]
-                  : [
-                      { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
-                      { label: "Sudah Dibayar", value: formatMoney(sudahDibayar), bold: false },
-                      { label: "Sisa Tagihan", value: formatMoney(sisaTagihan), bold: true },
-                    ]
-                ).map((row) => (
-                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: row.bold ? "2px solid #e2e8f0" : "none", marginTop: row.bold ? "4px" : 0 }}>
-                    <span style={{ fontSize: "13px", color: "#64748b" }}>{row.label}</span>
-                    <span style={{ fontSize: row.bold ? "16px" : "13px", fontWeight: row.bold ? 800 : 600, color: row.green ? "#16a34a" : row.bold && sisaTagihan > 0 ? "#dc2626" : row.bold ? "#16a34a" : "#0f172a" }}>{row.value}</span>
-                  </div>
-                ))}
+              <div style={{ minWidth: "280px" }}>
+                {invoicePayMode === "dp" && sudahDibayar > 0 ? (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0" }}>
+                      <span style={{ fontSize: "13px", color: "#64748b" }}>Nilai Project</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#0f172a" }}>{formatMoney(totalTagihan)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0" }}>
+                      <span style={{ fontSize: "13px", color: "#64748b" }}>Sisa (ditagih nanti)</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#64748b" }}>{formatMoney(sisaTagihan)}</span>
+                    </div>
+                    <div style={{ borderTop: "2px solid #e2e8f0", marginTop: "4px", display: "flex", justifyContent: "space-between", padding: "8px 0 5px" }}>
+                      <span style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>Tagihan DP Sekarang</span>
+                      <span style={{ fontSize: "18px", fontWeight: 800, color: "#7c3aed" }}>{formatMoney(sudahDibayar)}</span>
+                    </div>
+                  </>
+                ) : (
+                  [
+                    invoicePayMode === "lunas"
+                      ? [
+                          { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
+                          { label: "Lunas ✓", value: formatMoney(totalTagihan), bold: false, color: "#16a34a" },
+                          { label: "Sisa Tagihan", value: formatMoney(0), bold: true },
+                        ]
+                      : [
+                          { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
+                          { label: "Sudah Dibayar", value: formatMoney(sudahDibayar), bold: false },
+                          { label: "Sisa Tagihan", value: formatMoney(sisaTagihan), bold: true },
+                        ],
+                  ][0].map((row) => (
+                    <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: row.bold ? "2px solid #e2e8f0" : "none", marginTop: row.bold ? "4px" : 0 }}>
+                      <span style={{ fontSize: "13px", color: "#64748b" }}>{row.label}</span>
+                      <span style={{ fontSize: row.bold ? "16px" : "13px", fontWeight: row.bold ? 800 : 600, color: row.color || (row.bold && sisaTagihan > 0 ? "#dc2626" : row.bold ? "#16a34a" : "#0f172a") }}>{row.value}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
