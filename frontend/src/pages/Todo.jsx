@@ -57,6 +57,14 @@ const fmtCountdown = (secs) => {
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
+const fmtBudget = (secs) => {
+  if (!secs) return "";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (h > 0 && m > 0) return `${h}j ${m}m`;
+  if (h > 0) return `${h} jam`;
+  return `${m} menit`;
+};
 
 const avatarColors = ["bg-indigo-500","bg-emerald-500","bg-amber-500","bg-rose-500","bg-purple-500","bg-cyan-500"];
 const avatarColor = (name) => {
@@ -139,7 +147,7 @@ export default function Todo() {
 
   const grouped = useMemo(() => {
     return visibleTasks.reduce((acc, task) => {
-      const bucket = task.assignee_type === "freelance" ? acc.freelance : acc.tim;
+      const bucket = task.assignee_type?.toLowerCase() === "freelance" ? acc.freelance : acc.tim;
       if (!bucket[task.assignee]) bucket[task.assignee] = [];
       bucket[task.assignee].push(task);
       return acc;
@@ -647,15 +655,26 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
         </div>
       </div>
 
-      {/* Countdown bar — only after timer was started at least once */}
-      {countdown !== null && !isFinished && hasStarted && (
+      {/* Duration / countdown bar */}
+      {countdown !== null && !isFinished && (
         <div className={`mx-4 mt-2 flex items-center gap-1.5 rounded-xl px-3 py-1.5 ${
-          isOverdue ? "bg-rose-100" : isUrgent ? "bg-orange-100" : "bg-sky-50"
+          !hasStarted ? "bg-slate-50 border border-dashed border-slate-200"
+          : isOverdue ? "bg-rose-100" : isUrgent ? "bg-orange-100" : "bg-sky-50"
         }`}>
-          <AlarmClock size={12} className={isOverdue ? "text-rose-500 shrink-0" : isUrgent ? "text-orange-500 shrink-0" : "text-sky-500 shrink-0"} />
-          <span className={`text-xs font-mono font-bold ${isOverdue ? "text-rose-600" : isUrgent ? "text-orange-600" : "text-sky-600"}`}>
-            {isOverdue ? `Overdue ${fmtCountdown(Math.abs(countdown))} lalu` : fmtCountdown(countdown)}
+          <AlarmClock size={12} className={
+            !hasStarted ? "text-slate-400 shrink-0"
+            : isOverdue ? "text-rose-500 shrink-0" : isUrgent ? "text-orange-500 shrink-0" : "text-sky-500 shrink-0"
+          } />
+          <span className={`text-xs font-mono font-bold ${
+            !hasStarted ? "text-slate-500"
+            : isOverdue ? "text-rose-600" : isUrgent ? "text-orange-600" : "text-sky-600"
+          }`}>
+            {!hasStarted
+              ? fmtBudget(task.duration_seconds)
+              : isOverdue ? `Overdue +${fmtCountdown(Math.abs(countdown))}` : fmtCountdown(countdown)
+            }
           </span>
+          {!hasStarted && <span className="ml-auto text-[10px] text-slate-400 font-medium">durasi</span>}
           {isUrgent && <span className="ml-auto text-[10px] text-orange-500 font-semibold animate-pulse">Segera!</span>}
         </div>
       )}
