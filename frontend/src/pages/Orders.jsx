@@ -619,6 +619,11 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
               <span className="inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
                 {order.payment_status || "Belum Lunas"}
               </span>
+              {order.payment_status === "DP" && order.dp_paid > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                  Sisa: {formatMoney(Math.max(0, (order.total || 0) - order.dp_paid / exchangeRate))}
+                </span>
+              )}
             </div>
             <h2 className="mt-2 truncate text-lg font-bold text-slate-900">{order.project}</h2>
             <p className="text-sm text-slate-400">{order.client} · {order.platform}</p>

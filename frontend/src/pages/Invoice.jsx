@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
-import { FileText, Printer, Search, X } from "lucide-react";
+import { FileText, Printer, Search, X, CheckCircle2 } from "lucide-react";
 import { api } from "../lib/api";
+import { toast } from "sonner";
 
 function buildInvoiceNumber(orders, selectedIds) {
   if (!selectedIds.length) return "";
@@ -23,7 +24,7 @@ function fmtDate(d) {
 }
 
 export default function Invoice() {
-  const { orders } = useOrders();
+  const { orders, updateOrder } = useOrders();
   const { formatMoney, currency, exchangeRate } = useCurrency();
   const printRef = useRef(null);
   const [selected, setSelected] = useState([]);
@@ -33,6 +34,7 @@ export default function Invoice() {
   const [bankInfo, setBankInfo] = useState({ nama: "", bank: "", rekening: "" });
   const [invoicePayMode, setInvoicePayMode] = useState("auto"); // "auto" | "lunas" | "dp"
   const [dpInput, setDpInput] = useState("");
+  const [konfirmLoading, setKonfirmLoading] = useState(false);
 
   useEffect(() => {
     api.get("/settings/bank-info").then((res) => {
@@ -71,13 +73,44 @@ export default function Invoice() {
 
   const invoiceNum = buildInvoiceNumber(orders, selected);
   const totalTagihan = selectedOrders.reduce((s, o) => s + (o.total || 0), 0);
-  const sudahDibayarAuto = selectedOrders.filter((o) => o.payment_status === "Lunas").reduce((s, o) => s + (o.total || 0), 0);
+  // Auto: Lunas orders fully credited, DP orders credited by dp_paid (stored in IDR)
+  const sudahDibayarAuto = selectedOrders.reduce((s, o) => {
+    if (o.payment_status === "Lunas") return s + (o.total || 0);
+    if (o.payment_status === "DP" && o.dp_paid) return s + (o.dp_paid / exchangeRate);
+    return s;
+  }, 0);
+  const hasDpOrders = selectedOrders.some((o) => o.payment_status === "DP" && o.dp_paid > 0);
   const dpInUsd = currency === "IDR" ? (Number(dpInput) || 0) / exchangeRate : (Number(dpInput) || 0);
   const sudahDibayar = invoicePayMode === "auto" ? sudahDibayarAuto
     : invoicePayMode === "lunas" ? totalTagihan
     : dpInUsd;
   const sisaTagihan = Math.max(0, totalTagihan - sudahDibayar);
   const invoiceDate = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "2-digit" });
+
+  const handleKonfirmasi = async () => {
+    if (!selectedOrders.length) return;
+    setKonfirmLoading(true);
+    try {
+      if (invoicePayMode === "dp") {
+        const dpTotal = Number(dpInput) || 0;
+        const dpInIDR = currency === "IDR" ? dpTotal : dpTotal * exchangeRate;
+        for (const o of selectedOrders) {
+          const share = totalTagihan > 0 ? (o.total || 0) / totalTagihan : 1 / selectedOrders.length;
+          await updateOrder(o.id, { payment_status: "DP", dp_paid: Math.round(dpInIDR * share) });
+        }
+        toast.success(`${selectedOrders.length} order diupdate ke DP`);
+      } else if (invoicePayMode === "lunas") {
+        for (const o of selectedOrders) {
+          await updateOrder(o.id, { payment_status: "Lunas", dp_paid: 0 });
+        }
+        toast.success(`${selectedOrders.length} order diupdate ke Lunas`);
+      }
+    } catch {
+      toast.error("Gagal update status pembayaran");
+    } finally {
+      setKonfirmLoading(false);
+    }
+  };
 
   /* ─── print ─── */
   const handlePrint = () => {
@@ -235,7 +268,19 @@ export default function Invoice() {
               <p className="text-xs text-emerald-600 font-semibold">✓ Invoice ditandai Lunas Penuh</p>
             )}
             {invoicePayMode === "auto" && (
-              <p className="text-xs text-slate-400">Status diambil dari data payment_status tiap order</p>
+              <p className="text-xs text-slate-400">
+                {hasDpOrders ? "✓ Terdeteksi DP — sisa otomatis dihitung untuk pelunasan" : "Status diambil dari data payment_status tiap order"}
+              </p>
+            )}
+            {invoicePayMode !== "auto" && (
+              <button
+                onClick={handleKonfirmasi}
+                disabled={konfirmLoading || (invoicePayMode === "dp" && !dpInput)}
+                className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50 transition"
+              >
+                <CheckCircle2 size={13} />
+                {konfirmLoading ? "Menyimpan..." : "Konfirmasi & Update Order"}
+              </button>
             )}
           </div>
         </div>
@@ -322,23 +367,45 @@ export default function Invoice() {
                       <span style={{ fontSize: "18px", fontWeight: 800, color: "#7c3aed" }}>{formatMoney(sudahDibayar)}</span>
                     </div>
                   </>
+                ) : invoicePayMode === "lunas" ? (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0" }}>
+                      <span style={{ fontSize: "13px", color: "#64748b" }}>Total Tagihan</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#0f172a" }}>{formatMoney(totalTagihan)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0" }}>
+                      <span style={{ fontSize: "13px", color: "#16a34a" }}>Lunas ✓</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#16a34a" }}>{formatMoney(totalTagihan)}</span>
+                    </div>
+                    <div style={{ borderTop: "2px solid #e2e8f0", marginTop: "4px", display: "flex", justifyContent: "space-between", padding: "8px 0 5px" }}>
+                      <span style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>Sisa Tagihan</span>
+                      <span style={{ fontSize: "18px", fontWeight: 800, color: "#16a34a" }}>{formatMoney(0)}</span>
+                    </div>
+                  </>
+                ) : hasDpOrders ? (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0" }}>
+                      <span style={{ fontSize: "13px", color: "#64748b" }}>Nilai Project</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#0f172a" }}>{formatMoney(totalTagihan)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0" }}>
+                      <span style={{ fontSize: "13px", color: "#16a34a" }}>DP Sudah Dibayar ✓</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: "#16a34a" }}>{formatMoney(sudahDibayar)}</span>
+                    </div>
+                    <div style={{ borderTop: "2px solid #e2e8f0", marginTop: "4px", display: "flex", justifyContent: "space-between", padding: "8px 0 5px" }}>
+                      <span style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>Tagihan Pelunasan</span>
+                      <span style={{ fontSize: "18px", fontWeight: 800, color: sisaTagihan > 0 ? "#dc2626" : "#16a34a" }}>{formatMoney(sisaTagihan)}</span>
+                    </div>
+                  </>
                 ) : (
                   [
-                    invoicePayMode === "lunas"
-                      ? [
-                          { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
-                          { label: "Lunas ✓", value: formatMoney(totalTagihan), bold: false, color: "#16a34a" },
-                          { label: "Sisa Tagihan", value: formatMoney(0), bold: true },
-                        ]
-                      : [
-                          { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
-                          { label: "Sudah Dibayar", value: formatMoney(sudahDibayar), bold: false },
-                          { label: "Sisa Tagihan", value: formatMoney(sisaTagihan), bold: true },
-                        ],
-                  ][0].map((row) => (
+                    { label: "Total Tagihan", value: formatMoney(totalTagihan), bold: false },
+                    { label: "Sudah Dibayar", value: formatMoney(sudahDibayar), bold: false },
+                    { label: "Sisa Tagihan", value: formatMoney(sisaTagihan), bold: true },
+                  ].map((row) => (
                     <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: row.bold ? "2px solid #e2e8f0" : "none", marginTop: row.bold ? "4px" : 0 }}>
                       <span style={{ fontSize: "13px", color: "#64748b" }}>{row.label}</span>
-                      <span style={{ fontSize: row.bold ? "16px" : "13px", fontWeight: row.bold ? 800 : 600, color: row.color || (row.bold && sisaTagihan > 0 ? "#dc2626" : row.bold ? "#16a34a" : "#0f172a") }}>{row.value}</span>
+                      <span style={{ fontSize: row.bold ? "16px" : "13px", fontWeight: row.bold ? 800 : 600, color: row.bold && sisaTagihan > 0 ? "#dc2626" : row.bold ? "#16a34a" : "#0f172a" }}>{row.value}</span>
                     </div>
                   ))
                 )}

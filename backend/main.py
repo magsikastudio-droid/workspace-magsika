@@ -135,6 +135,7 @@ def format_order(record: dict) -> dict:
         "order_id": record.get("order_id", ""),
         "work_type": record.get("work_type", "Modeling"),
         "payment_status": record.get("payment_status", "Belum Lunas"),
+        "dp_paid": record.get("dp_paid", 0),
         "folder_code": record.get("folder_code", ""),
         "marketer": record.get("marketer", ""),
         "notes": record.get("notes", ""),
@@ -258,6 +259,7 @@ class OrderUpdate(BaseModel):
     project: Optional[str] = None
     client: Optional[str] = None
     total: Optional[float] = None
+    dp_paid: Optional[float] = None
     status: Optional[str] = None
     deadline: Optional[str] = None
     order_date: Optional[str] = None
