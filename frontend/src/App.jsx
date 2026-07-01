@@ -30,7 +30,6 @@ import Notifications from "./pages/Notifications";
 import RencanaStrategis from "./pages/RencanaStrategis";
 import TeamMemberPage from "./pages/TeamMemberPage";
 import DailyReport from "./pages/DailyReport";
-import TeamLocation from "./pages/TeamLocation";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "./context/AuthContext";
 
@@ -83,7 +82,6 @@ function App() {
                               <Route path="/notifications" element={<RoleGuard allowedRoles={["admin","pm"]}><Notifications /></RoleGuard>} />
                               <Route path="/rencana/:type" element={<RoleGuard allowedRoles={["admin","pm"]}><RencanaStrategis /></RoleGuard>} />
                               <Route path="/rencana" element={<Navigate to="/rencana/teknis" replace />} />
-                              <Route path="/lokasi-tim" element={<RoleGuard allowedRoles={["superadmin"]}><TeamLocation /></RoleGuard>} />
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Layout>

@@ -5,7 +5,7 @@ import {
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
-  Send, Loader2, MapPin,
+  Send, Loader2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -84,12 +84,6 @@ const NAV_SECTIONS = [
     items: [
       { to: "/rencana/teknis", label: "Rencana Teknis",  icon: Zap,     roles: ["admin", "pm"] },
       { to: "/rencana/market", label: "Rencana Market",  icon: Target,  roles: ["admin", "pm"] },
-    ],
-  },
-  {
-    label: "Admin",
-    items: [
-      { to: "/lokasi-tim", label: "Lokasi Tim", icon: MapPin, roles: ["superadmin"] },
     ],
   },
 ];
