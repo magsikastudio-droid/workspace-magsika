@@ -478,14 +478,44 @@ async def carry_forward_tasks():
         print(f"[carry_forward] Error: {e}")
 
 
+def _levenshtein(a: str, b: str) -> int:
+    m, n = len(a), len(b)
+    dp = list(range(n + 1))
+    for i in range(1, m + 1):
+        prev = dp[0]
+        dp[0] = i
+        for j in range(1, n + 1):
+            temp = dp[j]
+            dp[j] = prev if a[i-1] == b[j-1] else 1 + min(prev, dp[j], dp[j-1])
+            prev = temp
+    return dp[n]
+
+def _normalize_name(name: str, known: list) -> str:
+    """Return canonical name from known list if close match, else original."""
+    s = name.strip()
+    sl = s.lower()
+    for k in known:
+        if k.lower() == sl:
+            return k
+    if len(s) >= 3:
+        for k in known:
+            kl = k.lower()
+            if len(kl) >= 3 and sl[:2] == kl[:2] and _levenshtein(sl, kl) <= 2:
+                return k
+    return s
+
 async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
     from datetime import timedelta
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
     today = target_date or jkt_now.strftime("%Y-%m-%d")
+    yesterday = (jkt_now - timedelta(days=1)).strftime("%Y-%m-%d")
     created = 0
     skipped = 0
     try:
         orders = await db.orders.find().to_list(500)
+        # Known names from users collection for typo normalization
+        user_docs = await db.users.find({}, {"full_name": 1}).to_list(200)
+        known_names = [u.get("full_name", "").strip() for u in user_docs if u.get("full_name", "").strip()]
     except Exception as e:
         return {"created": 0, "skipped": 0, "error": str(e)}
     orders.sort(key=lambda o: (o.get("deadline") is None, o.get("deadline") or ""))
@@ -499,31 +529,56 @@ async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
         if not contributions:
             continue
         order_id_str = str(order.get("_id", order.get("id", "")))
-        for contrib in contributions:
-            artist_name = contrib.get("name", "").strip()
-            if not artist_name:
-                continue
-            count = await db.tasks.count_documents({"assignee": artist_name, "date": today})
-            result = await db.tasks.update_one(
-                {"order_id": order_id_str, "assignee": artist_name, "date": today},
-                {"$setOnInsert": {
-                    "title": f"{order.get('project', '')} — {artist_name}",
-                    "assignee": artist_name,
-                    "assignee_type": "freelance" if contrib.get("type") == "Freelance" else "tim",
-                    "status": "pending",
-                    "date": today,
-                    "notes": order.get("folder_code", ""),
-                    "order_id": order_id_str,
-                    "time_elapsed": 0,
-                    "timer_started": None,
-                    "order_num": count,
-                }},
-                upsert=True,
-            )
-            if result.upserted_id:
-                created += 1
-            else:
-                skipped += 1
+
+        # --- 1 task per order per day: find who last worked on it ---
+        prev_tasks = await db.tasks.find(
+            {"order_id": order_id_str, "date": {"$lt": today}}
+        ).sort("date", -1).to_list(20)
+
+        last_assignee = None
+        last_type = "tim"
+        if prev_tasks:
+            # Prefer someone who actually worked (time_elapsed > 0)
+            worked = [t for t in prev_tasks if (t.get("time_elapsed") or 0) > 0]
+            base = worked[0] if worked else prev_tasks[0]
+            last_assignee = _normalize_name(base.get("assignee", ""), known_names)
+            # Look up assignee_type from contributions
+            for c in contributions:
+                if _normalize_name(c.get("name", ""), known_names).lower() == last_assignee.lower():
+                    last_type = "freelance" if c.get("type", "").lower() == "freelance" else "tim"
+                    break
+                last_type = base.get("assignee_type", "tim")
+
+        if not last_assignee:
+            # No history — use first contributor
+            c0 = contributions[0]
+            last_assignee = _normalize_name(c0.get("name", "").strip(), known_names)
+            last_type = "freelance" if c0.get("type", "").lower() == "freelance" else "tim"
+
+        if not last_assignee:
+            continue
+
+        count = await db.tasks.count_documents({"assignee": last_assignee, "date": today})
+        result = await db.tasks.update_one(
+            {"order_id": order_id_str, "date": today},          # 1 task per order per day
+            {"$setOnInsert": {
+                "title": f"{order.get('project', '')} — {last_assignee}",
+                "assignee": last_assignee,
+                "assignee_type": last_type,
+                "status": "pending",
+                "date": today,
+                "notes": order.get("folder_code", ""),
+                "order_id": order_id_str,
+                "time_elapsed": 0,
+                "timer_started": None,
+                "order_num": count,
+            }},
+            upsert=True,
+        )
+        if result.upserted_id:
+            created += 1
+        else:
+            skipped += 1
     return {"created": created, "skipped": skipped}
 
 
