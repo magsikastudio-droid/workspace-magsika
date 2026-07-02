@@ -131,6 +131,9 @@ export default function Todo() {
   const [showAdd, setShowAdd] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+  const [layoutTasks, setLayoutTasks] = useState([]);
+  const [layoutLoading, setLayoutLoading] = useState(false);
   const [confirmDone, setConfirmDone] = useState(null);
   const [detailTaskId, setDetailTaskId] = useState(null);
   const [taskInput, setTaskInput] = useState({
@@ -143,7 +146,23 @@ export default function Todo() {
 
   useEffect(() => { if (user) fetchTasks(date); }, [date, fetchTasks, user]);
 
-  const visibleTasks = useMemo(() => tasks.filter((t) => t.date === date), [tasks, date]);
+  useEffect(() => {
+    if (!user) return;
+    setLayoutLoading(true);
+    api.get("/layout-tasks").then((r) => setLayoutTasks(r.data?.layout_tasks || [])).catch(() => {}).finally(() => setLayoutLoading(false));
+  }, [user]);
+
+  const visibleTasks = useMemo(() => {
+    const raw = tasks.filter((t) => t.date === date);
+    const noOrder = raw.filter((t) => !t.order_id);
+    const withOrder = raw.filter((t) => t.order_id);
+    const seen = {};
+    for (const t of withOrder) {
+      const k = `${t.order_id}__${t.assignee}`;
+      if (!seen[k] || t.id > seen[k].id) seen[k] = t;
+    }
+    return [...noOrder, ...Object.values(seen)];
+  }, [tasks, date]);
 
   const grouped = useMemo(() => {
     return visibleTasks.reduce((acc, task) => {
@@ -188,6 +207,7 @@ export default function Todo() {
 
   /* ── auto generate ─────── */
   const handleAutoGenerate = async () => {
+    setShowGenerateConfirm(false);
     setGenerating(true);
     try {
       const res = await api.post("/tasks/auto-generate", { date });
@@ -198,6 +218,13 @@ export default function Todo() {
       await fetchTasks(date);
     } catch { toast.error("Gagal generate task — pastikan ada order aktif."); }
     finally { setGenerating(false); }
+  };
+
+  const handleLayoutStatusChange = async (id, newStatus) => {
+    try {
+      const res = await api.put(`/layout-tasks/${id}`, { status: newStatus });
+      setLayoutTasks((prev) => prev.map((t) => t.id === id ? { ...t, ...res.data } : t));
+    } catch { toast.error("Gagal update status layout task"); }
   };
 
   /* ── add task ──────────── */
@@ -347,7 +374,7 @@ export default function Todo() {
               </button>
             </div>
             {isAdminOrPM && (
-              <button onClick={handleAutoGenerate} disabled={generating} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
+              <button onClick={() => setShowGenerateConfirm(true)} disabled={generating} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
                 <Zap size={14} /> {generating ? "Generating..." : "Auto Generate"}
               </button>
             )}
@@ -414,6 +441,50 @@ export default function Todo() {
             onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
             onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
           />
+        </div>
+      )}
+
+      {/* Layout Design section */}
+      {(isAdminOrPM || layoutTasks.some((t) => t.talent === (user?.full_name || user?.username))) && (
+        <LayoutTaskSection
+          tasks={layoutTasks}
+          loading={layoutLoading}
+          isAdminOrPM={isAdminOrPM}
+          onStatusChange={handleLayoutStatusChange}
+        />
+      )}
+
+      {showGenerateConfirm && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
+                  <Zap size={20} className="text-white" />
+                </div>
+                <div>
+                  <p className="font-bold text-white text-base">Auto Generate Task</p>
+                  <p className="text-xs text-indigo-100">Konfirmasi sebelum generate</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm text-slate-700 leading-relaxed">
+                Generate task otomatis untuk <span className="font-bold text-indigo-600">{fmtDateLabel(date)}</span>?
+              </p>
+              <p className="mt-2 text-xs text-slate-400">
+                Proses ini akan membuat 1 task per order aktif. Task yang sudah ada tidak akan ditimpa.
+              </p>
+            </div>
+            <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+              <button onClick={() => setShowGenerateConfirm(false)} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">
+                Batal
+              </button>
+              <button onClick={handleAutoGenerate} className="flex-1 rounded-2xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 transition">
+                Ya, Generate
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -905,6 +976,82 @@ function TelegramConfirmModal({ task, onConfirm, onCancel }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── LayoutTaskSection ─────────────────────────────────────────── */
+const LAYOUT_STATUS_META = {
+  "Asseting":      { bg: "bg-slate-100",   text: "text-slate-700",   dot: "bg-slate-400"   },
+  "Layouting":     { bg: "bg-sky-100",     text: "text-sky-700",     dot: "bg-sky-500"     },
+  "Video":         { bg: "bg-violet-100",  text: "text-violet-700",  dot: "bg-violet-500"  },
+  "Ready Publish": { bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-500"   },
+  "Done":          { bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
+};
+const LAYOUT_STATUS_OPTS = ["Asseting", "Layouting", "Video", "Ready Publish", "Done"];
+
+function LayoutTaskSection({ tasks, loading, isAdminOrPM, onStatusChange }) {
+  const active = tasks.filter((t) => t.status !== "Done");
+  const done = tasks.filter((t) => t.status === "Done");
+  const [showDone, setShowDone] = useState(false);
+  const displayed = showDone ? tasks : active;
+
+  return (
+    <div className="rounded-2xl border border-violet-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-violet-100 px-5 py-4">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🎨</span>
+          <div>
+            <p className="font-bold text-slate-900">Layout Design</p>
+            <p className="text-xs text-slate-400">{active.length} aktif · {done.length} selesai</p>
+          </div>
+        </div>
+        {done.length > 0 && (
+          <button onClick={() => setShowDone((v) => !v)} className="text-xs text-slate-400 hover:text-slate-600">
+            {showDone ? "Sembunyikan Done" : `Lihat ${done.length} Done`}
+          </button>
+        )}
+      </div>
+      {loading ? (
+        <div className="py-8 text-center text-sm text-slate-400">Memuat...</div>
+      ) : displayed.length === 0 ? (
+        <div className="py-8 text-center text-sm text-slate-400">Tidak ada layout task aktif.</div>
+      ) : (
+        <div className="divide-y divide-slate-50">
+          {displayed.map((task) => {
+            const sm = LAYOUT_STATUS_META[task.status] || LAYOUT_STATUS_META["Asseting"];
+            const isOverdue = task.deadline && task.deadline < new Date().toISOString().slice(0, 10) && task.status !== "Done";
+            return (
+              <div key={task.id} className={`flex flex-wrap items-center gap-3 px-5 py-3 ${task.status === "Done" ? "opacity-60" : ""}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${sm.bg} ${sm.text}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${sm.dot}`} />{task.status}
+                    </span>
+                    {isOverdue && <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded-full">Overdue</span>}
+                    <p className="text-sm font-semibold text-slate-900 truncate">{task.project}</p>
+                    {task.folder_code && <span className="text-[10px] text-indigo-500 font-mono">{task.folder_code}</span>}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2 flex-wrap">
+                    {task.market && <span className="text-[10px] text-slate-400">{task.market}</span>}
+                    {task.talent && <span className="text-[10px] font-semibold text-slate-600">· {task.talent}</span>}
+                    {task.deadline && <span className={`text-[10px] font-mono ${isOverdue ? "text-rose-500 font-semibold" : "text-slate-400"}`}>📅 {task.deadline}</span>}
+                  </div>
+                </div>
+                {isAdminOrPM && (
+                  <select
+                    value={task.status}
+                    onChange={(e) => onStatusChange(task.id, e.target.value)}
+                    className={`rounded-lg border-0 px-2 py-1 text-xs font-semibold outline-none cursor-pointer ${sm.bg} ${sm.text}`}
+                  >
+                    {LAYOUT_STATUS_OPTS.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

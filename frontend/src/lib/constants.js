@@ -57,7 +57,7 @@ export const PLATFORM_CODES = {
   "Fiverr Eirene":   "EIRENE",
   "Etsy Lolicharm":  "LOLI",
   "Direct":          "DIR",
-  "Komunitas":       "KOMU",
+  "Komunitas":       "LTK",
   "Custom":          "CSTM",
   "Portfolio":       "PORT",
 };

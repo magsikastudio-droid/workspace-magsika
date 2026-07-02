@@ -5,7 +5,7 @@ import {
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
-  Send, Loader2,
+  Send, Loader2, LayoutGrid,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -56,6 +56,7 @@ const NAV_SECTIONS = [
       { to: "/dashboard",    label: "Dashboard",    icon: LayoutDashboard, roles: ["admin"] },
       { to: "/daily-chat",   label: "Daily Chat",   icon: MessageSquare,   roles: ["admin"] },
       { to: "/orders",       label: "Orders",       icon: ClipboardList,   roles: ["admin"] },
+      { to: "/order-layout", label: "Order Layout",  icon: LayoutGrid,      roles: ["admin", "pm", "talent"] },
       { to: "/board",        label: "Board",        icon: Kanban,          roles: ["admin", "pm", "talent"] },
       { to: "/todo",          label: "To Do",         icon: CheckSquare,  roles: ["admin", "pm", "talent"] },
       { to: "/daily-report",  label: "Daily Report",  icon: BookOpen,     roles: ["admin", "pm", "talent"] },

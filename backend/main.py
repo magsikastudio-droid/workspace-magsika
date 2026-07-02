@@ -196,6 +196,21 @@ def to_object_id(value: str):
         return value
 
 
+def format_layout_task(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")) if record.get("_id") else record.get("id"),
+        "project": record.get("project", ""),
+        "folder_code": record.get("folder_code", ""),
+        "market": record.get("market", "Magsika"),
+        "talent": record.get("talent", ""),
+        "deadline": record.get("deadline", ""),
+        "status": record.get("status", "Asseting"),
+        "notes": record.get("notes", ""),
+        "created_at": str(record.get("created_at", "")),
+        "updated_at": str(record.get("updated_at", "")),
+    }
+
+
 def format_task(record: dict) -> dict:
     return {
         "id": str(record.get("_id")) if record.get("_id") else record.get("id"),
@@ -253,6 +268,25 @@ class OrderCreate(BaseModel):
     fee_freelance: Optional[float] = 0
     revision_count: Optional[int] = 0
     completed_at: Optional[str] = None
+
+
+class LayoutTaskCreate(BaseModel):
+    project: str
+    folder_code: str = ""
+    market: str = "Magsika"
+    talent: str = ""
+    deadline: str = ""
+    status: str = "Asseting"
+    notes: str = ""
+
+class LayoutTaskUpdate(BaseModel):
+    project: Optional[str] = None
+    folder_code: Optional[str] = None
+    market: Optional[str] = None
+    talent: Optional[str] = None
+    deadline: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class OrderUpdate(BaseModel):
@@ -2992,6 +3026,48 @@ async def delete_daily_report(report_id: str, current_user: dict = Depends(get_c
         raise HTTPException(status_code=403, detail="Forbidden")
     await db.daily_reports.delete_one({"_id": oid})
     return {"ok": True}
+
+@app.get("/layout-tasks")
+async def get_layout_tasks(current_user: dict = Depends(get_current_user)):
+    docs = await db.layout_tasks.find().sort("deadline", 1).to_list(length=500)
+    return {"layout_tasks": [format_layout_task(d) for d in docs]}
+
+
+@app.post("/layout-tasks")
+async def create_layout_task(data: LayoutTaskCreate, current_user: dict = Depends(get_current_user)):
+    now = datetime.now(timezone.utc)
+    doc = {**data.dict(), "created_at": now, "updated_at": now}
+    result = await db.layout_tasks.insert_one(doc)
+    created = await db.layout_tasks.find_one({"_id": result.inserted_id})
+    return format_layout_task(created)
+
+
+@app.put("/layout-tasks/{task_id}")
+async def update_layout_task(task_id: str, data: LayoutTaskUpdate, current_user: dict = Depends(get_current_user)):
+    try:
+        oid = ObjectId(task_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid task_id")
+    update_data = {k: v for k, v in data.dict().items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc)
+    await db.layout_tasks.update_one({"_id": oid}, {"$set": update_data})
+    updated = await db.layout_tasks.find_one({"_id": oid})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Layout task not found")
+    return format_layout_task(updated)
+
+
+@app.delete("/layout-tasks/{task_id}")
+async def delete_layout_task(task_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        oid = ObjectId(task_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid task_id")
+    result = await db.layout_tasks.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Layout task not found")
+    return {"ok": True}
+
 
 async def notify_unsubmitted_daily_reports():
     from datetime import timedelta
