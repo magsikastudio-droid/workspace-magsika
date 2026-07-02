@@ -2,7 +2,6 @@ import React, { useEffect, useState, useMemo } from "react";
 import { Plus, Edit3, Trash2, X, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import { MARKET_OPTIONS } from "../lib/constants";
 import { useAuth } from "../context/AuthContext";
 
 const LAYOUT_STATUS = ["Asseting", "Layouting", "Video", "Ready Publish", "Done"];
@@ -267,14 +266,27 @@ export default function OrderLayout() {
   );
 }
 
+const generateLayoutCode = (market, project) => {
+  const d = new Date();
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const marketCode = (market || "").replace(/\s+/g, "").toUpperCase() || "LAYOUT";
+  const projectCode = (project || "").replace(/\s+/g, "-").toUpperCase() || "PROJECT";
+  return `${yy}${mm}${dd}-LAYOUT-${marketCode}-${projectCode}`;
+};
+
 function LayoutTaskModal({ initial, onClose, onSave, saving, isEdit }) {
   const [form, setForm] = useState({ ...initial });
+  const [manualFolder, setManualFolder] = useState(!!initial.folder_code);
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }));
   const inp = "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-300 focus:bg-white transition";
 
+  const autoCode = generateLayoutCode(form.market, form.project);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave(form);
+    onSave({ ...form, folder_code: manualFolder ? form.folder_code : autoCode });
   };
 
   return (
@@ -290,36 +302,49 @@ function LayoutTaskModal({ initial, onClose, onSave, saving, isEdit }) {
         <form className="space-y-4 p-6" onSubmit={handleSubmit}>
           <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
             Nama Project
-            <input value={form.project} onChange={set("project")} required placeholder="Mis: KOMU03-LUCY-BREAD" className={`mt-1 block font-normal normal-case tracking-normal ${inp}`} />
+            <input value={form.project} onChange={set("project")} required placeholder="Mis: Stylized Character" className={`mt-1 block font-normal normal-case tracking-normal ${inp}`} />
           </label>
+
+          {/* Kode Folder — auto atau manual */}
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <span className="text-xs font-semibold text-indigo-700">Kode Folder (otomatis)</span>
+              <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                <input type="checkbox" checked={manualFolder} onChange={(e) => setManualFolder(e.target.checked)} className="rounded" />
+                Edit manual
+              </label>
+            </div>
+            {manualFolder
+              ? <input value={form.folder_code} onChange={set("folder_code")} className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2 font-mono text-sm text-indigo-800 outline-none focus:border-indigo-400" />
+              : <p className="font-mono text-sm font-semibold text-indigo-800">{autoCode}</p>
+            }
+            <p className="mt-1 text-[10px] text-indigo-400">Format: YYMMDD-LAYOUT-MARKET-PROJECT</p>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
-              Kode Folder
-              <input value={form.folder_code} onChange={set("folder_code")} placeholder="Mis: 260624-LTK03-LUCY-BREAD" className={`mt-1 block font-mono font-normal normal-case tracking-normal ${inp}`} />
-            </label>
             <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
               Market
-              <select value={form.market} onChange={set("market")} className={`mt-1 block font-normal normal-case ${inp}`}>
-                {MARKET_OPTIONS.map((m) => <option key={m}>{m}</option>)}
-              </select>
+              <input value={form.market} onChange={set("market")} placeholder="Magsika / Eirene / dll" className={`mt-1 block font-normal normal-case tracking-normal ${inp}`} />
             </label>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
             <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
               Talent / Designer
               <input value={form.talent} onChange={set("talent")} placeholder="Nama desainer" className={`mt-1 block font-normal normal-case tracking-normal ${inp}`} />
             </label>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
               Deadline
               <input type="date" value={form.deadline} onChange={set("deadline")} className={`mt-1 block font-normal normal-case ${inp}`} />
             </label>
+            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+              Status
+              <select value={form.status} onChange={set("status")} className={`mt-1 block font-normal normal-case ${inp}`}>
+                {LAYOUT_STATUS.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </label>
           </div>
-          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
-            Status
-            <select value={form.status} onChange={set("status")} className={`mt-1 block font-normal normal-case ${inp}`}>
-              {LAYOUT_STATUS.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </label>
+
           <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
             Catatan
             <textarea value={form.notes} onChange={set("notes")} rows={2} placeholder="Catatan tambahan..." className={`mt-1 block font-normal normal-case tracking-normal resize-y ${inp}`} />
