@@ -223,10 +223,35 @@ export default function OrdersPage() {
     return "";
   };
 
-  const totalOrders = orders.length;
-  const activeCount = orders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
-  const doneCount = orders.filter((o) => normalizeStatus(o.status) === "Done").length;
-  const cancelCount = orders.filter((o) => normalizeStatus(o.status) === "Cancel").length;
+  const totalOrders = visibleOrders.length;
+  const activeCount = visibleOrders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
+  const doneCount = visibleOrders.filter((o) => normalizeStatus(o.status) === "Done").length;
+  const cancelCount = visibleOrders.filter((o) => normalizeStatus(o.status) === "Cancel").length;
+
+  const [showWeekly, setShowWeekly] = useState(false);
+  const weeklyGroups = useMemo(() => {
+    const getMondayStr = (dateStr) => {
+      const d = new Date(dateStr + "T00:00:00");
+      const day = d.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      return d.toISOString().slice(0, 10);
+    };
+    const getSundayStr = (mondayStr) => {
+      const d = new Date(mondayStr + "T00:00:00");
+      d.setDate(d.getDate() + 6);
+      return d.toISOString().slice(0, 10);
+    };
+    const groups = {};
+    visibleOrders.forEach((o) => {
+      const date = o.order_date || o.created_at?.slice(0, 10);
+      if (!date) return;
+      const mon = getMondayStr(date);
+      if (!groups[mon]) groups[mon] = { orders: [], sun: getSundayStr(mon) };
+      groups[mon].orders.push(o);
+    });
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [visibleOrders]);
 
   return (
     <div className="space-y-5">
@@ -264,6 +289,57 @@ export default function OrdersPage() {
             <p className="mt-0.5 text-xs text-slate-400">{c.sub}</p>
           </div>
         ))}
+      </div>
+
+      {/* Weekly breakdown */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <button
+          onClick={() => setShowWeekly((v) => !v)}
+          className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-slate-50 transition"
+        >
+          <span className="text-sm font-semibold text-slate-700">Breakdown per Minggu</span>
+          <span className="text-xs text-slate-400">{showWeekly ? "▲ Tutup" : "▼ Lihat"}</span>
+        </button>
+        {showWeekly && (
+          <div className="border-t border-slate-100 divide-y divide-slate-50">
+            {weeklyGroups.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-slate-400">Tidak ada data untuk filter ini.</p>
+            ) : weeklyGroups.map(([mon, { orders: wo, sun }]) => {
+              const activeW = wo.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
+              const doneW = wo.filter((o) => normalizeStatus(o.status) === "Done").length;
+              const totalVal = wo.reduce((s, o) => s + (Number(o.total) || 0), 0);
+              const pct = visibleOrders.length > 0 ? Math.round((wo.length / visibleOrders.length) * 100) : 0;
+              return (
+                <div key={mon} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                  <div className="min-w-[160px]">
+                    <p className="text-xs font-semibold text-slate-700">{mon} – {sun}</p>
+                    <p className="text-[10px] text-slate-400">Minggu {new Date(mon + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" })} s/d {new Date(sun + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</p>
+                  </div>
+                  <div className="flex flex-1 items-center gap-4 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                      {wo.length} order
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                      Aktif {activeW}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      Done {doneW}
+                    </span>
+                    {totalVal > 0 && (
+                      <span className="text-xs text-slate-400 font-mono">${totalVal.toFixed(2)}</span>
+                    )}
+                    <div className="flex-1 min-w-[80px]">
+                      <div className="h-1.5 w-full rounded-full bg-slate-100">
+                        <div className="h-1.5 rounded-full bg-violet-400 transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="mt-0.5 text-[10px] text-slate-400">{pct}% dari filter ini</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Table card */}
