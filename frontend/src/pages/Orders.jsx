@@ -229,29 +229,27 @@ export default function OrdersPage() {
   const cancelCount = visibleOrders.filter((o) => normalizeStatus(o.status) === "Cancel").length;
 
   const weeklyGroups = useMemo(() => {
-    const getMondayStr = (dateStr) => {
+    const getWeekStart = (dateStr) => {
       if (!dateStr) return "0000-00-00";
       const d = new Date(dateStr + "T00:00:00");
-      const day = d.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      d.setDate(d.getDate() + diff);
+      d.setDate(d.getDate() - d.getDay()); // mundur ke Minggu (day 0)
       return d.toISOString().slice(0, 10);
     };
-    const getSundayStr = (mondayStr) => {
-      if (mondayStr === "0000-00-00") return "0000-00-00";
-      const d = new Date(mondayStr + "T00:00:00");
-      d.setDate(d.getDate() + 6);
+    const getWeekEnd = (startStr) => {
+      if (startStr === "0000-00-00") return "0000-00-00";
+      const d = new Date(startStr + "T00:00:00");
+      d.setDate(d.getDate() + 6); // +6 hari = Sabtu
       return d.toISOString().slice(0, 10);
     };
     const groups = {};
     visibleOrders.forEach((o) => {
       const date = o.order_date || o.created_at?.slice(0, 10);
-      const mon = getMondayStr(date);
-      if (!groups[mon]) groups[mon] = { monday: mon, sunday: getSundayStr(mon), orders: [] };
-      groups[mon].orders.push(o);
+      const start = getWeekStart(date);
+      if (!groups[start]) groups[start] = { start, end: getWeekEnd(start), orders: [] };
+      groups[start].orders.push(o);
     });
     return Object.values(groups)
-      .sort((a, b) => b.monday.localeCompare(a.monday))
+      .sort((a, b) => b.start.localeCompare(a.start))
       .map((g) => ({
         ...g,
         orders: [...g.orders].sort((a, b) => {
@@ -411,18 +409,18 @@ export default function OrdersPage() {
                 );
               })}
               {/* Weekly grouped — tampilan Per Minggu */}
-              {weeklyView && weeklyGroups.map(({ monday, sunday, orders: weekOrders }) => {
+              {weeklyView && weeklyGroups.map(({ start, end, orders: weekOrders }) => {
                 const fmtD = (s) => s === "0000-00-00" ? "—" : new Date(s + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" });
                 const activeW = weekOrders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
                 const totalVal = weekOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
                 return (
-                  <React.Fragment key={monday}>
+                  <React.Fragment key={start}>
                     {/* Week header row */}
                     <tr className="bg-violet-50 border-t-2 border-violet-100">
                       <td colSpan={9} className="px-4 py-2">
                         <div className="flex items-center gap-3 flex-wrap">
                           <span className="text-xs font-bold text-violet-700">
-                            {monday === "0000-00-00" ? "Tanpa Tanggal" : `${fmtD(monday)} – ${fmtD(sunday)}`}
+                            {start === "0000-00-00" ? "Tanpa Tanggal" : `${fmtD(start)} – ${fmtD(end)}`}
                           </span>
                           <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-600">
                             {weekOrders.length} order
