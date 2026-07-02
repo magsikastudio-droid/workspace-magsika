@@ -65,7 +65,7 @@ export default function OrdersPage() {
   const [activeOrder, setActiveOrder] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [newOrder, setNewOrder] = useState(emptyOrder());
-  const [compactMode, setCompactMode] = useState(true);
+  const [weeklyView, setWeeklyView] = useState(true);
   const fileInputRef = useRef(null);
 
   const availableMonths = useMemo(() => {
@@ -250,7 +250,16 @@ export default function OrdersPage() {
       if (!groups[mon]) groups[mon] = { monday: mon, sunday: getSundayStr(mon), orders: [] };
       groups[mon].orders.push(o);
     });
-    return Object.values(groups).sort((a, b) => b.monday.localeCompare(a.monday));
+    return Object.values(groups)
+      .sort((a, b) => b.monday.localeCompare(a.monday))
+      .map((g) => ({
+        ...g,
+        orders: [...g.orders].sort((a, b) => {
+          const aD = a.order_date || a.created_at?.slice(0, 10) || "";
+          const bD = b.order_date || b.created_at?.slice(0, 10) || "";
+          return aD.localeCompare(bD);
+        }),
+      }));
   }, [visibleOrders]);
 
   return (
@@ -319,10 +328,10 @@ export default function OrdersPage() {
             })}
           </select>
           <button
-            onClick={() => setCompactMode((v) => !v)}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            onClick={() => setWeeklyView((v) => !v)}
+            className={`ml-auto inline-flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${weeklyView ? "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
           >
-            <Columns size={13} /> {compactMode ? "Full" : "Compact"}
+            <Columns size={13} /> {weeklyView ? "Per Minggu" : "Full"}
           </button>
           <span className="text-xs font-semibold text-slate-400">{loading ? "..." : `${visibleOrders.length} order`}</span>
         </div>
@@ -346,7 +355,63 @@ export default function OrdersPage() {
               {visibleOrders.length === 0 && (
                 <tr><td colSpan={9} className="py-12 text-center text-sm text-slate-400">Tidak ada order yang cocok.</td></tr>
               )}
-              {weeklyGroups.map(({ monday, sunday, orders: weekOrders }) => {
+              {/* Flat list — tampilan Full */}
+              {!weeklyView && visibleOrders.map((order) => {
+                const sc = STATUS_COLORS[normalizeStatus(order.status)] || { bg: "#f1f5f9", text: "#64748b" };
+                const isDone = normalizeStatus(order.status) === "Done" || normalizeStatus(order.status) === "Cancel";
+                const deadlineDiff = order.deadline ? Math.ceil((new Date(order.deadline) - new Date()) / 86400000) : null;
+                return (
+                  <tr key={order.id} className={`hover:bg-slate-50 transition border-b border-slate-50 ${isDone ? "opacity-60" : ""}`}>
+                    <td className="px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
+                        <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-sm font-medium text-slate-800">{order.client}</p>
+                      <p className="text-xs text-slate-400">{order.platform || "Direct"}</p>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-indigo-600">{order.folder_code || "—"}</td>
+                    <td className="px-4 py-3"><p className="font-semibold text-slate-900 whitespace-nowrap">{formatMoney(order.total)}</p></td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(() => {
+                          const contribs = order.artist_contributions?.length ? order.artist_contributions : (order.artists || []).map((a) => ({ name: a, type: "Tim" }));
+                          return contribs.slice(0, 3).map((c, i) => (
+                            <span key={i} className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ${c.type === "Freelance" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                              {c.name}<span className="text-[9px] opacity-60">{c.type === "Freelance" ? "·FL" : "·TM"}</span>
+                            </span>
+                          ));
+                        })()}
+                        {(() => { const n = order.artist_contributions?.length || order.artists?.length || 0; return n > 3 ? <span className="text-[10px] text-slate-400">+{n - 3}</span> : null; })()}
+                        {(!order.artists?.length && !order.artist_contributions?.length) && <span className="text-xs text-slate-300">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        {!isDone && deadlineDiff !== null && deadlineDiff < 0 && <span className="text-rose-500">⚠</span>}
+                        {!isDone && deadlineDiff !== null && deadlineDiff >= 0 && deadlineDiff <= 3 && <span className="text-amber-500">🔥</span>}
+                        <span className={`text-sm ${deadlineDiff !== null && deadlineDiff < 0 ? "text-rose-600 font-semibold" : deadlineDiff !== null && deadlineDiff <= 3 ? "text-amber-600 font-semibold" : "text-slate-600"}`}>{order.deadline || "—"}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select value={normalizeStatus(order.status)} onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)} className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer" style={{ background: sc.bg, color: sc.text }}>
+                        {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-4 py-3"><PaymentSelect orderId={order.id} value={order.payment_status} onUpdate={handleInlineUpdate} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => setActiveOrder({ ...order, artists: (order.artists || []).join(", ") })} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">Details</button>
+                        <button onClick={() => setConfirmDelete(order)} className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition"><Trash2 size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Weekly grouped — tampilan Per Minggu */}
+              {weeklyView && weeklyGroups.map(({ monday, sunday, orders: weekOrders }) => {
                 const fmtD = (s) => s === "0000-00-00" ? "—" : new Date(s + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" });
                 const activeW = weekOrders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
                 const totalVal = weekOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
@@ -386,7 +451,7 @@ export default function OrdersPage() {
                           </td>
                           <td className="px-4 py-3">
                             <p className="text-sm font-medium text-slate-800">{order.client}</p>
-                            {!compactMode && <p className="text-xs text-slate-400">{order.platform || "Direct"}</p>}
+                            <p className="text-xs text-slate-400">{order.platform || "Direct"}</p>
                           </td>
                           <td className="px-4 py-3 font-mono text-xs text-indigo-600">{order.folder_code || "—"}</td>
                           <td className="px-4 py-3">
