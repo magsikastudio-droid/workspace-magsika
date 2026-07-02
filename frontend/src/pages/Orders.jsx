@@ -228,9 +228,9 @@ export default function OrdersPage() {
   const doneCount = visibleOrders.filter((o) => normalizeStatus(o.status) === "Done").length;
   const cancelCount = visibleOrders.filter((o) => normalizeStatus(o.status) === "Cancel").length;
 
-  const [showWeekly, setShowWeekly] = useState(false);
   const weeklyGroups = useMemo(() => {
     const getMondayStr = (dateStr) => {
+      if (!dateStr) return "0000-00-00";
       const d = new Date(dateStr + "T00:00:00");
       const day = d.getDay();
       const diff = day === 0 ? -6 : 1 - day;
@@ -238,6 +238,7 @@ export default function OrdersPage() {
       return d.toISOString().slice(0, 10);
     };
     const getSundayStr = (mondayStr) => {
+      if (mondayStr === "0000-00-00") return "0000-00-00";
       const d = new Date(mondayStr + "T00:00:00");
       d.setDate(d.getDate() + 6);
       return d.toISOString().slice(0, 10);
@@ -245,12 +246,11 @@ export default function OrdersPage() {
     const groups = {};
     visibleOrders.forEach((o) => {
       const date = o.order_date || o.created_at?.slice(0, 10);
-      if (!date) return;
       const mon = getMondayStr(date);
-      if (!groups[mon]) groups[mon] = { orders: [], sun: getSundayStr(mon) };
+      if (!groups[mon]) groups[mon] = { monday: mon, sunday: getSundayStr(mon), orders: [] };
       groups[mon].orders.push(o);
     });
-    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+    return Object.values(groups).sort((a, b) => b.monday.localeCompare(a.monday));
   }, [visibleOrders]);
 
   return (
@@ -289,57 +289,6 @@ export default function OrdersPage() {
             <p className="mt-0.5 text-xs text-slate-400">{c.sub}</p>
           </div>
         ))}
-      </div>
-
-      {/* Weekly breakdown */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <button
-          onClick={() => setShowWeekly((v) => !v)}
-          className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-slate-50 transition"
-        >
-          <span className="text-sm font-semibold text-slate-700">Breakdown per Minggu</span>
-          <span className="text-xs text-slate-400">{showWeekly ? "▲ Tutup" : "▼ Lihat"}</span>
-        </button>
-        {showWeekly && (
-          <div className="border-t border-slate-100 divide-y divide-slate-50">
-            {weeklyGroups.length === 0 ? (
-              <p className="px-5 py-4 text-sm text-slate-400">Tidak ada data untuk filter ini.</p>
-            ) : weeklyGroups.map(([mon, { orders: wo, sun }]) => {
-              const activeW = wo.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
-              const doneW = wo.filter((o) => normalizeStatus(o.status) === "Done").length;
-              const totalVal = wo.reduce((s, o) => s + (Number(o.total) || 0), 0);
-              const pct = visibleOrders.length > 0 ? Math.round((wo.length / visibleOrders.length) * 100) : 0;
-              return (
-                <div key={mon} className="flex flex-wrap items-center gap-3 px-5 py-3">
-                  <div className="min-w-[160px]">
-                    <p className="text-xs font-semibold text-slate-700">{mon} – {sun}</p>
-                    <p className="text-[10px] text-slate-400">Minggu {new Date(mon + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" })} s/d {new Date(sun + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</p>
-                  </div>
-                  <div className="flex flex-1 items-center gap-4 flex-wrap">
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-                      {wo.length} order
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-                      Aktif {activeW}
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                      Done {doneW}
-                    </span>
-                    {totalVal > 0 && (
-                      <span className="text-xs text-slate-400 font-mono">${totalVal.toFixed(2)}</span>
-                    )}
-                    <div className="flex-1 min-w-[80px]">
-                      <div className="h-1.5 w-full rounded-full bg-slate-100">
-                        <div className="h-1.5 rounded-full bg-violet-400 transition-all" style={{ width: `${pct}%` }} />
-                      </div>
-                      <p className="mt-0.5 text-[10px] text-slate-400">{pct}% dari filter ini</p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       {/* Table card */}
@@ -393,85 +342,114 @@ export default function OrdersPage() {
                 <th className="px-4 py-3">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
-              {visibleOrders.map((order) => {
-                const sc = STATUS_COLORS[normalizeStatus(order.status)] || { bg: "#f1f5f9", text: "#64748b" };
-                const isDone = normalizeStatus(order.status) === "Done" || normalizeStatus(order.status) === "Cancel";
-                const deadlineDiff = order.deadline ? Math.ceil((new Date(order.deadline) - new Date()) / 86400000) : null;
-                return (
-                  <tr key={order.id} className={`hover:bg-slate-50 transition ${isDone ? "opacity-60" : ""}`}>
-                    <td className="px-4 py-3">
-                      <div className="min-w-0">
-                        <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
-                        <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-medium text-slate-800">{order.client}</p>
-                      {!compactMode && <p className="text-xs text-slate-400">{order.platform || "Direct"}</p>}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-indigo-600">{order.folder_code || "—"}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-900 whitespace-nowrap">{formatMoney(order.total)}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {(() => {
-                          const contribs = order.artist_contributions?.length
-                            ? order.artist_contributions
-                            : (order.artists || []).map((a) => ({ name: a, type: "Tim" }));
-                          return contribs.slice(0, 3).map((c, i) => (
-                            <span key={i} className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ${c.type === "Freelance" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
-                              {c.name}
-                              <span className="text-[9px] opacity-60">{c.type === "Freelance" ? "·FL" : "·TM"}</span>
-                            </span>
-                          ));
-                        })()}
-                        {(() => {
-                          const n = order.artist_contributions?.length || order.artists?.length || 0;
-                          return n > 3 ? <span className="text-[10px] text-slate-400">+{n - 3}</span> : null;
-                        })()}
-                        {(!order.artists?.length && !order.artist_contributions?.length) && <span className="text-xs text-slate-300">—</span>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        {!isDone && deadlineDiff !== null && deadlineDiff < 0 && <span title="Overdue" className="text-rose-500">⚠</span>}
-                        {!isDone && deadlineDiff !== null && deadlineDiff >= 0 && deadlineDiff <= 3 && <span title={`${deadlineDiff} hari lagi`} className="text-amber-500">🔥</span>}
-                        <span className={`text-sm ${deadlineDiff !== null && deadlineDiff < 0 ? "text-rose-600 font-semibold" : deadlineDiff !== null && deadlineDiff <= 3 ? "text-amber-600 font-semibold" : "text-slate-600"}`}>
-                          {order.deadline || "—"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={normalizeStatus(order.status)}
-                        onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)}
-                        className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
-                        style={{ background: sc.bg, color: sc.text }}
-                      >
-                        {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-4 py-3">
-                      <PaymentSelect orderId={order.id} value={order.payment_status} onUpdate={handleInlineUpdate} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <button onClick={() => setActiveOrder({ ...order, artists: (order.artists || []).join(", ") })} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
-                          Details
-                        </button>
-                        <button onClick={() => setConfirmDelete(order)} className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+            <tbody>
               {visibleOrders.length === 0 && (
                 <tr><td colSpan={9} className="py-12 text-center text-sm text-slate-400">Tidak ada order yang cocok.</td></tr>
               )}
+              {weeklyGroups.map(({ monday, sunday, orders: weekOrders }) => {
+                const fmtD = (s) => s === "0000-00-00" ? "—" : new Date(s + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+                const activeW = weekOrders.filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel").length;
+                const totalVal = weekOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+                return (
+                  <React.Fragment key={monday}>
+                    {/* Week header row */}
+                    <tr className="bg-violet-50 border-t-2 border-violet-100">
+                      <td colSpan={9} className="px-4 py-2">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-xs font-bold text-violet-700">
+                            {monday === "0000-00-00" ? "Tanpa Tanggal" : `${fmtD(monday)} – ${fmtD(sunday)}`}
+                          </span>
+                          <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-600">
+                            {weekOrders.length} order
+                          </span>
+                          <span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-600">
+                            {activeW} aktif
+                          </span>
+                          {totalVal > 0 && (
+                            <span className="text-[10px] text-slate-400 font-mono">${totalVal.toFixed(0)}</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {/* Order rows for this week */}
+                    {weekOrders.map((order) => {
+                      const sc = STATUS_COLORS[normalizeStatus(order.status)] || { bg: "#f1f5f9", text: "#64748b" };
+                      const isDone = normalizeStatus(order.status) === "Done" || normalizeStatus(order.status) === "Cancel";
+                      const deadlineDiff = order.deadline ? Math.ceil((new Date(order.deadline) - new Date()) / 86400000) : null;
+                      return (
+                        <tr key={order.id} className={`hover:bg-slate-50 transition border-b border-slate-50 ${isDone ? "opacity-60" : ""}`}>
+                          <td className="px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
+                              <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-medium text-slate-800">{order.client}</p>
+                            {!compactMode && <p className="text-xs text-slate-400">{order.platform || "Direct"}</p>}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-indigo-600">{order.folder_code || "—"}</td>
+                          <td className="px-4 py-3">
+                            <p className="font-semibold text-slate-900 whitespace-nowrap">{formatMoney(order.total)}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {(() => {
+                                const contribs = order.artist_contributions?.length
+                                  ? order.artist_contributions
+                                  : (order.artists || []).map((a) => ({ name: a, type: "Tim" }));
+                                return contribs.slice(0, 3).map((c, i) => (
+                                  <span key={i} className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ${c.type === "Freelance" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                                    {c.name}
+                                    <span className="text-[9px] opacity-60">{c.type === "Freelance" ? "·FL" : "·TM"}</span>
+                                  </span>
+                                ));
+                              })()}
+                              {(() => {
+                                const n = order.artist_contributions?.length || order.artists?.length || 0;
+                                return n > 3 ? <span className="text-[10px] text-slate-400">+{n - 3}</span> : null;
+                              })()}
+                              {(!order.artists?.length && !order.artist_contributions?.length) && <span className="text-xs text-slate-300">—</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              {!isDone && deadlineDiff !== null && deadlineDiff < 0 && <span title="Overdue" className="text-rose-500">⚠</span>}
+                              {!isDone && deadlineDiff !== null && deadlineDiff >= 0 && deadlineDiff <= 3 && <span title={`${deadlineDiff} hari lagi`} className="text-amber-500">🔥</span>}
+                              <span className={`text-sm ${deadlineDiff !== null && deadlineDiff < 0 ? "text-rose-600 font-semibold" : deadlineDiff !== null && deadlineDiff <= 3 ? "text-amber-600 font-semibold" : "text-slate-600"}`}>
+                                {order.deadline || "—"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <select
+                              value={normalizeStatus(order.status)}
+                              onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)}
+                              className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
+                              style={{ background: sc.bg, color: sc.text }}
+                            >
+                              {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-4 py-3">
+                            <PaymentSelect orderId={order.id} value={order.payment_status} onUpdate={handleInlineUpdate} />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={() => setActiveOrder({ ...order, artists: (order.artists || []).join(", ") })} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
+                                Details
+                              </button>
+                              <button onClick={() => setConfirmDelete(order)} className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
