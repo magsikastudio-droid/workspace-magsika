@@ -195,6 +195,10 @@ export default function Todo() {
     return [...names].sort();
   }, [tasks]);
 
+  const unhandledTasks = useMemo(() => visibleTasks.filter((t) =>
+    t.status === "pending" && !t.timer_started && (!t.time_elapsed || t.time_elapsed === 0)
+  ), [visibleTasks]);
+
   const stats = useMemo(() => ({
     total: visibleTasks.length,
     pending: visibleTasks.filter((t) => t.status === "pending").length,
@@ -403,6 +407,18 @@ export default function Todo() {
           ))}
         </div>
       </div>
+
+      {/* Belum Terhandle — full-width di atas Tim/Freelance */}
+      {!loading && viewMode === "list" && unhandledTasks.length > 0 && (
+        <UnhandledSection
+          tasks={unhandledTasks}
+          now={now}
+          isAdminOrPM={isAdminOrPM}
+          onDetail={(t) => setDetailTaskId(t.id)}
+          onTimer={handleTimer}
+          onEdit={setEditTask}
+        />
+      )}
 
       {/* Content */}
       {loading ? (
@@ -976,6 +992,79 @@ function TelegramConfirmModal({ task, onConfirm, onCancel }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── UnhandledSection ──────────────────────────────────────────── */
+function UnhandledSection({ tasks, now, isAdminOrPM, onDetail, onTimer, onEdit }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 shadow-sm overflow-hidden">
+      {/* Header */}
+      <button
+        onClick={() => setCollapsed((v) => !v)}
+        className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-orange-100/60 transition"
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500 text-white text-xs font-bold animate-pulse">
+            {tasks.length}
+          </span>
+          <span className="font-bold text-orange-800">Belum Terhandle</span>
+          <span className="text-xs text-orange-500 font-medium">— task pending yang belum disentuh</span>
+        </div>
+        <span className="text-xs text-orange-400 font-semibold">{collapsed ? "▼ Lihat" : "▲ Tutup"}</span>
+      </button>
+
+      {!collapsed && (
+        <div className="border-t border-orange-200 px-4 pb-4 pt-3">
+          <div className="flex flex-wrap gap-2">
+            {tasks.map((task) => {
+              const elapsed = getElapsed(task, now);
+              const countdown = getCountdown(task, now);
+              const stopProp = (fn) => (e) => { e.stopPropagation(); fn(); };
+              return (
+                <div
+                  key={task.id}
+                  onClick={() => onDetail(task)}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-orange-200 bg-white px-3 py-2 shadow-sm hover:border-orange-400 hover:bg-orange-50 transition group"
+                >
+                  {/* Assignee avatar */}
+                  <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${avatarColor(task.assignee || "?")}`}>
+                    {task.assignee?.charAt(0)?.toUpperCase() || "?"}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 truncate max-w-[140px]">{task.title}</p>
+                    <p className="text-[10px] text-slate-400">{task.assignee}</p>
+                  </div>
+                  {/* Duration badge if set */}
+                  {task.duration_seconds > 0 && (
+                    <span className="shrink-0 rounded-lg bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-slate-500">
+                      {fmtBudget(task.duration_seconds)}
+                    </span>
+                  )}
+                  {/* Quick start button */}
+                  <button
+                    onClick={stopProp(() => onTimer(task))}
+                    className="shrink-0 rounded-lg bg-orange-100 px-2 py-1 text-[10px] font-bold text-orange-700 hover:bg-orange-500 hover:text-white transition"
+                  >
+                    Mulai
+                  </button>
+                  {isAdminOrPM && (
+                    <button
+                      onClick={stopProp(() => onEdit({ ...task }))}
+                      className="shrink-0 rounded-lg p-1 text-slate-300 hover:text-slate-600 transition"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
