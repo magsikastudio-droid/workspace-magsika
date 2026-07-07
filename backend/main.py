@@ -144,6 +144,10 @@ def format_order(record: dict) -> dict:
         "created_at": record.get("created_at"),
         "completed_at": record.get("completed_at"),
         "revision_count": record.get("revision_count", 0),
+        "is_milestone": record.get("is_milestone", False),
+        "milestone_current": record.get("milestone_current", 1),
+        "milestone_total": record.get("milestone_total", 1),
+        "milestone_title": record.get("milestone_title", ""),
     }
 
 
@@ -268,6 +272,10 @@ class OrderCreate(BaseModel):
     fee_freelance: Optional[float] = 0
     revision_count: Optional[int] = 0
     completed_at: Optional[str] = None
+    is_milestone: Optional[bool] = False
+    milestone_current: Optional[int] = 1
+    milestone_total: Optional[int] = 1
+    milestone_title: Optional[str] = ""
 
 
 class LayoutTaskCreate(BaseModel):
@@ -310,6 +318,17 @@ class OrderUpdate(BaseModel):
     fee_freelance: Optional[float] = None
     revision_count: Optional[int] = None
     completed_at: Optional[str] = None
+    is_milestone: Optional[bool] = None
+    milestone_current: Optional[int] = None
+    milestone_total: Optional[int] = None
+    milestone_title: Optional[str] = None
+
+
+class NextMilestoneBody(BaseModel):
+    milestone_title: str
+    total: float
+    deadline: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class ChatEntryCreate(BaseModel):
@@ -801,6 +820,33 @@ async def delete_order(order_id: str, current_user: dict = Depends(get_current_u
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete order")
     await manager.broadcast({"type": "orders_updated"})
     return {"deleted": True}
+
+
+@app.post("/orders/{order_id}/next-milestone")
+async def next_milestone(order_id: str, body: NextMilestoneBody, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    object_id = to_object_id(order_id)
+    record = await db.orders.find_one({"_id": object_id})
+    if not record:
+        raise HTTPException(status_code=404, detail="Order not found")
+    current = record.get("milestone_current", 1)
+    total = record.get("milestone_total", 1)
+    if current >= total:
+        raise HTTPException(status_code=400, detail="Sudah di milestone terakhir")
+    payload = {
+        "milestone_current": current + 1,
+        "milestone_title": body.milestone_title,
+        "total": body.total,
+    }
+    if body.deadline:
+        payload["deadline"] = body.deadline
+    if body.notes is not None:
+        payload["notes"] = body.notes
+    await db.orders.update_one({"_id": object_id}, {"$set": payload})
+    updated = await db.orders.find_one({"_id": object_id})
+    await manager.broadcast({"type": "orders_updated"})
+    return {"order": format_order(updated)}
 
 
 @app.get("/freelance/artists")
