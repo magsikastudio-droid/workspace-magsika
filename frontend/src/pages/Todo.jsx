@@ -452,7 +452,7 @@ export default function Todo() {
         <div className="grid gap-4 lg:grid-cols-2">
           <TaskGroup
             title="Tim Internal" icon="👥" groups={grouped.tim} assigneeType="tim"
-            dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
+            orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
             onTimer={handleTimer} onMarkDone={handleMarkDone}
             onApprove={handleApprove} onReject={handleReject}
             onStatus={handleStatus} onDelete={handleDelete}
@@ -461,7 +461,7 @@ export default function Todo() {
           />
           <TaskGroup
             title="Freelance" icon="🎨" groups={grouped.freelance} assigneeType="freelance"
-            dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
+            orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
             onTimer={handleTimer} onMarkDone={handleMarkDone}
             onApprove={handleApprove} onReject={handleReject}
             onStatus={handleStatus} onDelete={handleDelete}
@@ -583,7 +583,7 @@ function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onApprove, o
 }
 
 /* ─── TaskGroup ─────────────────────────────────────────────────── */
-function TaskGroup({ title, icon, groups, assigneeType, dragState, taskMap, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskMap, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const entries = Object.entries(groups);
   const totalTasks = entries.reduce((s, [, t]) => s + t.length, 0);
   return (
@@ -604,7 +604,7 @@ function TaskGroup({ title, icon, groups, assigneeType, dragState, taskMap, now,
             const ordered = orderedIds.map((id) => taskMap[id]).filter(Boolean);
             return (
               <ArtistSection
-                key={assignee} assignee={assignee} tasks={ordered} now={now} isAdminOrPM={isAdminOrPM}
+                key={assignee} assignee={assignee} tasks={ordered} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
                 onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
                 onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
                 onDragStart={onDragStart}
@@ -620,7 +620,7 @@ function TaskGroup({ title, icon, groups, assigneeType, dragState, taskMap, now,
 }
 
 /* ─── ArtistSection ─────────────────────────────────────────────── */
-function ArtistSection({ assignee, tasks, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const bgColor = avatarColor(assignee);
   const totalElapsed = tasks.reduce((s, t) => s + getElapsed(t, now), 0);
 
@@ -650,7 +650,7 @@ function ArtistSection({ assignee, tasks, now, isAdminOrPM, onTimer, onMarkDone,
       <div className="ml-10 space-y-2" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
         {sortedTasks.map((task) => (
           <TaskCard
-            key={task.id} task={task} now={now} isAdminOrPM={isAdminOrPM}
+            key={task.id} task={task} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
             onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
             onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
             onDragStart={onDragStart} onDragOver={onDragOver}
@@ -662,9 +662,15 @@ function ArtistSection({ assignee, tasks, now, isAdminOrPM, onTimer, onMarkDone,
 }
 
 /* ─── TaskCard ──────────────────────────────────────────────────── */
-function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, compact = false }) {
+function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, compact = false }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
+  const activeMilestone = useMemo(() => {
+    if (!task.order_id || !orders?.length) return null;
+    const order = orders.find((o) => o.id === task.order_id);
+    if (!order?.milestones?.length) return null;
+    return order.milestones.find((m) => m.status === "active") || null;
+  }, [task.order_id, orders]);
   const isDone = task.status === "done";
   const isFailed = task.status === "failed";
   const isReview = task.status === "menunggu_review";
@@ -728,6 +734,11 @@ function TaskCard({ task, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onRe
                   {task.title}
                 </p>
               </div>
+              {activeMilestone && (
+                <p className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 rounded-lg px-2 py-0.5 w-fit">
+                  🏁 {activeMilestone.title}
+                </p>
+              )}
               {task.target_progress && (
                 <p className="mt-1 flex items-center gap-1 text-xs text-violet-600 font-medium">
                   <Target size={10} className="shrink-0" />{task.target_progress}
