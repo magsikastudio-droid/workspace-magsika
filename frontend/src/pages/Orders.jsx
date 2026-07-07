@@ -45,7 +45,10 @@ const emptyOrder = () => ({
   payment_status: "Belum Lunas", folder_code: "", marketer: "Ivo", notes: "",
   fee_freelance: 0,
   artist_contributions: [{ name: "", type: "Tim", percent: 100 }],
+  milestones: [],
 });
+
+const emptyMilestone = () => ({ title: "", price: "", status: "pending" });
 
 export default function OrdersPage() {
   const { orders, loading, createOrder, updateOrder, deleteOrder } = useOrders();
@@ -213,6 +216,15 @@ export default function OrdersPage() {
 
   const handleInlineUpdate = async (orderId, field, value) => {
     try { await updateOrder(orderId, { [field]: value }); } catch { toast.error("Gagal update"); }
+  };
+
+  const handleCompleteMilestone = async (orderId, idx) => {
+    try {
+      await api.post(`/orders/${orderId}/milestones/${idx}/complete`);
+      toast.success("Milestone selesai!");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal update milestone");
+    }
   };
 
   const deadlineClass = (deadline) => {
@@ -535,6 +547,7 @@ export default function OrdersPage() {
           onClose={() => setActiveOrder(null)}
           onSave={handleSaveOrder}
           onDelete={(id) => { setConfirmDelete(activeOrder); setActiveOrder(null); }}
+          onCompleteMilestone={handleCompleteMilestone}
         />
       )}
 
@@ -572,7 +585,7 @@ function fmtSec(s) {
 const AVATAR_COLORS = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4"];
 const artistColor = (name) => AVATAR_COLORS[Math.abs((name||"").split("").reduce((h,c)=>c.charCodeAt(0)+((h<<5)-h),0)) % AVATAR_COLORS.length];
 
-function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
+function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onCompleteMilestone }) {
   const { exchangeRate, formatMoney } = useCurrency();
   const { updateOrder } = useOrders();
   const [editing, setEditing] = useState(false);
@@ -762,6 +775,56 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
           {!editing ? (
             /* VIEW MODE */
             <div className="space-y-0 divide-y divide-slate-100">
+              {/* Milestones */}
+              {order.milestones?.length > 0 && (
+                <div className="px-6 py-4">
+                  <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Milestones</p>
+                  <div className="space-y-2">
+                    {order.milestones.map((ms, idx) => {
+                      const isDone = ms.status === "done";
+                      const isActive = ms.status === "active";
+                      return (
+                        <div
+                          key={idx}
+                          className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition ${
+                            isDone ? "border-emerald-200 bg-emerald-50"
+                            : isActive ? "border-blue-200 bg-blue-50"
+                            : "border-slate-100 bg-slate-50 opacity-60"
+                          }`}
+                        >
+                          {/* Status icon */}
+                          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                            isDone ? "bg-emerald-500 text-white"
+                            : isActive ? "bg-blue-500 text-white"
+                            : "bg-slate-200 text-slate-500"
+                          }`}>
+                            {isDone ? "✓" : idx + 1}
+                          </div>
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-semibold ${isDone ? "line-through text-slate-400" : "text-slate-800"}`}>
+                              {ms.title}
+                            </p>
+                            {ms.price && (
+                              <p className="text-xs text-slate-400">${ms.price}</p>
+                            )}
+                          </div>
+                          {/* Done button — hanya untuk milestone aktif */}
+                          {isActive && (
+                            <button
+                              onClick={() => onCompleteMilestone(order.id, idx)}
+                              className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600 transition"
+                            >
+                              ✓ Selesai
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Order Info */}
               <div className="px-6 py-4">
                 <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Info Order</p>
@@ -876,6 +939,51 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
                   <label className="space-y-1 text-xs font-medium text-slate-500">Status<select value={form.status} onChange={set("status")} className={inp}>{STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}</select></label>
                 </div>
               </div>
+              {/* Milestones editor */}
+              <div className="px-6 py-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Milestones</p>
+                  <button
+                    type="button"
+                    onClick={() => setForm((p) => ({ ...p, milestones: [...(p.milestones || []), emptyMilestone()] }))}
+                    className="rounded-lg border border-dashed border-slate-300 px-3 py-1 text-xs font-semibold text-slate-500 hover:border-blue-400 hover:text-blue-600"
+                  >
+                    + Tambah Milestone
+                  </button>
+                </div>
+                {(!form.milestones || form.milestones.length === 0) ? (
+                  <p className="text-xs text-slate-400">Order ini tidak menggunakan milestone.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {form.milestones.map((ms, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">{idx + 1}</span>
+                        <input
+                          value={ms.title}
+                          onChange={(e) => setForm((p) => { const m = [...p.milestones]; m[idx] = { ...m[idx], title: e.target.value }; return { ...p, milestones: m }; })}
+                          placeholder="Nama milestone"
+                          className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-300"
+                        />
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={ms.price || ""}
+                          onChange={(e) => setForm((p) => { const m = [...p.milestones]; m[idx] = { ...m[idx], price: e.target.value }; return { ...p, milestones: m }; })}
+                          placeholder="Harga $"
+                          className="w-20 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-sm outline-none focus:border-blue-300"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setForm((p) => ({ ...p, milestones: p.milestones.filter((_, i) => i !== idx) }))}
+                          className="rounded-full p-1 text-slate-300 hover:text-rose-500"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="px-6 py-4">
                 <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
                 <div className="space-y-2">
@@ -1131,6 +1239,51 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
                 </select>
               </label>
             </div>
+          </div>
+
+          {/* MILESTONES */}
+          <div className="px-7 py-5">
+            <div className="mb-4 flex items-center justify-between">
+              <SectionHeader icon={CheckCircle2} label="Milestones (opsional)" color="text-blue-600" />
+              <button
+                type="button"
+                onClick={() => setForm((p) => ({ ...p, milestones: [...(p.milestones || []), emptyMilestone()] }))}
+                className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:border-blue-400 hover:text-blue-600"
+              >
+                + Tambah Milestone
+              </button>
+            </div>
+            {(form.milestones || []).length === 0 ? (
+              <p className="text-xs text-slate-400">Kosongkan jika bukan order sistem milestone.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {(form.milestones || []).map((ms, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">{idx + 1}</span>
+                    <input
+                      value={ms.title}
+                      onChange={(e) => setForm((p) => { const m = [...(p.milestones||[])]; m[idx] = { ...m[idx], title: e.target.value }; return { ...p, milestones: m }; })}
+                      placeholder="Nama milestone"
+                      className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:bg-white"
+                    />
+                    <input
+                      type="number" min="0" step="0.01"
+                      value={ms.price || ""}
+                      onChange={(e) => setForm((p) => { const m = [...(p.milestones||[])]; m[idx] = { ...m[idx], price: e.target.value }; return { ...p, milestones: m }; })}
+                      placeholder="$ Harga"
+                      className="w-24 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-300 focus:bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm((p) => ({ ...p, milestones: (p.milestones||[]).filter((_, i) => i !== idx) }))}
+                      className="rounded-full p-1 text-slate-300 hover:text-rose-500"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* TIM ARTIST */}
