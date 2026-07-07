@@ -45,10 +45,6 @@ const emptyOrder = () => ({
   payment_status: "Belum Lunas", folder_code: "", marketer: "Ivo", notes: "",
   fee_freelance: 0,
   artist_contributions: [{ name: "", type: "Tim", percent: 100 }],
-  is_milestone: false,
-  milestone_current: 1,
-  milestone_total: 1,
-  milestone_title: "",
 });
 
 export default function OrdersPage() {
@@ -70,7 +66,6 @@ export default function OrdersPage() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [newOrder, setNewOrder] = useState(emptyOrder());
   const [weeklyView, setWeeklyView] = useState(true);
-  const [nextMilestoneOrder, setNextMilestoneOrder] = useState(null);
   const fileInputRef = useRef(null);
 
   const availableMonths = useMemo(() => {
@@ -218,16 +213,6 @@ export default function OrdersPage() {
 
   const handleInlineUpdate = async (orderId, field, value) => {
     try { await updateOrder(orderId, { [field]: value }); } catch { toast.error("Gagal update"); }
-  };
-
-  const handleNextMilestone = async ({ title, total, deadline, notes }) => {
-    try {
-      await api.post(`/orders/${nextMilestoneOrder.id}/next-milestone`, { milestone_title: title, total: Number(total), deadline, notes });
-      toast.success(`Lanjut ke Milestone ${nextMilestoneOrder.milestone_current + 1}`);
-      setNextMilestoneOrder(null);
-    } catch (e) {
-      toast.error(e?.response?.data?.detail || "Gagal next milestone");
-    }
   };
 
   const deadlineClass = (deadline) => {
@@ -378,14 +363,7 @@ export default function OrdersPage() {
                     <td className="px-4 py-3">
                       <div className="min-w-0">
                         <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
-                          {order.is_milestone && (
-                            <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">
-                              M{order.milestone_current}/{order.milestone_total}
-                            </span>
-                          )}
-                        </div>
+                        <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -466,14 +444,7 @@ export default function OrdersPage() {
                           <td className="px-4 py-3">
                             <div className="min-w-0">
                               <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
-                                {order.is_milestone && (
-                                  <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700">
-                                    M{order.milestone_current}/{order.milestone_total}
-                                  </span>
-                                )}
-                              </div>
+                              <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
                             </div>
                           </td>
                           <td className="px-4 py-3">
@@ -564,7 +535,6 @@ export default function OrdersPage() {
           onClose={() => setActiveOrder(null)}
           onSave={handleSaveOrder}
           onDelete={(id) => { setConfirmDelete(activeOrder); setActiveOrder(null); }}
-          onNextMilestone={(order) => { setActiveOrder(null); setNextMilestoneOrder(order); }}
         />
       )}
 
@@ -589,14 +559,6 @@ export default function OrdersPage() {
           formatMoney={formatMoney}
         />
       )}
-
-      {nextMilestoneOrder && (
-        <NextMilestoneModal
-          order={nextMilestoneOrder}
-          onClose={() => setNextMilestoneOrder(null)}
-          onConfirm={handleNextMilestone}
-        />
-      )}
     </div>
   );
 }
@@ -610,7 +572,7 @@ function fmtSec(s) {
 const AVATAR_COLORS = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4"];
 const artistColor = (name) => AVATAR_COLORS[Math.abs((name||"").split("").reduce((h,c)=>c.charCodeAt(0)+((h<<5)-h),0)) % AVATAR_COLORS.length];
 
-function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onNextMilestone }) {
+function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete }) {
   const { exchangeRate, formatMoney } = useCurrency();
   const { updateOrder } = useOrders();
   const [editing, setEditing] = useState(false);
@@ -784,14 +746,6 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onNextMile
             <p className="text-sm text-slate-400">{order.client} · {order.platform}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {!editing && order.is_milestone && order.milestone_current < order.milestone_total && (
-              <button
-                onClick={() => onNextMilestone && onNextMilestone(order)}
-                className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 shadow-sm flex items-center gap-1.5"
-              >
-                ▶ Next M{order.milestone_current + 1}
-              </button>
-            )}
             {!editing && (
               <button onClick={(e) => { e.stopPropagation(); setEditing(true); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm flex items-center gap-1.5">
                 <Edit3 size={13} /> Edit
@@ -808,31 +762,6 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onNextMile
           {!editing ? (
             /* VIEW MODE */
             <div className="space-y-0 divide-y divide-slate-100">
-              {/* Milestone progress */}
-              {order.is_milestone && (
-                <div className="px-6 py-4">
-                  <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Progress Milestone</p>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {Array.from({ length: order.milestone_total }, (_, i) => i + 1).map((n) => (
-                      <div
-                        key={n}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold border-2 ${
-                          n < order.milestone_current ? "bg-emerald-500 border-emerald-500 text-white"
-                          : n === order.milestone_current ? "bg-blue-500 border-blue-500 text-white"
-                          : "bg-white border-slate-200 text-slate-400"
-                        }`}
-                      >
-                        {n}
-                      </div>
-                    ))}
-                  </div>
-                  {order.milestone_title && (
-                    <p className="mt-2 text-sm font-semibold text-slate-700">{order.milestone_title}</p>
-                  )}
-                  <p className="mt-1 text-xs text-slate-400">Milestone {order.milestone_current} dari {order.milestone_total}</p>
-                </div>
-              )}
-
               {/* Order Info */}
               <div className="px-6 py-4">
                 <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Info Order</p>
@@ -948,49 +877,6 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onNextMile
                 </div>
               </div>
               <div className="px-6 py-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Milestone Order</p>
-                <label className="mb-3 flex items-center gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!form.is_milestone}
-                    onChange={(e) => setForm((p) => ({ ...p, is_milestone: e.target.checked }))}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600"
-                  />
-                  <span className="text-sm font-medium text-slate-700">Order ini menggunakan sistem milestone (Fiverr, dll)</span>
-                </label>
-                {form.is_milestone && (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-1 text-xs font-medium text-slate-500">
-                      Total Milestone
-                      <input
-                        type="number" min="1" max="20"
-                        value={form.milestone_total || 1}
-                        onChange={(e) => setForm((p) => ({ ...p, milestone_total: Number(e.target.value) }))}
-                        className={inp}
-                      />
-                    </label>
-                    <label className="space-y-1 text-xs font-medium text-slate-500">
-                      Milestone Sekarang
-                      <input
-                        type="number" min="1" max={form.milestone_total || 1}
-                        value={form.milestone_current || 1}
-                        onChange={(e) => setForm((p) => ({ ...p, milestone_current: Number(e.target.value) }))}
-                        className={inp}
-                      />
-                    </label>
-                    <label className="col-span-2 space-y-1 text-xs font-medium text-slate-500">
-                      Nama Milestone Sekarang
-                      <input
-                        value={form.milestone_title || ""}
-                        onChange={set("milestone_title")}
-                        placeholder="cth: Base Model, Rigging + Facial Rig"
-                        className={inp}
-                      />
-                    </label>
-                  </div>
-                )}
-              </div>
-              <div className="px-6 py-4">
                 <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
                 <div className="space-y-2">
                   {(form.artist_contributions || []).map((contrib, idx) => (
@@ -1074,96 +960,6 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onNextMile
     </>
   );
 }
-
-function NextMilestoneModal({ order, onClose, onConfirm }) {
-  const nextNum = (order.milestone_current || 1) + 1;
-  const [form, setForm] = useState({
-    title: "",
-    total: "",
-    deadline: "",
-    notes: order.notes || "",
-  });
-  const [saving, setSaving] = useState(false);
-  const inp = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-300 focus:bg-white transition";
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.title.trim()) return;
-    setSaving(true);
-    try {
-      await onConfirm({ title: form.title, total: form.total, deadline: form.deadline, notes: form.notes });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[400] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-blue-200 uppercase tracking-widest">Lanjut ke Milestone</p>
-              <p className="mt-1 text-lg font-bold text-white">Milestone {nextNum} / {order.milestone_total}</p>
-            </div>
-            <button onClick={onClose} className="rounded-full p-2 text-blue-200 hover:bg-blue-700 transition"><X size={18} /></button>
-          </div>
-          <p className="mt-1 text-sm text-blue-100 truncate">{order.project}</p>
-        </div>
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-          <label className="block space-y-1.5 text-xs font-medium text-slate-500">
-            Nama Milestone {nextNum} <span className="text-rose-500">*</span>
-            <input
-              value={form.title}
-              onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-              placeholder="cth: Outfit + Texturing"
-              required
-              className={inp}
-              autoFocus
-            />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block space-y-1.5 text-xs font-medium text-slate-500">
-              Harga Milestone ($)
-              <input
-                type="number" min="0" step="0.01"
-                value={form.total}
-                onChange={(e) => setForm((p) => ({ ...p, total: e.target.value }))}
-                placeholder="70"
-                className={inp}
-              />
-            </label>
-            <label className="block space-y-1.5 text-xs font-medium text-slate-500">
-              Deadline Baru
-              <input
-                type="date"
-                value={form.deadline}
-                onChange={(e) => setForm((p) => ({ ...p, deadline: e.target.value }))}
-                className={inp}
-              />
-            </label>
-          </div>
-          <label className="block space-y-1.5 text-xs font-medium text-slate-500">
-            Catatan (opsional)
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-              rows={2}
-              className={inp + " resize-none"}
-            />
-          </label>
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
-            <button type="submit" disabled={saving || !form.title.trim()} className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">
-              {saving ? "Menyimpan..." : `▶ Mulai M${nextNum}`}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 
 function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
   const { exchangeRate } = useCurrency();
@@ -1335,51 +1131,6 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
                 </select>
               </label>
             </div>
-          </div>
-
-          {/* MILESTONE */}
-          <div className="px-7 py-5">
-            <SectionHeader icon={CheckCircle2} label="Milestone Order" color="text-blue-600" />
-            <label className="mb-3 flex items-center gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!form.is_milestone}
-                onChange={(e) => setForm((p) => ({ ...p, is_milestone: e.target.checked }))}
-                className="h-4 w-4 rounded border-slate-300 text-blue-600"
-              />
-              <span className="text-sm font-medium text-slate-700">Order ini menggunakan sistem milestone</span>
-            </label>
-            {form.is_milestone && (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-1.5 text-xs font-medium text-slate-600">
-                  Total Milestone
-                  <input
-                    type="number" min="1" max="20"
-                    value={form.milestone_total || 1}
-                    onChange={(e) => setForm((p) => ({ ...p, milestone_total: Number(e.target.value) }))}
-                    className={inp}
-                  />
-                </label>
-                <label className="space-y-1.5 text-xs font-medium text-slate-600">
-                  Milestone Sekarang
-                  <input
-                    type="number" min="1" max={form.milestone_total || 1}
-                    value={form.milestone_current || 1}
-                    onChange={(e) => setForm((p) => ({ ...p, milestone_current: Number(e.target.value) }))}
-                    className={inp}
-                  />
-                </label>
-                <label className="col-span-2 space-y-1.5 text-xs font-medium text-slate-600">
-                  Nama Milestone Sekarang
-                  <input
-                    value={form.milestone_title || ""}
-                    onChange={set("milestone_title")}
-                    placeholder="cth: Base Model"
-                    className={inp}
-                  />
-                </label>
-              </div>
-            )}
           </div>
 
           {/* TIM ARTIST */}
