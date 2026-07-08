@@ -7,7 +7,6 @@ import { initNotifications, showTaskAlarm, showLocalNotification } from "../lib/
 import { useAuth } from "../context/AuthContext";
 import { useAlarm } from "../context/AlarmContext";
 import { toast } from "sonner";
-import BirthdayBanner from "./BirthdayBanner";
 
 async function setupFCM(onAlert) {
   console.log("[FCM] isNativePlatform:", Capacitor.isNativePlatform());
@@ -121,5 +120,5 @@ export default function AlarmController() {
     };
   }, [user, triggerAlarm]);
 
-  return <BirthdayBanner />;
+  return null;
 }

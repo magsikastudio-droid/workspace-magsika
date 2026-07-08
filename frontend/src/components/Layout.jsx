@@ -13,6 +13,7 @@ import { api } from "../lib/api";
 import { toast } from "sonner";
 import { showLocalNotification } from "../lib/notifications";
 import OverdueAlarmBanner from "./OverdueAlarmBanner";
+import BirthdayBanner from "./BirthdayBanner";
 
 const FEELINGS_LOCK = [
   { value: "Semangat", emoji: "😊", active: "border-emerald-400 bg-emerald-50 text-emerald-700" },
@@ -371,6 +372,7 @@ export default function Layout({ children }) {
 
   return (
     <div className="fixed inset-0 flex overflow-hidden bg-slate-50 dark:bg-[#0f0f0f]">
+      <BirthdayBanner />
       {alarmBannerVisible && (
         <OverdueAlarmBanner
           tasks={overdueAlarms}
