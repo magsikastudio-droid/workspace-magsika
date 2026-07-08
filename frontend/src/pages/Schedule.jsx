@@ -15,6 +15,7 @@ const COLOR_OPTIONS = [
   { value: "emerald",label: "Hijau", bg: "bg-emerald-500",light: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   { value: "rose",   label: "Merah", bg: "bg-rose-500",   light: "bg-rose-100 text-rose-700 border-rose-200" },
   { value: "amber",  label: "Kuning",bg: "bg-amber-500",  light: "bg-amber-100 text-amber-700 border-amber-200" },
+  { value: "pink",   label: "Pink",  bg: "bg-pink-500",   light: "bg-pink-100 text-pink-700 border-pink-200" },
 ];
 
 function getColor(value) {
