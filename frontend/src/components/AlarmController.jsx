@@ -7,6 +7,7 @@ import { initNotifications, showTaskAlarm, showLocalNotification } from "../lib/
 import { useAuth } from "../context/AuthContext";
 import { useAlarm } from "../context/AlarmContext";
 import { toast } from "sonner";
+import BirthdayBanner from "./BirthdayBanner";
 
 async function setupFCM(onAlert) {
   console.log("[FCM] isNativePlatform:", Capacitor.isNativePlatform());
@@ -53,6 +54,8 @@ async function setupFCM(onAlert) {
         toast.success(title, { description: body });
       } else if (d.type === "daily_report_reminder") {
         toast.warning(title, { description: body });
+      } else if (d.type === "birthday" || d.type === "birthday_self") {
+        toast.success(title, { description: body, duration: 8000 });
       }
     });
 
@@ -118,5 +121,5 @@ export default function AlarmController() {
     };
   }, [user, triggerAlarm]);
 
-  return null;
+  return <BirthdayBanner />;
 }

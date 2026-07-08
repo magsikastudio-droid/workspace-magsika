@@ -637,6 +637,7 @@ async def on_startup():
         scheduler.add_job(notify_unsubmitted_daily_reports, CronTrigger(hour=_deadline["hour"], minute=_deadline["minute"], timezone="Asia/Jakarta"), id="notify_daily_report")
         scheduler.add_job(auto_weekly_ai_reports, CronTrigger(day_of_week="fri", hour=12, minute=0, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_monthly_ai_reports, CronTrigger(day=27, hour=12, minute=0, timezone="Asia/Jakarta"))
+        scheduler.add_job(check_and_announce_birthdays, CronTrigger(hour=7, minute=0, timezone="Asia/Jakarta"))
         scheduler.start()
 
 
@@ -1686,6 +1687,8 @@ def format_schedule_event(record: dict) -> dict:
         "color": record.get("color", "violet"),
         "author": record.get("author", "Admin"),
         "created_at": record.get("created_at", ""),
+        "event_type": record.get("event_type", "general"),
+        "birthday_person": record.get("birthday_person", ""),
     }
 
 
@@ -1696,6 +1699,8 @@ class ScheduleEventCreate(BaseModel):
     end_date: Optional[str] = None
     time: Optional[str] = None
     color: str = "violet"
+    event_type: str = "general"
+    birthday_person: Optional[str] = ""
 
 
 class ScheduleEventUpdate(BaseModel):
@@ -1705,6 +1710,8 @@ class ScheduleEventUpdate(BaseModel):
     end_date: Optional[str] = None
     time: Optional[str] = None
     color: Optional[str] = None
+    event_type: Optional[str] = None
+    birthday_person: Optional[str] = None
 
 
 @app.get("/schedule")
@@ -1761,6 +1768,65 @@ async def delete_schedule_event(event_id: str, current_user: dict = Depends(get_
         raise HTTPException(status_code=500, detail=str(e))
     await manager.broadcast({"type": "schedule_updated"})
     return {"deleted": True}
+
+
+@app.get("/birthdays/today")
+async def get_birthdays_today(current_user: dict = Depends(get_current_user)):
+    today = datetime.now(timezone.utc).astimezone().strftime("%m-%d")
+    try:
+        records = await db.schedule.find({"event_type": "birthday"}).to_list(500)
+        birthdays = [
+            format_schedule_event(r) for r in records
+            if r.get("date", "")[-5:] == today  # MM-DD match (YYYY-MM-DD[-5:] = MM-DD)
+        ]
+        return {"birthdays": birthdays}
+    except Exception:
+        return {"birthdays": []}
+
+
+async def check_and_announce_birthdays():
+    """Cron job: setiap pagi jam 7 cek birthday hari ini."""
+    today = datetime.now(timezone.utc).astimezone().strftime("%m-%d")
+    try:
+        records = await db.schedule.find({"event_type": "birthday"}).to_list(500)
+        for r in records:
+            if r.get("date", "")[-5:] != today:
+                continue
+            person = r.get("birthday_person") or r.get("title", "")
+            title_ann = f"🎂 Selamat Ulang Tahun, {person}!"
+            body_ann = f"Hari ini adalah hari ulang tahun {person}. Doakan yang terbaik! 🎉"
+            # Simpan sebagai announcement otomatis
+            existing = await db.announcements.find_one({"birthday_date": today, "birthday_person": person})
+            if not existing:
+                await db.announcements.insert_one({
+                    "title": title_ann,
+                    "content": body_ann,
+                    "author": "System",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "birthday_date": today,
+                    "birthday_person": person,
+                    "is_birthday": True,
+                })
+            # Broadcast WS ke semua
+            await manager.broadcast({
+                "type": "birthday",
+                "person": person,
+                "title": title_ann,
+                "body": body_ann,
+            })
+            # FCM ke semua
+            _asyncio.get_event_loop().create_task(send_fcm_all(
+                title_ann, body_ann, {"type": "birthday", "person": person}
+            ))
+            # FCM personal ke yang ultah (cari username dari full_name)
+            _asyncio.get_event_loop().create_task(_fcm_by_full_name(
+                person,
+                "🎂 Selamat Ulang Tahun!",
+                "Tim Magsika mengucapkan selamat ulang tahun untukmu! 🎉🎊",
+                {"type": "birthday_self"},
+            ))
+    except Exception as e:
+        print(f"[Birthday] check error: {e}")
 
 
 # ─── Location Tracking ───────────────────────────────────────────────────────
