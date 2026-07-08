@@ -72,7 +72,12 @@ function DayDetailPanel({ dateStr, events, deadlines, isAdmin, onClose, onAdd, o
                     <div key={ev.id} className={`rounded-2xl border p-3 ${col.light}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold">{ev.title}</p>
+                          <p className="text-sm font-semibold">
+                            {ev.event_type === "birthday" ? "🎂 " : ""}{ev.title}
+                          </p>
+                          {ev.event_type === "birthday" && ev.birthday_person && (
+                            <p className="text-[10px] font-semibold text-pink-600 mt-0.5">Ulang Tahun {ev.birthday_person}</p>
+                          )}
                           {ev.time && <p className="text-xs opacity-75 mt-0.5">{ev.time}</p>}
                           {ev.end_date && ev.end_date !== ev.date && (
                             <p className="text-xs opacity-60 mt-0.5">s/d {ev.end_date}</p>
@@ -117,6 +122,8 @@ function EventModal({ initial, selectedDate, onClose, onSaved }) {
     end_date: initial?.end_date || "",
     time: initial?.time || "",
     color: initial?.color || "violet",
+    event_type: initial?.event_type || "general",
+    birthday_person: initial?.birthday_person || "",
   });
   const [loading, setLoading] = useState(false);
   const isEdit = !!initial;
@@ -193,6 +200,41 @@ function EventModal({ initial, selectedDate, onClose, onSaved }) {
               </div>
             </div>
           </div>
+          {/* Tipe event */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Tipe Event</label>
+            <div className="flex gap-2">
+              {[
+                { value: "general", label: "📅 Umum" },
+                { value: "birthday", label: "🎂 Ulang Tahun" },
+              ].map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setForm((p) => ({ ...p, event_type: t.value, color: t.value === "birthday" ? "pink" : p.color }))}
+                  className={`flex-1 rounded-2xl border py-2 text-xs font-semibold transition ${
+                    form.event_type === t.value
+                      ? "border-pink-400 bg-pink-50 text-pink-700"
+                      : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {form.event_type === "birthday" && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Nama Orang yang Ulang Tahun *</label>
+              <input
+                value={form.birthday_person}
+                onChange={(e) => setForm((p) => ({ ...p, birthday_person: e.target.value, title: `🎂 Ulang Tahun ${e.target.value}` }))}
+                placeholder="cth: Budi Santoso"
+                required={form.event_type === "birthday"}
+                className="w-full rounded-2xl border border-pink-200 bg-pink-50 px-4 py-2.5 text-sm outline-none focus:border-pink-400"
+              />
+            </div>
+          )}
           <div className="flex gap-2 justify-end pt-1">
             <button type="button" onClick={onClose} className="rounded-2xl px-5 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">Batal</button>
             <button type="submit" disabled={loading}
