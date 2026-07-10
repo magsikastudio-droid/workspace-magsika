@@ -735,9 +735,19 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onAppro
                 </p>
               </div>
               {activeMilestone && (
-                <p className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 rounded-lg px-2 py-0.5 w-fit">
-                  🏁 {activeMilestone.title}
-                </p>
+                <div className="mt-1 flex items-center gap-1.5 w-fit">
+                  <span className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 rounded-lg px-2 py-0.5">
+                    🏁 {activeMilestone.title}
+                  </span>
+                  {activeMilestone.deadline && (() => {
+                    const d = Math.ceil((new Date(activeMilestone.deadline) - new Date()) / 86400000);
+                    return d <= 7 ? (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-lg ${d < 0 ? "bg-rose-100 text-rose-600" : d <= 3 ? "bg-amber-100 text-amber-600" : "bg-slate-100 text-slate-500"}`}>
+                        {d < 0 ? `${Math.abs(d)}h lewat` : d === 0 ? "hari ini" : `${d}h lagi`}
+                      </span>
+                    ) : null;
+                  })()}
+                </div>
               )}
               {task.target_progress && (
                 <p className="mt-1 flex items-center gap-1 text-xs text-violet-600 font-medium">
