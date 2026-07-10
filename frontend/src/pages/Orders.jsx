@@ -387,7 +387,7 @@ export default function OrdersPage() {
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {(() => {
-                          const contribs = order.artist_contributions?.length ? order.artist_contributions : (order.artists || []).map((a) => ({ name: a, type: "Tim" }));
+                          const contribs = order.artist_contributions?.length ? order.artist_contributions : (Array.isArray(order.artists) ? order.artists : []).map((a) => ({ name: a, type: "Tim" }));
                           return contribs.slice(0, 3).map((c, i) => (
                             <span key={i} className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ${c.type === "Freelance" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
                               {c.name}<span className="text-[9px] opacity-60">{c.type === "Freelance" ? "·FL" : "·TM"}</span>
@@ -413,7 +413,7 @@ export default function OrdersPage() {
                     <td className="px-4 py-3"><PaymentSelect orderId={order.id} value={order.payment_status} onUpdate={handleInlineUpdate} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => setActiveOrder({ ...order, artists: (order.artists || []).join(", ") })} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">Details</button>
+                        <button onClick={() => setActiveOrder(order)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">Details</button>
                         <button onClick={() => setConfirmDelete(order)} className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition"><Trash2 size={14} /></button>
                       </div>
                     </td>
@@ -511,7 +511,7 @@ export default function OrdersPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
-                              <button onClick={() => setActiveOrder({ ...order, artists: (order.artists || []).join(", ") })} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
+                              <button onClick={() => setActiveOrder(order)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
                                 Details
                               </button>
                               <button onClick={() => setConfirmDelete(order)} className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
@@ -591,9 +591,10 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     ...order,
+    artists: Array.isArray(order.artists) ? order.artists.join(", ") : (order.artists || ""),
     artist_contributions: order.artist_contributions?.length
       ? order.artist_contributions
-      : [{ name: (order.artists || [])[0] || "", type: "Tim", percent: 100 }],
+      : [{ name: (Array.isArray(order.artists) ? order.artists[0] : "") || "", type: "Tim", percent: 100 }],
   });
   const [manualFolder, setManualFolder] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -668,7 +669,7 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
   const mergedContribs = useMemo(() => {
     const baseList = order.artist_contributions?.length
       ? order.artist_contributions
-      : (order.artists || []).map((a) => ({ name: a, type: "Tim", percent: 100 }));
+      : (Array.isArray(order.artists) ? order.artists : []).map((a) => ({ name: a, type: "Tim", percent: 100 }));
 
     if (!dynamicContribs?.contributions?.length) {
       const n = baseList.length;
