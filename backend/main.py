@@ -854,6 +854,30 @@ async def complete_milestone(order_id: str, milestone_idx: int, current_user: di
     return {"order": format_order(updated)}
 
 
+@app.post("/orders/{order_id}/milestones/{milestone_idx}/activate")
+async def activate_milestone(order_id: str, milestone_idx: int, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    object_id = to_object_id(order_id)
+    record = await db.orders.find_one({"_id": object_id})
+    if not record:
+        raise HTTPException(status_code=404, detail="Order not found")
+    milestones = record.get("milestones", [])
+    if milestone_idx < 0 or milestone_idx >= len(milestones):
+        raise HTTPException(status_code=400, detail="Index milestone tidak valid")
+    if milestones[milestone_idx].get("status") == "done":
+        raise HTTPException(status_code=400, detail="Milestone sudah selesai")
+    # Set semua yang non-done ke pending, lalu aktifkan yang dipilih
+    for i, ms in enumerate(milestones):
+        if ms.get("status") != "done":
+            ms["status"] = "pending"
+    milestones[milestone_idx]["status"] = "active"
+    await db.orders.update_one({"_id": object_id}, {"$set": {"milestones": milestones}})
+    updated = await db.orders.find_one({"_id": object_id})
+    await manager.broadcast({"type": "orders_updated"})
+    return {"order": format_order(updated)}
+
+
 @app.get("/freelance/artists")
 async def list_freelance_artists(current_user: dict = Depends(get_current_user)):
     try:
