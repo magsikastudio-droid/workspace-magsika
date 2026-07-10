@@ -48,7 +48,7 @@ const emptyOrder = () => ({
   milestones: [],
 });
 
-const emptyMilestone = () => ({ title: "", price: "", status: "pending" });
+const emptyMilestone = () => ({ title: "", price: "", deadline: "", status: "pending" });
 
 export default function OrdersPage() {
   const { orders, loading, createOrder, updateOrder, deleteOrder } = useOrders();
@@ -805,9 +805,21 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
                             <p className={`text-sm font-semibold ${isDone ? "line-through text-slate-400" : "text-slate-800"}`}>
                               {ms.title}
                             </p>
-                            {ms.price && (
-                              <p className="text-xs text-slate-400">${ms.price}</p>
-                            )}
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {ms.price && (
+                                <p className="text-xs text-slate-400">${ms.price}</p>
+                              )}
+                              {ms.deadline && (
+                                <p className={`text-xs font-medium ${
+                                  isDone ? "text-slate-300"
+                                  : Math.ceil((new Date(ms.deadline) - new Date()) / 86400000) < 0 ? "text-rose-500"
+                                  : Math.ceil((new Date(ms.deadline) - new Date()) / 86400000) <= 3 ? "text-amber-500"
+                                  : "text-slate-400"
+                                }`}>
+                                  📅 {ms.deadline}
+                                </p>
+                              )}
+                            </div>
                           </div>
                           {/* Done button — hanya untuk milestone aktif */}
                           {isActive && (
@@ -956,28 +968,38 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
                 ) : (
                   <div className="space-y-2">
                     {form.milestones.map((ms, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">{idx + 1}</span>
-                        <input
-                          value={ms.title}
-                          onChange={(e) => setForm((p) => { const m = [...p.milestones]; m[idx] = { ...m[idx], title: e.target.value }; return { ...p, milestones: m }; })}
-                          placeholder="Nama milestone"
-                          className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-300"
-                        />
-                        <input
-                          type="number" min="0" step="0.01"
-                          value={ms.price || ""}
-                          onChange={(e) => setForm((p) => { const m = [...p.milestones]; m[idx] = { ...m[idx], price: e.target.value }; return { ...p, milestones: m }; })}
-                          placeholder="Harga $"
-                          className="w-20 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-sm outline-none focus:border-blue-300"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setForm((p) => ({ ...p, milestones: p.milestones.filter((_, i) => i !== idx) }))}
-                          className="rounded-full p-1 text-slate-300 hover:text-rose-500"
-                        >
-                          <X size={13} />
-                        </button>
+                      <div key={idx} className="rounded-xl border border-slate-100 bg-slate-50 p-3 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{idx + 1}</span>
+                          <input
+                            value={ms.title}
+                            onChange={(e) => setForm((p) => { const m = [...p.milestones]; m[idx] = { ...m[idx], title: e.target.value }; return { ...p, milestones: m }; })}
+                            placeholder="Nama milestone"
+                            className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setForm((p) => ({ ...p, milestones: p.milestones.filter((_, i) => i !== idx) }))}
+                            className="rounded-full p-1 text-slate-300 hover:text-rose-500"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 pl-8">
+                          <input
+                            type="number" min="0" step="0.01"
+                            value={ms.price || ""}
+                            onChange={(e) => setForm((p) => { const m = [...p.milestones]; m[idx] = { ...m[idx], price: e.target.value }; return { ...p, milestones: m }; })}
+                            placeholder="Harga $"
+                            className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-blue-300"
+                          />
+                          <input
+                            type="date"
+                            value={ms.deadline || ""}
+                            onChange={(e) => setForm((p) => { const m = [...p.milestones]; m[idx] = { ...m[idx], deadline: e.target.value }; return { ...p, milestones: m }; })}
+                            className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-blue-300"
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1258,28 +1280,38 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
             ) : (
               <div className="space-y-2.5">
                 {(form.milestones || []).map((ms, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">{idx + 1}</span>
-                    <input
-                      value={ms.title}
-                      onChange={(e) => setForm((p) => { const m = [...(p.milestones||[])]; m[idx] = { ...m[idx], title: e.target.value }; return { ...p, milestones: m }; })}
-                      placeholder="Nama milestone"
-                      className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-blue-300 focus:bg-white"
-                    />
-                    <input
-                      type="number" min="0" step="0.01"
-                      value={ms.price || ""}
-                      onChange={(e) => setForm((p) => { const m = [...(p.milestones||[])]; m[idx] = { ...m[idx], price: e.target.value }; return { ...p, milestones: m }; })}
-                      placeholder="$ Harga"
-                      className="w-24 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-blue-300 focus:bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setForm((p) => ({ ...p, milestones: (p.milestones||[]).filter((_, i) => i !== idx) }))}
-                      className="rounded-full p-1 text-slate-300 hover:text-rose-500"
-                    >
-                      <X size={13} />
-                    </button>
+                  <div key={idx} className="rounded-2xl border border-slate-100 bg-slate-50 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">{idx + 1}</span>
+                      <input
+                        value={ms.title}
+                        onChange={(e) => setForm((p) => { const m = [...(p.milestones||[])]; m[idx] = { ...m[idx], title: e.target.value }; return { ...p, milestones: m }; })}
+                        placeholder="Nama milestone"
+                        className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-blue-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForm((p) => ({ ...p, milestones: (p.milestones||[]).filter((_, i) => i !== idx) }))}
+                        className="rounded-full p-1 text-slate-300 hover:text-rose-500"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 pl-8">
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={ms.price || ""}
+                        onChange={(e) => setForm((p) => { const m = [...(p.milestones||[])]; m[idx] = { ...m[idx], price: e.target.value }; return { ...p, milestones: m }; })}
+                        placeholder="$ Harga"
+                        className="w-28 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+                      />
+                      <input
+                        type="date"
+                        value={ms.deadline || ""}
+                        onChange={(e) => setForm((p) => { const m = [...(p.milestones||[])]; m[idx] = { ...m[idx], deadline: e.target.value }; return { ...p, milestones: m }; })}
+                        className="flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
