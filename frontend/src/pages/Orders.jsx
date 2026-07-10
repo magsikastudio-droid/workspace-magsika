@@ -221,9 +221,18 @@ export default function OrdersPage() {
   const handleCompleteMilestone = async (orderId, idx) => {
     try {
       await api.post(`/orders/${orderId}/milestones/${idx}/complete`);
-      toast.success("Milestone selesai!");
+      toast.success("Milestone selesai! Milestone berikutnya aktif.");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gagal update milestone");
+    }
+  };
+
+  const handleActivateMilestone = async (orderId, idx) => {
+    try {
+      await api.post(`/orders/${orderId}/milestones/${idx}/activate`);
+      toast.success("Milestone diaktifkan!");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal mengaktifkan milestone");
     }
   };
 
@@ -375,7 +384,13 @@ export default function OrdersPage() {
                     <td className="px-4 py-3">
                       <div className="min-w-0">
                         <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
-                        <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
+                          {order.milestones?.length > 0
+                            ? <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-600">M {order.milestones.filter(m=>m.status==="done").length}/{order.milestones.length}</span>
+                            : <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-400">Single</span>
+                          }
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -456,7 +471,13 @@ export default function OrdersPage() {
                           <td className="px-4 py-3">
                             <div className="min-w-0">
                               <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
-                              <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
+                                {order.milestones?.length > 0
+                                  ? <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-600">M {order.milestones.filter(m=>m.status==="done").length}/{order.milestones.length}</span>
+                                  : <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-400">Single</span>
+                                }
+                              </div>
                             </div>
                           </td>
                           <td className="px-4 py-3">
@@ -548,6 +569,7 @@ export default function OrdersPage() {
           onSave={handleSaveOrder}
           onDelete={(id) => { setConfirmDelete(activeOrder); setActiveOrder(null); }}
           onCompleteMilestone={handleCompleteMilestone}
+          onActivateMilestone={handleActivateMilestone}
         />
       )}
 
@@ -585,7 +607,7 @@ function fmtSec(s) {
 const AVATAR_COLORS = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4"];
 const artistColor = (name) => AVATAR_COLORS[Math.abs((name||"").split("").reduce((h,c)=>c.charCodeAt(0)+((h<<5)-h),0)) % AVATAR_COLORS.length];
 
-function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onCompleteMilestone }) {
+function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onCompleteMilestone, onActivateMilestone }) {
   const { exchangeRate, formatMoney } = useCurrency();
   const { updateOrder } = useOrders();
   const [editing, setEditing] = useState(false);
@@ -841,13 +863,21 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
                               )}
                             </div>
                           </div>
-                          {/* Done button — hanya untuk milestone aktif */}
+                          {/* Tombol aksi */}
                           {isActive && (
                             <button
                               onClick={() => onCompleteMilestone(order.id, idx)}
                               className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600 active:scale-95 transition"
                             >
                               ✓ Selesai
+                            </button>
+                          )}
+                          {!isDone && !isActive && !order.milestones.some((m) => m.status === "active") && idx === order.milestones.findIndex((m) => m.status === "pending") && (
+                            <button
+                              onClick={() => onActivateMilestone(order.id, idx)}
+                              className="shrink-0 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-600 active:scale-95 transition"
+                            >
+                              ▶ Mulai
                             </button>
                           )}
                         </div>
