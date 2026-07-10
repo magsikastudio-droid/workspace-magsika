@@ -748,6 +748,11 @@ async def create_order(order: OrderCreate, current_user: dict = Depends(get_curr
         raise HTTPException(status_code=403, detail="Forbidden")
     payload = order.dict()
     payload["created_at"] = datetime.now(timezone.utc).isoformat()
+    # Auto-aktifkan milestone pertama
+    if payload.get("milestones"):
+        payload["milestones"][0]["status"] = "active"
+        for ms in payload["milestones"][1:]:
+            ms["status"] = "pending"
     try:
         result = await db.orders.insert_one(payload)
         result_order = format_order({**payload, "_id": result.inserted_id})
@@ -778,6 +783,14 @@ async def update_order(order_id: str, order: OrderUpdate, current_user: dict = D
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
     if payload.get("status") == "Done" and not payload.get("completed_at"):
         payload["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Jika milestones dikirim dan tidak ada yang active, aktifkan yang pertama pending
+    if "milestones" in payload and payload["milestones"]:
+        has_active = any(ms.get("status") == "active" for ms in payload["milestones"])
+        if not has_active:
+            for ms in payload["milestones"]:
+                if ms.get("status") != "done":
+                    ms["status"] = "active"
+                    break
     object_id = to_object_id(order_id)
     try:
         await db.orders.update_one({"_id": object_id}, {"$set": payload})
@@ -821,11 +834,23 @@ async def complete_milestone(order_id: str, milestone_idx: int, current_user: di
     milestones[milestone_idx]["status"] = "done"
     # Aktifkan milestone berikutnya jika ada
     next_idx = milestone_idx + 1
+    next_milestone = None
     if next_idx < len(milestones) and milestones[next_idx].get("status") == "pending":
         milestones[next_idx]["status"] = "active"
+        next_milestone = milestones[next_idx]
     await db.orders.update_one({"_id": object_id}, {"$set": {"milestones": milestones}})
+    # Sinkronisasi deadline task: update semua task order ini ke deadline milestone berikutnya
+    if next_milestone and next_milestone.get("deadline"):
+        try:
+            await db.tasks.update_many(
+                {"order_id": order_id, "status": {"$ne": "done"}},
+                {"$set": {"deadline": next_milestone["deadline"], "milestone_title": next_milestone.get("title", "")}}
+            )
+        except Exception:
+            pass
     updated = await db.orders.find_one({"_id": object_id})
     await manager.broadcast({"type": "orders_updated"})
+    await manager.broadcast({"type": "tasks_updated"})
     return {"order": format_order(updated)}
 
 

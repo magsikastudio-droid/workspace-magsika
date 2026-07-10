@@ -779,32 +779,46 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
               {/* Milestones */}
               {order.milestones?.length > 0 && (
                 <div className="px-6 py-4">
-                  <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Milestones</p>
+                  {/* Header + progress bar */}
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Milestones</p>
+                    <span className="text-xs font-semibold text-slate-500">
+                      {order.milestones.filter((m) => m.status === "done").length}/{order.milestones.length} selesai
+                    </span>
+                  </div>
+                  <div className="mb-4 h-1.5 w-full rounded-full bg-slate-100">
+                    <div
+                      className="h-1.5 rounded-full bg-emerald-400 transition-all duration-500"
+                      style={{ width: `${(order.milestones.filter((m) => m.status === "done").length / order.milestones.length) * 100}%` }}
+                    />
+                  </div>
                   <div className="space-y-2">
                     {order.milestones.map((ms, idx) => {
                       const isDone = ms.status === "done";
                       const isActive = ms.status === "active";
+                      const daysLeft = ms.deadline ? Math.ceil((new Date(ms.deadline) - new Date()) / 86400000) : null;
                       return (
                         <div
                           key={idx}
                           className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition ${
                             isDone ? "border-emerald-200 bg-emerald-50"
-                            : isActive ? "border-blue-200 bg-blue-50"
-                            : "border-slate-100 bg-slate-50 opacity-60"
+                            : isActive ? "border-blue-200 bg-blue-50 ring-1 ring-blue-300"
+                            : "border-slate-100 bg-slate-50 opacity-50"
                           }`}
                         >
                           {/* Status icon */}
                           <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                             isDone ? "bg-emerald-500 text-white"
                             : isActive ? "bg-blue-500 text-white"
-                            : "bg-slate-200 text-slate-500"
+                            : "bg-slate-200 text-slate-400"
                           }`}>
                             {isDone ? "✓" : idx + 1}
                           </div>
                           {/* Info */}
                           <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-semibold ${isDone ? "line-through text-slate-400" : "text-slate-800"}`}>
+                            <p className={`text-sm font-semibold ${isDone ? "line-through text-slate-400" : isActive ? "text-blue-800" : "text-slate-600"}`}>
                               {ms.title}
+                              {isActive && <span className="ml-2 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-600">Aktif</span>}
                             </p>
                             <div className="flex items-center gap-2 mt-0.5">
                               {ms.price && (
@@ -813,11 +827,16 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
                               {ms.deadline && (
                                 <p className={`text-xs font-medium ${
                                   isDone ? "text-slate-300"
-                                  : Math.ceil((new Date(ms.deadline) - new Date()) / 86400000) < 0 ? "text-rose-500"
-                                  : Math.ceil((new Date(ms.deadline) - new Date()) / 86400000) <= 3 ? "text-amber-500"
+                                  : daysLeft < 0 ? "text-rose-500"
+                                  : daysLeft <= 3 ? "text-amber-500"
                                   : "text-slate-400"
                                 }`}>
                                   📅 {ms.deadline}
+                                  {!isDone && daysLeft !== null && (
+                                    <span className="ml-1">
+                                      ({daysLeft < 0 ? `${Math.abs(daysLeft)}h lewat` : daysLeft === 0 ? "hari ini" : `${daysLeft}h lagi`})
+                                    </span>
+                                  )}
                                 </p>
                               )}
                             </div>
@@ -826,7 +845,7 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
                           {isActive && (
                             <button
                               onClick={() => onCompleteMilestone(order.id, idx)}
-                              className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600 transition"
+                              className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600 active:scale-95 transition"
                             >
                               ✓ Selesai
                             </button>
