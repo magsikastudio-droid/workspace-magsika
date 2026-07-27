@@ -486,10 +486,11 @@ export default function SlipGaji() {
                 width: "220%",
                 height: "220%",
                 backgroundImage: "url('/logo.png')",
-                backgroundSize: "320px auto",
+                backgroundSize: "150px auto",
                 backgroundRepeat: "repeat",
                 transform: "rotate(-30deg)",
-                opacity: 0.08,
+                opacity: 0.12,
+                mixBlendMode: "multiply",
               }} />
             </div>
 
