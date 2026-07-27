@@ -182,7 +182,7 @@ export default function SlipGaji() {
 
   const totalDebet  = debetItems.reduce((s, r)  => s + (Number(r.amount) || 0), 0);
   const totalKredit = kreditItems.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-  const totalDiterima = totalDebet - totalKredit;
+  const totalDiterima = totalDebet;
 
   const bulanTxt  = BULAN[bulan];
   const periodTxt = `${bulanTxt} ${tahun}`;
@@ -567,7 +567,7 @@ export default function SlipGaji() {
                 {/* Debet */}
                 <div>
                   <div style={{ fontSize:11, fontWeight:700, letterSpacing:"0.07em", textTransform:"uppercase", paddingBottom:6, marginBottom:8, borderBottom:`2px solid ${S.navy}`, color:S.debet }}>
-                    Debet
+                    Debet <span style={{ fontWeight:500, textTransform:"none", letterSpacing:0 }}>(Diterima)</span>
                   </div>
                   {debetItems.map((r, i) => (
                     <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12.5, padding:"4.5px 0", borderBottom:"1px solid #ece7d9" }}>
@@ -582,7 +582,7 @@ export default function SlipGaji() {
                 {/* Kredit */}
                 <div>
                   <div style={{ fontSize:11, fontWeight:700, letterSpacing:"0.07em", textTransform:"uppercase", paddingBottom:6, marginBottom:8, borderBottom:`2px solid ${S.navy}`, color:S.kredit }}>
-                    Kredit
+                    Kredit <span style={{ fontWeight:500, textTransform:"none", letterSpacing:0 }}>(Dibayarkan Kantor Langsung)</span>
                   </div>
                   {kreditItems.map((r, i) => (
                     <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12.5, padding:"4.5px 0", borderBottom:"1px solid #ece7d9" }}>
