@@ -481,15 +481,15 @@ export default function SlipGaji() {
             }}>
               <div style={{
                 position: "absolute",
-                top: "-50%",
-                left: "-50%",
-                width: "200%",
-                height: "200%",
-                backgroundImage: "url('/wm.png')",
-                backgroundSize: "200px auto",
+                top: "-60%",
+                left: "-60%",
+                width: "220%",
+                height: "220%",
+                backgroundImage: "url('/logo.png')",
+                backgroundSize: "320px auto",
                 backgroundRepeat: "repeat",
                 transform: "rotate(-30deg)",
-                opacity: 0.1,
+                opacity: 0.08,
               }} />
             </div>
 
@@ -617,7 +617,7 @@ export default function SlipGaji() {
                       Tim Keuangan
                     </div>
                     <img
-                      src="/ttdstempel2.png"
+                      src="/ttd.png"
                       alt="TTD Keuangan"
                       crossOrigin="anonymous"
                       style={{ height:72, display:"block", margin:"0 auto 2px", mixBlendMode:"multiply" }}
