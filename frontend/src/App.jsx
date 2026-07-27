@@ -32,6 +32,7 @@ import TeamMemberPage from "./pages/TeamMemberPage";
 import DailyReport from "./pages/DailyReport";
 import OrderLayout from "./pages/OrderLayout";
 import SlipGaji from "./pages/SlipGaji";
+import TimDatabase from "./pages/TimDatabase";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "./context/AuthContext";
 
@@ -86,6 +87,7 @@ function App() {
                               <Route path="/rencana/:type" element={<RoleGuard allowedRoles={["admin","pm"]}><RencanaStrategis /></RoleGuard>} />
                               <Route path="/rencana" element={<Navigate to="/rencana/teknis" replace />} />
                               <Route path="/slip-gaji" element={<RoleGuard allowedRoles={["admin","pm"]}><SlipGaji /></RoleGuard>} />
+                              <Route path="/tim-database" element={<RoleGuard allowedRoles={["admin","pm"]}><TimDatabase /></RoleGuard>} />
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Layout>

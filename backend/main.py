@@ -3243,3 +3243,113 @@ async def notify_unsubmitted_daily_reports():
                     pass
     except Exception:
         pass
+
+
+# ─── Tim Database (Payroll) ────────────────────────────────────────────────────
+
+DEFAULT_TIM = [
+    {"nama":"Ivo Febrian Pratama","lp":"L","status":"Karyawan","peran":"Koordinator","alamat":"Tumpang Krasak 01/01, Kec. Jati, Kab. Kudus","email":"iriantamoeta@gmail.com","telp":"087801822558","rekening":"DANA 087801822558","atasNama":"Ivo Febrian Pratama","tanggalMasuk":"2021-05-01","tanggalLahir":"2003-02-10","gajiPokok":4750000,"bonus":0,"dignity":0,"mengajar":0,"kos":300000,"makanSiang":0,"komunikasi":0,"laundry":0,"bpjs":185000,"shu":0},
+    {"nama":"Novita Rahmawati","lp":"P","status":"Karyawan","peran":"Admin","alamat":"","email":"novitar2115@gmail.com","telp":"083838221408","rekening":"SEABANK 901710074772","atasNama":"Novita Rahmawati","tanggalMasuk":"2024-04-04","tanggalLahir":"2003-11-02","gajiPokok":2000000,"bonus":300000,"dignity":0,"mengajar":0,"kos":300000,"makanSiang":300000,"komunikasi":0,"laundry":100000,"bpjs":0,"shu":0},
+    {"nama":"Andre Afandi","lp":"L","status":"Karyawan","peran":"3D Artist","alamat":"","email":"","telp":"","rekening":"","atasNama":"Andre Afandi","tanggalMasuk":"","tanggalLahir":"","gajiPokok":2000000,"bonus":0,"dignity":250000,"mengajar":500000,"kos":0,"makanSiang":300000,"komunikasi":0,"laundry":300000,"bpjs":185000,"shu":0},
+    {"nama":"Kevin Nurrohman","lp":"L","status":"Karyawan","peran":"3D Artist","alamat":"","email":"","telp":"","rekening":"","atasNama":"Kevin Nurrohman","tanggalMasuk":"","tanggalLahir":"","gajiPokok":2000000,"bonus":0,"dignity":0,"mengajar":0,"kos":300000,"makanSiang":300000,"komunikasi":0,"laundry":0,"bpjs":0,"shu":0},
+    {"nama":"Hadziq Avi Aqsava","lp":"L","status":"Magang Sekolah","peran":"3D Artist","alamat":"","email":"","telp":"","rekening":"","atasNama":"Hadziq Avi Aqsava","tanggalMasuk":"","tanggalLahir":"","gajiPokok":300000,"bonus":0,"dignity":0,"mengajar":0,"kos":0,"makanSiang":0,"komunikasi":0,"laundry":0,"bpjs":0,"shu":0},
+    {"nama":"Quinsha Athaya","lp":"P","status":"Magang Sekolah","peran":"Designer","alamat":"","email":"iriantamoeta@gmail.com","telp":"087801822558","rekening":"DANA 087801822558","atasNama":"Ivo Febrian Pratama","tanggalMasuk":"2021-05-01","tanggalLahir":"2003-02-10","gajiPokok":300000,"bonus":0,"dignity":0,"mengajar":0,"kos":0,"makanSiang":0,"komunikasi":0,"laundry":0,"bpjs":0,"shu":0},
+    {"nama":"Faizal Kamal","lp":"L","status":"Pendamping","peran":"Utama","alamat":"","email":"isalkamal@gmail.com","telp":"081548109036","rekening":"BCA 8030476957","atasNama":"Mia Nurul Fadhilah","tanggalMasuk":"","tanggalLahir":"","gajiPokok":2750000,"bonus":0,"dignity":0,"mengajar":0,"kos":0,"makanSiang":0,"komunikasi":0,"laundry":0,"bpjs":0,"shu":0},
+    {"nama":"Febru Harsono","lp":"L","status":"Pendamping","peran":"Fasilitator","alamat":"","email":"harsono.febru@gmail.com","telp":"085640071447","rekening":"BCA 0095395444","atasNama":"Febru Harsono","tanggalMasuk":"","tanggalLahir":"","gajiPokok":1500000,"bonus":0,"dignity":0,"mengajar":0,"kos":0,"makanSiang":0,"komunikasi":0,"laundry":0,"bpjs":0,"shu":0},
+    {"nama":"Husayn Akmal","lp":"L","status":"Pendamping","peran":"Teknis","alamat":"","email":"husaynap@gmail.com","telp":"082241544629","rekening":"BCA 0131186001","atasNama":"Husayn Akmal","tanggalMasuk":"","tanggalLahir":"","gajiPokok":2000000,"bonus":0,"dignity":0,"mengajar":0,"kos":0,"makanSiang":0,"komunikasi":0,"laundry":0,"bpjs":0,"shu":0},
+    {"nama":"Anis Sasongko","lp":"L","status":"Pendamping","peran":"Strategis","alamat":"","email":"sasongkoanis@gmail.com","telp":"082241544629","rekening":"BCA 8360012841","atasNama":"Anis Sasongko","tanggalMasuk":"","tanggalLahir":"","gajiPokok":2000000,"bonus":0,"dignity":0,"mengajar":0,"kos":0,"makanSiang":0,"komunikasi":0,"laundry":0,"bpjs":0,"shu":0},
+    {"nama":"Joko Sasongko","lp":"L","status":"Pendamping","peran":"Advisor","alamat":"","email":"iliksas@gmail.com","telp":"081222261921","rekening":"BCA 0095123321","atasNama":"Ririn Narulita","tanggalMasuk":"","tanggalLahir":"","gajiPokok":2000000,"bonus":0,"dignity":0,"mengajar":0,"kos":0,"makanSiang":0,"komunikasi":0,"laundry":0,"bpjs":0,"shu":0},
+    {"nama":"Sunarsih","lp":"P","status":"Pendamping","peran":"Fasilitator","alamat":"","email":"asihazr@gmail.com","telp":"089636787944","rekening":"DANA 083894556407","atasNama":"Sunarsih","tanggalMasuk":"","tanggalLahir":"","gajiPokok":1000000,"bonus":0,"dignity":0,"mengajar":0,"kos":0,"makanSiang":0,"komunikasi":0,"laundry":0,"bpjs":0,"shu":0},
+]
+
+def format_tim(r: dict) -> dict:
+    return {
+        "id": str(r["_id"]),
+        "nama": r.get("nama",""),
+        "lp": r.get("lp","L"),
+        "status": r.get("status",""),
+        "peran": r.get("peran",""),
+        "alamat": r.get("alamat",""),
+        "email": r.get("email",""),
+        "telp": r.get("telp",""),
+        "rekening": r.get("rekening",""),
+        "atasNama": r.get("atasNama",""),
+        "tanggalMasuk": r.get("tanggalMasuk",""),
+        "tanggalLahir": r.get("tanggalLahir",""),
+        "gajiPokok": r.get("gajiPokok",0),
+        "bonus": r.get("bonus",0),
+        "dignity": r.get("dignity",0),
+        "mengajar": r.get("mengajar",0),
+        "kos": r.get("kos",0),
+        "makanSiang": r.get("makanSiang",0),
+        "komunikasi": r.get("komunikasi",0),
+        "laundry": r.get("laundry",0),
+        "bpjs": r.get("bpjs",0),
+        "shu": r.get("shu",0),
+    }
+
+@app.get("/tim")
+async def get_tim(current_user: dict = Depends(get_current_user)):
+    docs = await db.tim.find({}).to_list(500)
+    if not docs:
+        # Auto-seed on first access
+        now = datetime.now(timezone.utc).isoformat()
+        for m in DEFAULT_TIM:
+            await db.tim.insert_one({**m, "created_at": now})
+        docs = await db.tim.find({}).to_list(500)
+    return [format_tim(d) for d in docs]
+
+class TimMember(BaseModel):
+    nama: str = ""
+    lp: str = "L"
+    status: str = ""
+    peran: str = ""
+    alamat: str = ""
+    email: str = ""
+    telp: str = ""
+    rekening: str = ""
+    atasNama: str = ""
+    tanggalMasuk: str = ""
+    tanggalLahir: str = ""
+    gajiPokok: float = 0
+    bonus: float = 0
+    dignity: float = 0
+    mengajar: float = 0
+    kos: float = 0
+    makanSiang: float = 0
+    komunikasi: float = 0
+    laundry: float = 0
+    bpjs: float = 0
+    shu: float = 0
+
+@app.post("/tim")
+async def create_tim(body: TimMember, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ("admin", "pm"):
+        raise HTTPException(status_code=403, detail="Admin/PM only")
+    doc = body.dict()
+    doc["created_at"] = datetime.now(timezone.utc).isoformat()
+    result = await db.tim.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return format_tim(doc)
+
+@app.put("/tim/{member_id}")
+async def update_tim(member_id: str, body: TimMember, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ("admin", "pm"):
+        raise HTTPException(status_code=403, detail="Admin/PM only")
+    result = await db.tim.update_one(
+        {"_id": ObjectId(member_id)},
+        {"$set": {**body.dict(), "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Member not found")
+    doc = await db.tim.find_one({"_id": ObjectId(member_id)})
+    return format_tim(doc)
+
+@app.delete("/tim/{member_id}")
+async def delete_tim(member_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ("admin", "pm"):
+        raise HTTPException(status_code=403, detail="Admin/PM only")
+    result = await db.tim.delete_one({"_id": ObjectId(member_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"ok": True}

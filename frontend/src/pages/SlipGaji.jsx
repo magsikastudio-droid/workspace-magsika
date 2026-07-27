@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { Download, Plus, Trash2, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Download, Plus, Trash2, X, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { api } from "../lib/api";
 
 const BULAN = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
@@ -107,6 +108,7 @@ const labelCls = "mb-1.5 block text-[11px] font-semibold text-slate-500 dark:tex
 
 export default function SlipGaji() {
   const [employees, setEmployees] = useState(DEFAULT_EMPLOYEES);
+  const [loadingEmp, setLoadingEmp] = useState(true);
   const [empIdx, setEmpIdx]       = useState(0);
   const [bulan, setBulan]         = useState(new Date().getMonth());
   const [tahun, setTahun]         = useState(String(new Date().getFullYear()));
@@ -135,7 +137,19 @@ export default function SlipGaji() {
     setKreditItems(buildKredit(emp));
   };
 
-  useEffect(() => { loadEmployeeFrom(0, DEFAULT_EMPLOYEES); }, []);
+  useEffect(() => {
+    api.get("/tim")
+      .then((res) => {
+        if (res.data && res.data.length > 0) {
+          setEmployees(res.data);
+          loadEmployeeFrom(0, res.data);
+        } else {
+          loadEmployeeFrom(0, DEFAULT_EMPLOYEES);
+        }
+      })
+      .catch(() => { loadEmployeeFrom(0, DEFAULT_EMPLOYEES); })
+      .finally(() => setLoadingEmp(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectEmployee = (idx) => {
     setEmpIdx(idx);
@@ -247,8 +261,10 @@ export default function SlipGaji() {
                 <select
                   value={empIdx}
                   onChange={e => handleSelectEmployee(+e.target.value)}
+                  disabled={loadingEmp}
                   className={inputCls + " flex-1"}
                 >
+                  {loadingEmp && <option>Memuat data...</option>}
                   {employees.map((emp, i) => (
                     <option key={i} value={i}>{emp.nama} — {emp.peran}</option>
                   ))}

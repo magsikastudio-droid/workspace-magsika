@@ -5,7 +5,7 @@ import {
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
-  Send, Loader2, LayoutGrid, Receipt,
+  Send, Loader2, LayoutGrid, Receipt, Database,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -70,7 +70,8 @@ const NAV_SECTIONS = [
       { to: "/invoice",      label: "Invoice",      icon: FileText,        roles: ["admin"] },
       { to: "/earnings",     label: "Earnings",     icon: DollarSign,      roles: ["admin"] },
       { to: "/freelance",    label: "Freelance",    icon: Users,           roles: ["admin"] },
-      { to: "/slip-gaji",   label: "Slip Gaji",    icon: Receipt,         roles: ["admin"] },
+      { to: "/slip-gaji",    label: "Slip Gaji",     icon: Receipt,         roles: ["admin"] },
+      { to: "/tim-database", label: "Database Tim",  icon: Database,        roles: ["admin"] },
     ],
   },
   {
