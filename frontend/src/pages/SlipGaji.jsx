@@ -181,13 +181,19 @@ export default function SlipGaji() {
   const handleExport = async () => {
     setExporting(true);
     try {
+      await document.fonts.ready;
       const { default: html2canvas } = await import("html2canvas");
       const canvas = await html2canvas(slipRef.current, {
-        scale: 3,
+        scale: 2,
         backgroundColor: "#fbfaf7",
         useCORS: true,
-        allowTaint: true,
         logging: false,
+        onclone: (clonedDoc) => {
+          // Force Arial on every element so spaces render correctly across all systems
+          clonedDoc.querySelectorAll("[data-slip] *").forEach(el => {
+            el.style.fontFamily = "Arial, sans-serif";
+          });
+        },
       });
       const link = document.createElement("a");
       link.download = `Slip-Gaji-${(form.nama || "slip").replace(/\s+/g, "-")}-${bulanTxt}-${tahun}.png`;
@@ -459,12 +465,13 @@ export default function SlipGaji() {
         <div style={{ flex: 1, overflowX: "auto", paddingBottom: 8 }}>
           <div
             ref={slipRef}
+            data-slip
             style={{
               position: "relative",
               width: 760,
               background: S.paper,
               border: "1px solid #e3ddcc",
-              fontFamily: "'Inter', system-ui, sans-serif",
+              fontFamily: "Arial, sans-serif",
               color: S.ink,
               fontSize: 13,
               lineHeight: 1.5,
@@ -479,13 +486,13 @@ export default function SlipGaji() {
               backgroundSize: "100% auto",
               backgroundRepeat: "no-repeat",
               backgroundPosition: "top left",
-              opacity: 0.13,
+              opacity: 0.05,
               zIndex: 0,
               pointerEvents: "none",
             }} />
 
             {/* ── Slip content — above watermark; solid backgrounds cover it ── */}
-            <div style={{ position: "relative", zIndex: 1, padding: "44px 50px 36px" }}>
+            <div style={{ position: "relative", zIndex: 1, padding: "44px 50px 36px", fontFamily: "Arial, sans-serif" }}>
 
               {/* Header */}
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", borderBottom:`3px solid ${S.navy}`, paddingBottom:16, marginBottom:22 }}>
@@ -576,7 +583,7 @@ export default function SlipGaji() {
                 <span style={{ color:S.goldSoft, fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", fontWeight:700, flexShrink:0 }}>
                   TOTAL DITERIMA
                 </span>
-                <span style={{ color:"#fff", fontFamily:"'Inter', system-ui, sans-serif", fontSize:22, fontWeight:800, fontVariantNumeric:"tabular-nums", whiteSpace:"nowrap", letterSpacing:"-0.01em" }}>
+                <span style={{ color:"#fff", fontFamily:"Arial, sans-serif", fontSize:22, fontWeight:800, fontVariantNumeric:"tabular-nums", whiteSpace:"nowrap", letterSpacing:"-0.01em" }}>
                   {rupiah(totalDiterima)}
                 </span>
               </div>
