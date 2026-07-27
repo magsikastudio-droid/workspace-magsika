@@ -31,6 +31,7 @@ import RencanaStrategis from "./pages/RencanaStrategis";
 import TeamMemberPage from "./pages/TeamMemberPage";
 import DailyReport from "./pages/DailyReport";
 import OrderLayout from "./pages/OrderLayout";
+import SlipGaji from "./pages/SlipGaji";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "./context/AuthContext";
 
@@ -84,6 +85,7 @@ function App() {
                               <Route path="/notifications" element={<RoleGuard allowedRoles={["admin","pm"]}><Notifications /></RoleGuard>} />
                               <Route path="/rencana/:type" element={<RoleGuard allowedRoles={["admin","pm"]}><RencanaStrategis /></RoleGuard>} />
                               <Route path="/rencana" element={<Navigate to="/rencana/teknis" replace />} />
+                              <Route path="/slip-gaji" element={<RoleGuard allowedRoles={["admin","pm"]}><SlipGaji /></RoleGuard>} />
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Layout>
