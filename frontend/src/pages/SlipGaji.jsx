@@ -471,30 +471,20 @@ export default function SlipGaji() {
               overflow: "hidden",
             }}
           >
-            {/* ── Watermark overlay ── */}
+            {/* ── Watermark — behind all content ── */}
             <div style={{
               position: "absolute",
               inset: 0,
+              backgroundImage: "url('/watermark-magsika.png')",
+              backgroundSize: "100% auto",
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "top left",
+              opacity: 0.13,
+              zIndex: 0,
               pointerEvents: "none",
-              zIndex: 2,
-              overflow: "hidden",
-            }}>
-              <div style={{
-                position: "absolute",
-                top: "-60%",
-                left: "-60%",
-                width: "220%",
-                height: "220%",
-                backgroundImage: "url('/logo.png')",
-                backgroundSize: "150px auto",
-                backgroundRepeat: "repeat",
-                transform: "rotate(-30deg)",
-                opacity: 0.12,
-                mixBlendMode: "multiply",
-              }} />
-            </div>
+            }} />
 
-            {/* ── Slip content ── */}
+            {/* ── Slip content — above watermark; solid backgrounds cover it ── */}
             <div style={{ position: "relative", zIndex: 1, padding: "44px 50px 36px" }}>
 
               {/* Header */}
@@ -582,11 +572,11 @@ export default function SlipGaji() {
               </div>
 
               {/* Diterima box */}
-              <div style={{ marginTop:20, background:S.navy, borderRadius:8, padding:"14px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <span style={{ color:S.goldSoft, fontSize:11.5, letterSpacing:"0.07em", textTransform:"uppercase", fontWeight:600 }}>
-                  Total Diterima
+              <div style={{ marginTop:20, background:S.navy, borderRadius:8, padding:"14px 20px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:16 }}>
+                <span style={{ color:S.goldSoft, fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", fontWeight:700, flexShrink:0 }}>
+                  TOTAL DITERIMA
                 </span>
-                <span style={{ color:"#fff", fontFamily:"Georgia, serif", fontSize:23, fontWeight:700, fontVariantNumeric:"tabular-nums" }}>
+                <span style={{ color:"#fff", fontFamily:"'Inter', system-ui, sans-serif", fontSize:22, fontWeight:800, fontVariantNumeric:"tabular-nums", whiteSpace:"nowrap", letterSpacing:"-0.01em" }}>
                   {rupiah(totalDiterima)}
                 </span>
               </div>
