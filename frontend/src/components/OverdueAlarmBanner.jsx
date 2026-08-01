@@ -1,9 +1,11 @@
-import React, { useEffect, useRef } from "react";
-import { AlarmClock, X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { AlarmClock, X, Volume2 } from "lucide-react";
 
 function speakTasks(tasks) {
   if (!window.speechSynthesis) return;
+  // Chrome bug: speechSynthesis can get stuck in paused state
   window.speechSynthesis.cancel();
+  window.speechSynthesis.resume();
   const lines = tasks.map((t) => {
     const name = (t.assignee || "").split(" ")[0];
     const title = (t.title || "").replace(/\s*—\s*.+$/, "").trim();
@@ -18,6 +20,7 @@ function speakTasks(tasks) {
     const voices = window.speechSynthesis.getVoices();
     const voice = voices.find((v) => v.lang.startsWith("id")) || voices.find((v) => v.lang.startsWith("en")) || null;
     if (voice) utter.voice = voice;
+    window.speechSynthesis.resume();
     window.speechSynthesis.speak(utter);
   };
   if (window.speechSynthesis.getVoices().length > 0) {
@@ -38,11 +41,11 @@ const fmtOvertime = (secs) => {
 
 export default function OverdueAlarmBanner({ tasks, onDismiss }) {
   const spokenRef = useRef(new Set());
+  const [speaking, setSpeaking] = useState(false);
 
   useEffect(() => {
     if (!tasks || tasks.length === 0) return;
     if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
-    // Only speak tasks that haven't been announced yet
     const newTasks = tasks.filter((t) => !spokenRef.current.has(t.id));
     if (newTasks.length > 0) {
       newTasks.forEach((t) => spokenRef.current.add(t.id));
@@ -52,6 +55,12 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
   }, [tasks]);
 
   if (!tasks || tasks.length === 0) return null;
+
+  const handleSpeak = () => {
+    setSpeaking(true);
+    speakTasks(tasks);
+    setTimeout(() => setSpeaking(false), 3000);
+  };
 
   return (
     <>
@@ -69,6 +78,10 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
           25%  { transform: rotate(-20deg); }
           75%  { transform: rotate(20deg); }
           100% { transform: rotate(0deg); }
+        }
+        @keyframes overdueVolumePulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%       { opacity: 0.6; transform: scale(1.15); }
         }
       `}</style>
       <div
@@ -112,26 +125,48 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
               ))}
             </div>
           </div>
-          <button
-            onClick={onDismiss}
-            style={{
-              flexShrink: 0,
-              background: "rgba(255,255,255,0.2)",
-              border: "1px solid rgba(255,255,255,0.3)",
-              borderRadius: 8,
-              padding: "5px 8px",
-              cursor: "pointer",
-              color: "white",
-              display: "flex",
-              alignItems: "center",
-              fontSize: 11,
-              fontWeight: 700,
-              gap: 4,
-            }}
-          >
-            <X size={14} />
-            Tutup
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={handleSpeak}
+              title="Ucapkan nama overdue"
+              style={{
+                background: speaking ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.2)",
+                border: "1px solid rgba(255,255,255,0.3)",
+                borderRadius: 8,
+                padding: "5px 8px",
+                cursor: "pointer",
+                color: "white",
+                display: "flex",
+                alignItems: "center",
+                fontSize: 11,
+                fontWeight: 700,
+                gap: 4,
+                animation: speaking ? "overdueVolumePulse 0.6s ease-in-out infinite" : "none",
+              }}
+            >
+              <Volume2 size={14} />
+              Ucap
+            </button>
+            <button
+              onClick={onDismiss}
+              style={{
+                background: "rgba(255,255,255,0.2)",
+                border: "1px solid rgba(255,255,255,0.3)",
+                borderRadius: 8,
+                padding: "5px 8px",
+                cursor: "pointer",
+                color: "white",
+                display: "flex",
+                alignItems: "center",
+                fontSize: 11,
+                fontWeight: 700,
+                gap: 4,
+              }}
+            >
+              <X size={14} />
+              Tutup
+            </button>
+          </div>
         </div>
       </div>
     </>
