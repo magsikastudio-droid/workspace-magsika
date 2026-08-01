@@ -1,21 +1,30 @@
 import React, { useEffect, useRef } from "react";
 import { AlarmClock, X } from "lucide-react";
 
-function playOverdueAlarm(ctx) {
-  const now = ctx.currentTime;
-  const pattern = [880, 988, 1047, 880, 988, 1047, 1175];
-  pattern.forEach((freq, i) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(freq, now + i * 0.1);
-    gain.gain.setValueAtTime(0.28, now + i * 0.1);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.09);
-    osc.start(now + i * 0.1);
-    osc.stop(now + i * 0.1 + 0.09);
+function speakTasks(tasks) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const lines = tasks.map((t) => {
+    const name = (t.assignee || "").split(" ")[0];
+    const title = (t.title || "").replace(/\s*—\s*.+$/, "").trim();
+    return `${name}, waktu habis! ${title}`;
   });
+  const text = lines.join(". ");
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "id-ID";
+  utter.rate = 0.88;
+  utter.pitch = 1.05;
+  const trySpeak = () => {
+    const voices = window.speechSynthesis.getVoices();
+    const voice = voices.find((v) => v.lang.startsWith("id")) || voices.find((v) => v.lang.startsWith("en")) || null;
+    if (voice) utter.voice = voice;
+    window.speechSynthesis.speak(utter);
+  };
+  if (window.speechSynthesis.getVoices().length > 0) {
+    trySpeak();
+  } else {
+    window.speechSynthesis.onvoiceschanged = () => { trySpeak(); window.speechSynthesis.onvoiceschanged = null; };
+  }
 }
 
 const fmtOvertime = (secs) => {
@@ -28,26 +37,18 @@ const fmtOvertime = (secs) => {
 };
 
 export default function OverdueAlarmBanner({ tasks, onDismiss }) {
-  const audioCtxRef = useRef(null);
-  const intervalRef = useRef(null);
+  const spokenRef = useRef(new Set());
 
   useEffect(() => {
     if (!tasks || tasks.length === 0) return;
-
-    if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300, 150, 300]);
-
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      audioCtxRef.current = ctx;
-      playOverdueAlarm(ctx);
-      intervalRef.current = setInterval(() => playOverdueAlarm(ctx), 4000);
-    } catch {}
-
-    return () => {
-      clearInterval(intervalRef.current);
-      audioCtxRef.current?.close();
-      navigator.vibrate?.(0);
-    };
+    if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
+    // Only speak tasks that haven't been announced yet
+    const newTasks = tasks.filter((t) => !spokenRef.current.has(t.id));
+    if (newTasks.length > 0) {
+      newTasks.forEach((t) => spokenRef.current.add(t.id));
+      speakTasks(newTasks);
+    }
+    return () => { navigator.vibrate?.(0); };
   }, [tasks]);
 
   if (!tasks || tasks.length === 0) return null;
