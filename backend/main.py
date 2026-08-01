@@ -1182,6 +1182,41 @@ async def tasks_summary(month: Optional[str] = None, from_date: Optional[str] = 
     }
 
 
+@app.get("/tasks/weekly-report")
+async def tasks_weekly_report(from_date: str, to_date: str, current_user: dict = Depends(get_current_user)):
+    """Daily breakdown per artist for a date range (used by weekly PNG export)."""
+    try:
+        records = await db.tasks.find({"date": {"$gte": from_date, "$lte": to_date}}).to_list(5000)
+    except Exception:
+        records = []
+    # Build { artist: { date: { done, failed, time } } }
+    artist_days: Dict[str, Any] = {}
+    for t in records:
+        a = t.get("assignee", "?")
+        d = t.get("date", "")
+        if not d:
+            continue
+        if a not in artist_days:
+            artist_days[a] = {"dates": {}, "total_done": 0, "total_failed": 0, "total_time": 0}
+        if d not in artist_days[a]["dates"]:
+            artist_days[a]["dates"][d] = {"done": 0, "failed": 0, "time": 0}
+        st = t.get("status", "pending")
+        elapsed = t.get("time_elapsed", 0) or 0
+        if st == "done":
+            artist_days[a]["dates"][d]["done"] += 1
+            artist_days[a]["total_done"] += 1
+        elif st == "failed":
+            artist_days[a]["dates"][d]["failed"] += 1
+            artist_days[a]["total_failed"] += 1
+        artist_days[a]["dates"][d]["time"] += elapsed
+        artist_days[a]["total_time"] += elapsed
+    return {
+        "from_date": from_date,
+        "to_date": to_date,
+        "artists": [{"name": k, **v} for k, v in artist_days.items()],
+    }
+
+
 @app.get("/chat-entries")
 async def list_chat_entries(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     try:
