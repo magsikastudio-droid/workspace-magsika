@@ -1719,7 +1719,7 @@ function WeeklyReportModal({ onClose }) {
 
           {loading ? (
             <div style={{ padding: "60px 0", textAlign: "center", color: S.muted, fontSize: 14 }}>Memuat data...</div>
-          ) : allArtists.length === 0 ? (
+          ) : artists.length === 0 ? (
             <div style={{ padding: "60px 0", textAlign: "center", color: S.muted, fontSize: 14 }}>Tidak ada task pada minggu ini.</div>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
