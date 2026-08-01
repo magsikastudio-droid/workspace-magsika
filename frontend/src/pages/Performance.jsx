@@ -1465,7 +1465,7 @@ const MONTH_SHORT = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt"
 function getWeekDays(weekOffset = 0) {
   const now = new Date();
   now.setDate(now.getDate() + weekOffset * 7);
-  const dow = now.getDay(); // 0=Sun
+  const dow = now.getDay();
   const diffToMon = dow === 0 ? -6 : 1 - dow;
   const mon = new Date(now);
   mon.setDate(now.getDate() + diffToMon);
@@ -1477,7 +1477,6 @@ function getWeekDays(weekOffset = 0) {
     const day = String(d.getDate()).padStart(2, "0");
     return {
       iso: `${y}-${m}-${day}`,
-      label: `${DAY_NAMES[i]} ${parseInt(day)}/${parseInt(m)}`,
       shortLabel: `${DAY_NAMES[i].slice(0,3)} ${parseInt(day)}/${parseInt(m)}`,
       dayObj: d,
     };
@@ -1485,13 +1484,46 @@ function getWeekDays(weekOffset = 0) {
 }
 
 function fmtTimeCompact(s) {
-  if (!s || s <= 0) return "—";
+  if (!s || s <= 0) return "";
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   if (h > 0 && m > 0) return `${h}j${m}m`;
   if (h > 0) return `${h}j`;
   if (m > 0) return `${m}m`;
   return `${s}d`;
+}
+
+/* Render one daily cell — lists projects with done/failed/time */
+function DayCell({ cell, S }) {
+  if (!cell || (cell.done === 0 && cell.failed === 0)) {
+    return <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>;
+  }
+  const projects = Object.entries(cell.projects || {})
+    .filter(([, v]) => v.done > 0 || v.failed > 0)
+    .sort((a, b) => (b[1].done + b[1].failed) - (a[1].done + a[1].failed));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-start" }}>
+      {projects.map(([pname, pv]) => (
+        <div key={pname} style={{ width: "100%" }}>
+          <div style={{ fontSize: 9.5, color: S.muted, marginBottom: 2, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}
+               title={pname}>
+            {pname.length > 22 ? pname.slice(0, 20) + "…" : pname}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>
+            {pv.done > 0 && (
+              <span style={{ background: "#d1fae5", color: "#065f46", borderRadius: 4, padding: "1px 5px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>✓ {pv.done}</span>
+            )}
+            {pv.failed > 0 && (
+              <span style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 4, padding: "1px 5px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>✗ {pv.failed}</span>
+            )}
+            {pv.time > 0 && (
+              <span style={{ fontSize: 9.5, color: "#4f46e5", fontWeight: 600, whiteSpace: "nowrap" }}>⏱{fmtTimeCompact(pv.time)}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function WeeklyReportModal({ onClose }) {
@@ -1514,31 +1546,33 @@ function WeeklyReportModal({ onClose }) {
       .finally(() => setLoading(false));
   }, [fromDate, toDate]);
 
-  const artists = useMemo(() => {
-    if (!data?.artists) return [];
-    return [...data.artists].sort((a, b) => b.total_done - a.total_done);
+  const { timArtists, freelanceArtists } = useMemo(() => {
+    if (!data?.artists) return { timArtists: [], freelanceArtists: [] };
+    const sorted = [...data.artists].sort((a, b) => b.total_done - a.total_done);
+    return {
+      timArtists: sorted.filter((a) => (a.assignee_type || "tim") !== "freelance"),
+      freelanceArtists: sorted.filter((a) => a.assignee_type === "freelance"),
+    };
   }, [data]);
+
+  const allArtists = useMemo(() => [...timArtists, ...freelanceArtists], [timArtists, freelanceArtists]);
 
   const dayTotals = useMemo(() => {
     const t = {};
     days.forEach((d) => { t[d.iso] = { done: 0, failed: 0, time: 0 }; });
-    artists.forEach((a) => {
+    allArtists.forEach((a) => {
       Object.entries(a.dates || {}).forEach(([iso, v]) => {
-        if (t[iso]) {
-          t[iso].done += v.done;
-          t[iso].failed += v.failed;
-          t[iso].time += v.time;
-        }
+        if (t[iso]) { t[iso].done += v.done; t[iso].failed += v.failed; t[iso].time += v.time; }
       });
     });
     return t;
-  }, [artists, days]);
+  }, [allArtists, days]);
 
   const grandTotals = useMemo(() => ({
-    done: artists.reduce((s, a) => s + a.total_done, 0),
-    failed: artists.reduce((s, a) => s + a.total_failed, 0),
-    time: artists.reduce((s, a) => s + a.total_time, 0),
-  }), [artists]);
+    done: allArtists.reduce((s, a) => s + a.total_done, 0),
+    failed: allArtists.reduce((s, a) => s + a.total_failed, 0),
+    time: allArtists.reduce((s, a) => s + a.total_time, 0),
+  }), [allArtists]);
 
   const handleExport = async () => {
     if (!cardRef.current) return;
@@ -1551,18 +1585,13 @@ function WeeklyReportModal({ onClose }) {
       const dataUrl = await domtoimage.default.toPng(node, {
         width: node.offsetWidth * scale,
         height: node.offsetHeight * scale,
-        style: {
-          transform: `scale(${scale})`,
-          transformOrigin: "top left",
-          width: `${node.offsetWidth}px`,
-          height: `${node.offsetHeight}px`,
-        },
-        bgcolor: "#f8fafc",
+        style: { transform: `scale(${scale})`, transformOrigin: "top left", width: `${node.offsetWidth}px`, height: `${node.offsetHeight}px` },
+        bgcolor: "#ffffff",
         quality: 1,
       });
       const link = document.createElement("a");
-      const weekLabel = `${days[0].dayObj.getDate()}-${MONTH_SHORT[days[0].dayObj.getMonth()]}-${days[6].dayObj.getDate()}-${MONTH_SHORT[days[6].dayObj.getMonth()]}-${days[6].dayObj.getFullYear()}`;
-      link.download = `Laporan-Mingguan-${weekLabel}.png`;
+      const wl = `${days[0].dayObj.getDate()}-${MONTH_SHORT[days[0].dayObj.getMonth()]}-${days[6].dayObj.getDate()}-${MONTH_SHORT[days[6].dayObj.getMonth()]}-${days[6].dayObj.getFullYear()}`;
+      link.download = `Laporan-Mingguan-${wl}.png`;
       link.href = dataUrl;
       link.click();
       toast.success("Laporan berhasil diexport!");
@@ -1576,27 +1605,79 @@ function WeeklyReportModal({ onClose }) {
   const weekRangeLabel = `${days[0].dayObj.getDate()} ${MONTH_SHORT[days[0].dayObj.getMonth()]} – ${days[6].dayObj.getDate()} ${MONTH_SHORT[days[6].dayObj.getMonth()]} ${days[6].dayObj.getFullYear()}`;
 
   const S = {
-    bg: "#f8fafc",
+    bg: "#ffffff",
     navy: "#16233f",
     accent: "#6366f1",
     emerald: "#059669",
-    rose: "#e11d48",
     muted: "#64748b",
     border: "#e2e8f0",
-    rowAlt: "#f1f5f9",
+    rowAlt: "#f8fafc",
     headerBg: "#1e1b4b",
+    timSection: "#eef2ff",    // indigo-50
+    freSection: "#fff7ed",    // orange-50
+    timBadge: "#4f46e5",
+    freBadge: "#ea580c",
   };
+
+  /* Reusable artist rows renderer */
+  const renderArtistRows = (artists, sectionBg) =>
+    artists.map((artist, idx) => {
+      const color = getColor(artist.name);
+      return (
+        <tr key={artist.name} style={{ background: idx % 2 === 0 ? S.bg : S.rowAlt }}>
+          {/* Name */}
+          <td style={{ padding: "10px 14px", borderBottom: `1px solid ${S.border}`, verticalAlign: "top", width: 170 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+                {artist.name.charAt(0).toUpperCase()}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: S.navy, lineHeight: 1.3 }}>{artist.name}</div>
+            </div>
+          </td>
+          {/* Daily cells */}
+          {days.map((d) => (
+            <td key={d.iso} style={{ padding: "8px 8px", borderBottom: `1px solid ${S.border}`, borderLeft: `1px solid ${S.border}`, verticalAlign: "top", minWidth: 130 }}>
+              <DayCell cell={artist.dates?.[d.iso]} S={S} />
+            </td>
+          ))}
+          {/* Weekly total */}
+          <td style={{ padding: "10px 12px", borderBottom: `1px solid ${S.border}`, borderLeft: `2px solid ${S.accent}40`, verticalAlign: "top", background: `${S.accent}06`, minWidth: 110 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                <span style={{ background: "#d1fae5", color: "#065f46", borderRadius: 4, padding: "2px 7px", fontSize: 12, fontWeight: 800 }}>✓ {artist.total_done}</span>
+                {artist.total_failed > 0 && (
+                  <span style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 4, padding: "2px 7px", fontSize: 12, fontWeight: 800 }}>✗ {artist.total_failed}</span>
+                )}
+              </div>
+              {artist.total_time > 0 && (
+                <div style={{ fontSize: 10, color: S.accent, fontWeight: 700 }}>⏱ {fmtTimeCompact(artist.total_time)}</div>
+              )}
+            </div>
+          </td>
+        </tr>
+      );
+    });
+
+  /* Section separator row */
+  const SectionHeader = ({ label, color, count }) => (
+    <tr>
+      <td colSpan={9} style={{ padding: "7px 14px", background: color, borderBottom: `1px solid ${S.border}` }}>
+        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", color: "#fff", textTransform: "uppercase" }}>{label}</span>
+        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", marginLeft: 8 }}>{count} anggota</span>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="fixed inset-0 z-[400] flex items-start justify-center bg-slate-900/50 backdrop-blur-sm overflow-y-auto py-8 px-4">
-      <div className="w-full max-w-6xl">
+      <div className="w-full max-w-7xl">
         {/* Controls */}
         <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <button onClick={() => setWeekOffset((v) => v - 1)} className="rounded-xl border border-white/20 bg-white/10 p-2 text-white hover:bg-white/20 transition">
               <ChevronLeft size={16} />
             </button>
-            <span className="font-semibold text-white min-w-[200px] text-center">{weekRangeLabel}</span>
+            <span className="font-semibold text-white min-w-[220px] text-center">{weekRangeLabel}</span>
             <button onClick={() => setWeekOffset((v) => v + 1)} className="rounded-xl border border-white/20 bg-white/10 p-2 text-white hover:bg-white/20 transition">
               <ChevronRight size={16} />
             </button>
@@ -1607,11 +1688,8 @@ function WeeklyReportModal({ onClose }) {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleExport}
-              disabled={exporting || loading || !data}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50 transition"
-            >
+            <button onClick={handleExport} disabled={exporting || loading || !data}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50 transition">
               {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileImage size={15} />}
               {exporting ? "Mengexport..." : "Export PNG"}
             </button>
@@ -1621,136 +1699,89 @@ function WeeklyReportModal({ onClose }) {
           </div>
         </div>
 
-        {/* Report Card (the thing that gets exported) */}
-        <div
-          ref={cardRef}
-          style={{
-            background: S.bg,
-            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-            padding: "36px 40px 40px",
-            borderRadius: 16,
-            minWidth: 900,
-          }}
-        >
-          {/* Report header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, paddingBottom: 20, borderBottom: `2px solid ${S.navy}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <img src="/logo.png" alt="Magsika Studio" style={{ height: 36, objectFit: "contain" }} />
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: S.navy, letterSpacing: "-0.02em" }}>LAPORAN MINGGUAN PERFORMA TIM</div>
-                <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>Magsika Studio · {weekRangeLabel}</div>
+        {/* Report Card */}
+        <div ref={cardRef} style={{ background: S.bg, fontFamily: "'Inter', system-ui, -apple-system, sans-serif", padding: "36px 40px 40px", borderRadius: 16 }}>
+
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, paddingBottom: 20, borderBottom: `2px solid ${S.navy}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <img src="/logo.png" alt="Magsika Studio" style={{ height: 38, objectFit: "contain" }} />
+              <div style={{ borderLeft: `2px solid ${S.border}`, paddingLeft: 16 }}>
+                <div style={{ fontSize: 17, fontWeight: 800, color: S.navy, letterSpacing: "-0.02em" }}>LAPORAN MINGGUAN PERFORMA TIM</div>
+                <div style={{ fontSize: 11.5, color: S.muted, marginTop: 3 }}>Magsika Studio · {weekRangeLabel}</div>
               </div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 11, color: S.muted }}>Total Task Selesai</div>
-              <div style={{ fontSize: 28, fontWeight: 800, color: S.emerald, lineHeight: 1 }}>{grandTotals.done}</div>
-              <div style={{ fontSize: 10, color: S.muted, marginTop: 2 }}>{fmtTimeCompact(grandTotals.time)} total waktu</div>
+            <div style={{ display: "flex", gap: 24, alignItems: "flex-end" }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: S.muted, marginBottom: 2 }}>Tim Internal</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: S.timBadge, lineHeight: 1 }}>{timArtists.reduce((s,a)=>s+a.total_done,0)}</div>
+                <div style={{ fontSize: 9, color: S.muted }}>task selesai</div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: S.muted, marginBottom: 2 }}>Freelance</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: S.freBadge, lineHeight: 1 }}>{freelanceArtists.reduce((s,a)=>s+a.total_done,0)}</div>
+                <div style={{ fontSize: 9, color: S.muted }}>task selesai</div>
+              </div>
+              <div style={{ textAlign: "center", borderLeft: `1px solid ${S.border}`, paddingLeft: 20 }}>
+                <div style={{ fontSize: 10, color: S.muted, marginBottom: 2 }}>Total Selesai</div>
+                <div style={{ fontSize: 30, fontWeight: 900, color: S.emerald, lineHeight: 1 }}>{grandTotals.done}</div>
+                <div style={{ fontSize: 9, color: S.muted }}>{fmtTimeCompact(grandTotals.time)} total waktu</div>
+              </div>
             </div>
           </div>
 
           {loading ? (
             <div style={{ padding: "60px 0", textAlign: "center", color: S.muted, fontSize: 14 }}>Memuat data...</div>
-          ) : artists.length === 0 ? (
+          ) : allArtists.length === 0 ? (
             <div style={{ padding: "60px 0", textAlign: "center", color: S.muted, fontSize: 14 }}>Tidak ada task pada minggu ini.</div>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ background: S.headerBg, color: "#fff", textAlign: "left", padding: "10px 14px", borderRadius: "8px 0 0 0", fontWeight: 700, fontSize: 11, letterSpacing: "0.05em", width: 160 }}>NAMA TIM</th>
+                  <th style={{ background: S.headerBg, color: "#fff", textAlign: "left", padding: "10px 14px", borderRadius: "8px 0 0 0", fontWeight: 700, fontSize: 11, letterSpacing: "0.05em", width: 170 }}>ANGGOTA TIM</th>
                   {days.map((d, i) => (
-                    <th key={d.iso} style={{ background: S.headerBg, color: "#fff", textAlign: "center", padding: "10px 6px", fontWeight: 700, fontSize: 10, letterSpacing: "0.04em", borderLeft: "1px solid rgba(255,255,255,0.1)", borderRadius: i === 6 ? "0 8px 0 0" : 0 }}>
+                    <th key={d.iso} style={{ background: S.headerBg, color: "#fff", textAlign: "left", padding: "10px 8px", fontWeight: 700, fontSize: 10, letterSpacing: "0.04em", borderLeft: "1px solid rgba(255,255,255,0.1)" }}>
                       {d.shortLabel}
                     </th>
                   ))}
-                  <th style={{ background: S.accent, color: "#fff", textAlign: "center", padding: "10px 12px", fontWeight: 800, fontSize: 11, letterSpacing: "0.05em", borderLeft: "2px solid rgba(255,255,255,0.3)", borderRadius: "0 8px 0 0" }}>TOTAL</th>
+                  <th style={{ background: S.accent, color: "#fff", textAlign: "left", padding: "10px 12px", fontWeight: 800, fontSize: 11, letterSpacing: "0.05em", borderLeft: "2px solid rgba(255,255,255,0.3)", borderRadius: "0 8px 0 0" }}>TOTAL MINGGU</th>
                 </tr>
               </thead>
               <tbody>
-                {artists.map((artist, idx) => {
-                  const color = getColor(artist.name);
-                  return (
-                    <tr key={artist.name} style={{ background: idx % 2 === 0 ? "#fff" : S.rowAlt }}>
-                      {/* Name cell */}
-                      <td style={{ padding: "10px 14px", borderBottom: `1px solid ${S.border}`, verticalAlign: "middle" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ width: 28, height: 28, borderRadius: 8, background: color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
-                            {artist.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: S.navy, lineHeight: 1.3 }}>{artist.name}</div>
-                        </div>
-                      </td>
-                      {/* Daily cells */}
-                      {days.map((d) => {
-                        const cell = artist.dates?.[d.iso];
-                        const hasDone = cell?.done > 0;
-                        const hasFailed = cell?.failed > 0;
-                        const hasTime = cell?.time > 0;
-                        return (
-                          <td key={d.iso} style={{ padding: "8px 6px", borderBottom: `1px solid ${S.border}`, borderLeft: `1px solid ${S.border}`, textAlign: "center", verticalAlign: "middle", minWidth: 88 }}>
-                            {(hasDone || hasFailed || hasTime) ? (
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                                <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
-                                  {hasDone && (
-                                    <span style={{ background: "#d1fae5", color: "#065f46", borderRadius: 4, padding: "1px 5px", fontSize: 11, fontWeight: 700 }}>✓ {cell.done}</span>
-                                  )}
-                                  {hasFailed && (
-                                    <span style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 4, padding: "1px 5px", fontSize: 11, fontWeight: 700 }}>✗ {cell.failed}</span>
-                                  )}
-                                </div>
-                                {hasTime && (
-                                  <div style={{ fontSize: 10, color: "#4f46e5", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>⏱ {fmtTimeCompact(cell.time)}</div>
-                                )}
-                              </div>
-                            ) : (
-                              <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                      {/* Total cell */}
-                      <td style={{ padding: "8px 12px", borderBottom: `1px solid ${S.border}`, borderLeft: `2px solid ${S.accent}30`, textAlign: "center", verticalAlign: "middle", background: `${S.accent}08` }}>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                          <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
-                            <span style={{ background: "#d1fae5", color: "#065f46", borderRadius: 4, padding: "1px 6px", fontSize: 12, fontWeight: 800 }}>✓ {artist.total_done}</span>
-                            {artist.total_failed > 0 && (
-                              <span style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 4, padding: "1px 6px", fontSize: 12, fontWeight: 800 }}>✗ {artist.total_failed}</span>
-                            )}
-                          </div>
-                          {artist.total_time > 0 && (
-                            <div style={{ fontSize: 11, color: S.accent, fontWeight: 700 }}>⏱ {fmtTimeCompact(artist.total_time)}</div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {/* Grand total row */}
+                {/* Tim Section */}
+                {timArtists.length > 0 && <SectionHeader label="Tim Internal" color={S.timBadge} count={timArtists.length} />}
+                {renderArtistRows(timArtists, S.timSection)}
+
+                {/* Freelance Section */}
+                {freelanceArtists.length > 0 && <SectionHeader label="Freelance" color={S.freBadge} count={freelanceArtists.length} />}
+                {renderArtistRows(freelanceArtists, S.freSection)}
+
+                {/* Grand Total */}
                 <tr style={{ background: S.navy }}>
-                  <td style={{ padding: "10px 14px", color: "#fff", fontWeight: 800, fontSize: 12, borderRadius: "0 0 0 8px" }}>TOTAL TIM</td>
+                  <td style={{ padding: "10px 14px", color: "#fff", fontWeight: 800, fontSize: 11, letterSpacing: "0.03em", borderRadius: "0 0 0 8px" }}>TOTAL KESELURUHAN</td>
                   {days.map((d) => {
                     const t = dayTotals[d.iso];
                     return (
-                      <td key={d.iso} style={{ padding: "8px 6px", borderLeft: "1px solid rgba(255,255,255,0.1)", textAlign: "center", verticalAlign: "middle" }}>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                          {(t.done > 0 || t.failed > 0) && (
-                            <div style={{ display: "flex", gap: 3, justifyContent: "center" }}>
+                      <td key={d.iso} style={{ padding: "10px 8px", borderLeft: "1px solid rgba(255,255,255,0.1)", verticalAlign: "top" }}>
+                        {(t.done > 0 || t.failed > 0) ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                               {t.done > 0 && <span style={{ background: "#34d399", color: "#fff", borderRadius: 4, padding: "1px 5px", fontSize: 11, fontWeight: 700 }}>✓ {t.done}</span>}
                               {t.failed > 0 && <span style={{ background: "#f87171", color: "#fff", borderRadius: 4, padding: "1px 5px", fontSize: 11, fontWeight: 700 }}>✗ {t.failed}</span>}
                             </div>
-                          )}
-                          {t.time > 0 && <div style={{ fontSize: 10, color: "#a5b4fc", fontWeight: 600 }}>⏱ {fmtTimeCompact(t.time)}</div>}
-                          {t.done === 0 && t.failed === 0 && <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 11 }}>—</span>}
-                        </div>
+                            {t.time > 0 && <div style={{ fontSize: 9.5, color: "#a5b4fc", fontWeight: 600 }}>⏱ {fmtTimeCompact(t.time)}</div>}
+                          </div>
+                        ) : <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 11 }}>—</span>}
                       </td>
                     );
                   })}
-                  <td style={{ padding: "8px 12px", borderLeft: "2px solid rgba(255,255,255,0.2)", textAlign: "center", verticalAlign: "middle", borderRadius: "0 0 8px 0" }}>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                  <td style={{ padding: "10px 12px", borderLeft: "2px solid rgba(255,255,255,0.2)", verticalAlign: "top", borderRadius: "0 0 8px 0" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                       <div style={{ display: "flex", gap: 4 }}>
                         <span style={{ background: "#34d399", color: "#fff", borderRadius: 4, padding: "2px 8px", fontSize: 13, fontWeight: 800 }}>✓ {grandTotals.done}</span>
                         {grandTotals.failed > 0 && <span style={{ background: "#f87171", color: "#fff", borderRadius: 4, padding: "2px 8px", fontSize: 13, fontWeight: 800 }}>✗ {grandTotals.failed}</span>}
                       </div>
-                      {grandTotals.time > 0 && <div style={{ fontSize: 11, color: "#a5b4fc", fontWeight: 700 }}>⏱ {fmtTimeCompact(grandTotals.time)}</div>}
+                      {grandTotals.time > 0 && <div style={{ fontSize: 10, color: "#a5b4fc", fontWeight: 700 }}>⏱ {fmtTimeCompact(grandTotals.time)}</div>}
                     </div>
                   </td>
                 </tr>
@@ -1759,9 +1790,9 @@ function WeeklyReportModal({ onClose }) {
           )}
 
           {/* Footer */}
-          <div style={{ marginTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 10, color: S.muted }}>Digenerate otomatis dari Workspace Magsika Studio</div>
-            <div style={{ fontSize: 10, color: S.muted }}>
+          <div style={{ marginTop: 18, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 9.5, color: S.muted }}>Digenerate otomatis dari Workspace Magsika Studio</div>
+            <div style={{ fontSize: 9.5, color: S.muted }}>
               {new Date().toLocaleDateString("id-ID", { dateStyle: "long" })} · {new Date().toLocaleTimeString("id-ID", { timeStyle: "short" })} WIB
             </div>
           </div>

@@ -1184,32 +1184,62 @@ async def tasks_summary(month: Optional[str] = None, from_date: Optional[str] = 
 
 @app.get("/tasks/weekly-report")
 async def tasks_weekly_report(from_date: str, to_date: str, current_user: dict = Depends(get_current_user)):
-    """Daily breakdown per artist for a date range (used by weekly PNG export)."""
+    """Daily breakdown per artist+project for a date range (used by weekly PNG export)."""
     try:
         records = await db.tasks.find({"date": {"$gte": from_date, "$lte": to_date}}).to_list(5000)
     except Exception:
         records = []
-    # Build { artist: { date: { done, failed, time } } }
+
+    # Collect all order_ids then fetch project names in one batch
+    order_ids = list({t.get("order_id") for t in records if t.get("order_id")})
+    order_names: Dict[str, str] = {}
+    if order_ids:
+        try:
+            obj_ids = [ObjectId(oid) for oid in order_ids if oid]
+            orders_docs = await db.orders.find({"_id": {"$in": obj_ids}}, {"project": 1}).to_list(1000)
+            for o in orders_docs:
+                order_names[str(o["_id"])] = o.get("project", "")
+        except Exception:
+            pass
+
+    # Build per-artist, per-day, per-order breakdown
     artist_days: Dict[str, Any] = {}
     for t in records:
         a = t.get("assignee", "?")
         d = t.get("date", "")
         if not d:
             continue
+        atype = t.get("assignee_type", "tim")
         if a not in artist_days:
-            artist_days[a] = {"dates": {}, "total_done": 0, "total_failed": 0, "total_time": 0}
+            artist_days[a] = {
+                "assignee_type": atype,
+                "dates": {},
+                "total_done": 0, "total_failed": 0, "total_time": 0,
+            }
         if d not in artist_days[a]["dates"]:
-            artist_days[a]["dates"][d] = {"done": 0, "failed": 0, "time": 0}
+            artist_days[a]["dates"][d] = {"done": 0, "failed": 0, "time": 0, "projects": {}}
+
         st = t.get("status", "pending")
         elapsed = t.get("time_elapsed", 0) or 0
+        oid = t.get("order_id", "")
+        pname = order_names.get(oid, oid or "—") if oid else "—"
+
+        day_slot = artist_days[a]["dates"][d]
+        day_slot["time"] += elapsed
+        if pname not in day_slot["projects"]:
+            day_slot["projects"][pname] = {"done": 0, "failed": 0, "time": 0}
+        day_slot["projects"][pname]["time"] += elapsed
+
         if st == "done":
-            artist_days[a]["dates"][d]["done"] += 1
+            day_slot["done"] += 1
+            day_slot["projects"][pname]["done"] += 1
             artist_days[a]["total_done"] += 1
         elif st == "failed":
-            artist_days[a]["dates"][d]["failed"] += 1
+            day_slot["failed"] += 1
+            day_slot["projects"][pname]["failed"] += 1
             artist_days[a]["total_failed"] += 1
-        artist_days[a]["dates"][d]["time"] += elapsed
         artist_days[a]["total_time"] += elapsed
+
     return {
         "from_date": from_date,
         "to_date": to_date,
