@@ -110,29 +110,41 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
   const alarmIntervalRef = useRef(null);
   const [speaking, setSpeaking] = useState(false);
 
-  // Repeating oscillator alarm — restored from old behaviour
+  // Create AudioContext on mount — gives it the best chance of being "running"
+  // by the time overdue fires (high MEI sites auto-resume; others need 1 click)
   useEffect(() => {
-    if (!tasks || tasks.length === 0) {
-      clearInterval(alarmIntervalRef.current);
-      alarmCtxRef.current?.close().catch(() => {});
-      alarmCtxRef.current = null;
-      return;
-    }
-    const startAlarm = () => {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        alarmCtxRef.current = ctx;
-        playOverdueAlarm(ctx);
-        alarmIntervalRef.current = setInterval(() => playOverdueAlarm(ctx), 4000);
-      } catch (_) {}
-    };
-    startAlarm();
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      alarmCtxRef.current = ctx;
+      ctx.resume().catch(() => {});
+    } catch (_) {}
     return () => {
-      clearInterval(alarmIntervalRef.current);
       alarmCtxRef.current?.close().catch(() => {});
       alarmCtxRef.current = null;
     };
-  }, [tasks?.length > 0 ? "active" : "inactive"]);
+  }, []);
+
+  // Repeating oscillator alarm while there are overdue tasks
+  useEffect(() => {
+    clearInterval(alarmIntervalRef.current);
+    if (!tasks || tasks.length === 0) return;
+
+    const doPlay = () => {
+      const ctx = alarmCtxRef.current;
+      if (!ctx) return;
+      if (ctx.state === "running") {
+        playOverdueAlarm(ctx);
+      } else {
+        ctx.resume().then(() => playOverdueAlarm(ctx)).catch(() => {});
+      }
+    };
+
+    doPlay();
+    alarmIntervalRef.current = setInterval(doPlay, 4000);
+    return () => clearInterval(alarmIntervalRef.current);
+  }, [tasks]);
 
   // Synchronous speak decision — no async/await so gesture chain stays intact
   const speak = (tasksToSpeak) => {
