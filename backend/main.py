@@ -1,5 +1,7 @@
 import os
+import io
 import json
+import base64
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -3034,6 +3036,27 @@ async def ai_member_insight(name: str, month: str, period: str = "monthly", curr
         return {"insight": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+
+
+class TTSRequest(BaseModel):
+    text: str
+
+@app.post("/tts")
+async def text_to_speech(payload: TTSRequest, current_user: dict = Depends(get_current_user)):
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="text required")
+    try:
+        from gtts import gTTS
+        def _generate():
+            tts = gTTS(text=payload.text, lang="id", slow=False)
+            buf = io.BytesIO()
+            tts.write_to_fp(buf)
+            buf.seek(0)
+            return base64.b64encode(buf.read()).decode()
+        audio_b64 = await _asyncio.get_event_loop().run_in_executor(None, _generate)
+        return {"audio": audio_b64}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS error: {str(e)}")
 
 
 @app.get("/ai/insight/overall")
