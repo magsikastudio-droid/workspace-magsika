@@ -1546,33 +1546,29 @@ function WeeklyReportModal({ onClose }) {
       .finally(() => setLoading(false));
   }, [fromDate, toDate]);
 
-  const { timArtists, freelanceArtists } = useMemo(() => {
-    if (!data?.artists) return { timArtists: [], freelanceArtists: [] };
-    const sorted = [...data.artists].sort((a, b) => b.total_done - a.total_done);
-    return {
-      timArtists: sorted.filter((a) => (a.assignee_type || "tim") !== "freelance"),
-      freelanceArtists: sorted.filter((a) => a.assignee_type === "freelance"),
-    };
+  const artists = useMemo(() => {
+    if (!data?.artists) return [];
+    return [...data.artists]
+      .filter((a) => (a.assignee_type || "tim") !== "freelance")
+      .sort((a, b) => b.total_done - a.total_done);
   }, [data]);
-
-  const allArtists = useMemo(() => [...timArtists, ...freelanceArtists], [timArtists, freelanceArtists]);
 
   const dayTotals = useMemo(() => {
     const t = {};
     days.forEach((d) => { t[d.iso] = { done: 0, failed: 0, time: 0 }; });
-    allArtists.forEach((a) => {
+    artists.forEach((a) => {
       Object.entries(a.dates || {}).forEach(([iso, v]) => {
         if (t[iso]) { t[iso].done += v.done; t[iso].failed += v.failed; t[iso].time += v.time; }
       });
     });
     return t;
-  }, [allArtists, days]);
+  }, [artists, days]);
 
   const grandTotals = useMemo(() => ({
-    done: allArtists.reduce((s, a) => s + a.total_done, 0),
-    failed: allArtists.reduce((s, a) => s + a.total_failed, 0),
-    time: allArtists.reduce((s, a) => s + a.total_time, 0),
-  }), [allArtists]);
+    done: artists.reduce((s, a) => s + a.total_done, 0),
+    failed: artists.reduce((s, a) => s + a.total_failed, 0),
+    time: artists.reduce((s, a) => s + a.total_time, 0),
+  }), [artists]);
 
   const handleExport = async () => {
     if (!cardRef.current) return;
@@ -1613,14 +1609,10 @@ function WeeklyReportModal({ onClose }) {
     border: "#e2e8f0",
     rowAlt: "#f8fafc",
     headerBg: "#1e1b4b",
-    timSection: "#eef2ff",    // indigo-50
-    freSection: "#fff7ed",    // orange-50
-    timBadge: "#4f46e5",
-    freBadge: "#ea580c",
   };
 
   /* Reusable artist rows renderer */
-  const renderArtistRows = (artists, sectionBg) =>
+  const renderArtistRows = (artists) =>
     artists.map((artist, idx) => {
       const color = getColor(artist.name);
       return (
@@ -1713,14 +1705,9 @@ function WeeklyReportModal({ onClose }) {
             </div>
             <div style={{ display: "flex", gap: 24, alignItems: "flex-end" }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 10, color: S.muted, marginBottom: 2 }}>Tim Internal</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: S.timBadge, lineHeight: 1 }}>{timArtists.reduce((s,a)=>s+a.total_done,0)}</div>
-                <div style={{ fontSize: 9, color: S.muted }}>task selesai</div>
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 10, color: S.muted, marginBottom: 2 }}>Freelance</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: S.freBadge, lineHeight: 1 }}>{freelanceArtists.reduce((s,a)=>s+a.total_done,0)}</div>
-                <div style={{ fontSize: 9, color: S.muted }}>task selesai</div>
+                <div style={{ fontSize: 10, color: S.muted, marginBottom: 2 }}>Task Gagal</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#e11d48", lineHeight: 1 }}>{grandTotals.failed}</div>
+                <div style={{ fontSize: 9, color: S.muted }}>minggu ini</div>
               </div>
               <div style={{ textAlign: "center", borderLeft: `1px solid ${S.border}`, paddingLeft: 20 }}>
                 <div style={{ fontSize: 10, color: S.muted, marginBottom: 2 }}>Total Selesai</div>
@@ -1748,13 +1735,7 @@ function WeeklyReportModal({ onClose }) {
                 </tr>
               </thead>
               <tbody>
-                {/* Tim Section */}
-                {timArtists.length > 0 && <SectionHeader label="Tim Internal" color={S.timBadge} count={timArtists.length} />}
-                {renderArtistRows(timArtists, S.timSection)}
-
-                {/* Freelance Section */}
-                {freelanceArtists.length > 0 && <SectionHeader label="Freelance" color={S.freBadge} count={freelanceArtists.length} />}
-                {renderArtistRows(freelanceArtists, S.freSection)}
+                {renderArtistRows(artists)}
 
                 {/* Grand Total */}
                 <tr style={{ background: S.navy }}>

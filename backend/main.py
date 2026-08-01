@@ -1195,10 +1195,26 @@ async def tasks_weekly_report(from_date: str, to_date: str, current_user: dict =
     order_names: Dict[str, str] = {}
     if order_ids:
         try:
-            obj_ids = [ObjectId(oid) for oid in order_ids if oid]
-            orders_docs = await db.orders.find({"_id": {"$in": obj_ids}}, {"project": 1}).to_list(1000)
+            valid_obj_ids = []
+            for oid in order_ids:
+                try:
+                    valid_obj_ids.append(ObjectId(oid))
+                except Exception:
+                    pass
+            query_parts = []
+            if valid_obj_ids:
+                query_parts.append({"_id": {"$in": valid_obj_ids}})
+            # Also match by string "id" field in case orders use custom IDs
+            query_parts.append({"id": {"$in": list(order_ids)}})
+            orders_docs = await db.orders.find(
+                {"$or": query_parts} if len(query_parts) > 1 else query_parts[0],
+                {"project": 1, "id": 1}
+            ).to_list(1000)
             for o in orders_docs:
-                order_names[str(o["_id"])] = o.get("project", "")
+                name = o.get("project", "") or ""
+                order_names[str(o["_id"])] = name
+                if o.get("id"):
+                    order_names[str(o["id"])] = name
         except Exception:
             pass
 
@@ -1222,7 +1238,7 @@ async def tasks_weekly_report(from_date: str, to_date: str, current_user: dict =
         st = t.get("status", "pending")
         elapsed = t.get("time_elapsed", 0) or 0
         oid = t.get("order_id", "")
-        pname = order_names.get(oid, oid or "—") if oid else "—"
+        pname = order_names.get(oid, "—") if oid else "—"
 
         day_slot = artist_days[a]["dates"][d]
         day_slot["time"] += elapsed
