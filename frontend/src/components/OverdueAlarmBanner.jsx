@@ -10,72 +10,97 @@ const fmtOvertime = (secs) => {
   return `${secs}d`;
 };
 
+function buildText(tasks) {
+  return tasks.map((t) => {
+    const name = (t.assignee || "").split(" ")[0];
+    const title = (t.title || "").replace(/\s*—\s*.+$/, "").trim();
+    return `${name}, waktu habis! ${title}`;
+  }).join(". ");
+}
+
+// Play via AudioContext + backend gTTS — works without gesture after first unlock
+async function speakViaBackend(tasks) {
+  const ctx = window._audioCtx;
+  if (!ctx || ctx.state !== "running") return false;
+  const token = localStorage.getItem("admin_dashboard_token");
+  try {
+    const res = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ text: buildText(tasks) }),
+    });
+    if (!res.ok) return false;
+    const { audio } = await res.json();
+    const binary = atob(audio);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(ctx.destination);
+    source.start(0);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Fallback: Web Speech API (requires gesture, used when AudioContext not yet unlocked)
+function speakViaFallback(tasks) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.resume();
+  const utter = new SpeechSynthesisUtterance(buildText(tasks));
+  utter.lang = "id-ID";
+  utter.rate = 0.88;
+  utter.pitch = 1.05;
+  const run = () => {
+    const voices = window.speechSynthesis.getVoices();
+    const voice = voices.find((v) => v.lang.startsWith("id")) || voices.find((v) => v.lang.startsWith("en")) || null;
+    if (voice) utter.voice = voice;
+    window.speechSynthesis.speak(utter);
+  };
+  if (window.speechSynthesis.getVoices().length > 0) run();
+  else { window.speechSynthesis.onvoiceschanged = () => { run(); window.speechSynthesis.onvoiceschanged = null; }; }
+}
+
 export default function OverdueAlarmBanner({ tasks, onDismiss }) {
   const spokenRef = useRef(new Set());
-  // Set IMMEDIATELY when new tasks arrive; cleared only when speech actually starts
-  const pendingRef = useRef([]);
+  const pendingRef = useRef([]); // waiting for AudioContext unlock (first gesture)
   const [speaking, setSpeaking] = useState(false);
 
-  const doSpeak = (tasksToSpeak) => {
-    if (!window.speechSynthesis || !tasksToSpeak || tasksToSpeak.length === 0) return;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.resume();
-
-    const lines = tasksToSpeak.map((t) => {
-      const name = (t.assignee || "").split(" ")[0];
-      const title = (t.title || "").replace(/\s*—\s*.+$/, "").trim();
-      return `${name}, waktu habis! ${title}`;
-    });
-    const utter = new SpeechSynthesisUtterance(lines.join(". "));
-    utter.lang = "id-ID";
-    utter.rate = 0.88;
-    utter.pitch = 1.05;
-    // Only clear pending if speech actually starts successfully
-    utter.onstart = () => { pendingRef.current = []; };
-
-    const run = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const voice =
-        voices.find((v) => v.lang.startsWith("id")) ||
-        voices.find((v) => v.lang.startsWith("en")) || null;
-      if (voice) utter.voice = voice;
-      window.speechSynthesis.resume();
-      window.speechSynthesis.speak(utter);
-    };
-
-    if (window.speechSynthesis.getVoices().length > 0) {
-      run();
+  const speak = async (tasksToSpeak) => {
+    if (!tasksToSpeak || tasksToSpeak.length === 0) return;
+    const ok = await speakViaBackend(tasksToSpeak);
+    if (!ok) {
+      // AudioContext not unlocked yet — store pending, try speechSynthesis as attempt
+      pendingRef.current = tasksToSpeak;
+      speakViaFallback(tasksToSpeak);
     } else {
-      window.speechSynthesis.onvoiceschanged = () => {
-        run();
-        window.speechSynthesis.onvoiceschanged = null;
-      };
+      pendingRef.current = [];
     }
   };
 
-  // When new tasks arrive: IMMEDIATELY store as pending, then try auto-speak.
-  // If auto-speak is blocked by Chrome (silently or with error), pendingRef stays
-  // populated and the document click handler will fire it on next user interaction.
+  // Auto-speak when new tasks arrive
   useEffect(() => {
     if (!tasks || tasks.length === 0) return;
     if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
-
     const newTasks = tasks.filter((t) => !spokenRef.current.has(t.id));
     if (newTasks.length > 0) {
       newTasks.forEach((t) => spokenRef.current.add(t.id));
-      pendingRef.current = newTasks; // store BEFORE doSpeak, not in onerror
-      doSpeak(newTasks); // onstart will clear pendingRef if successful
+      speak(newTasks);
     }
     return () => { navigator.vibrate?.(0); };
   }, [tasks]);
 
-  // Any click/keydown OUTSIDE the banner → speak pending queue
+  // On any user gesture → if AudioContext just got unlocked, speak pending
   useEffect(() => {
-    const handler = (e) => {
+    const handler = async () => {
       if (pendingRef.current.length === 0) return;
-      const t = pendingRef.current;
-      pendingRef.current = [];
-      doSpeak(t);
+      // Small delay to let AudioContext unlock complete
+      await new Promise((r) => setTimeout(r, 100));
+      const ok = await speakViaBackend(pendingRef.current);
+      if (ok) pendingRef.current = [];
     };
     document.addEventListener("click", handler);
     document.addEventListener("keydown", handler);
@@ -87,11 +112,10 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
 
   if (!tasks || tasks.length === 0) return null;
 
-  const handleSpeak = (e) => {
-    e.stopPropagation(); // prevent document handler from double-firing
-    pendingRef.current = [];
+  const handleSpeak = async (e) => {
+    e.stopPropagation();
     setSpeaking(true);
-    doSpeak(tasks);
+    await speak(tasks);
     setTimeout(() => setSpeaking(false), 3000);
   };
 
@@ -124,11 +148,7 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
       `}</style>
       <div
         style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 99990,
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 99990,
           animation: "overdueBannerIn 0.35s ease-out forwards",
           cursor: "pointer",
         }}
@@ -139,9 +159,7 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
           style={{
             animation: "overdueFlash 1.2s ease-in-out infinite",
             padding: "14px 16px",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "12px",
+            display: "flex", alignItems: "flex-start", gap: "12px",
             boxShadow: "0 6px 32px rgba(220,38,38,0.6)",
           }}
         >
@@ -150,7 +168,7 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ color: "white", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>
-              ⏰ WAKTU HABIS — Task Overdue! <span style={{ fontWeight: 400, fontSize: 11, opacity: 0.8, textTransform: "none", letterSpacing: 0 }}>(klik untuk suara)</span>
+              ⏰ WAKTU HABIS — Task Overdue!
             </p>
             <div style={{ marginTop: 5 }}>
               {tasks.map((t) => (
@@ -173,15 +191,9 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
               style={{
                 background: speaking ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.2)",
                 border: "1px solid rgba(255,255,255,0.3)",
-                borderRadius: 8,
-                padding: "5px 8px",
-                cursor: "pointer",
-                color: "white",
-                display: "flex",
-                alignItems: "center",
-                fontSize: 11,
-                fontWeight: 700,
-                gap: 4,
+                borderRadius: 8, padding: "5px 8px", cursor: "pointer",
+                color: "white", display: "flex", alignItems: "center",
+                fontSize: 11, fontWeight: 700, gap: 4,
                 animation: speaking ? "overdueVolumePulse 0.6s ease-in-out infinite" : "none",
               }}
             >
@@ -193,15 +205,9 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
               style={{
                 background: "rgba(255,255,255,0.2)",
                 border: "1px solid rgba(255,255,255,0.3)",
-                borderRadius: 8,
-                padding: "5px 8px",
-                cursor: "pointer",
-                color: "white",
-                display: "flex",
-                alignItems: "center",
-                fontSize: 11,
-                fontWeight: 700,
-                gap: 4,
+                borderRadius: 8, padding: "5px 8px", cursor: "pointer",
+                color: "white", display: "flex", alignItems: "center",
+                fontSize: 11, fontWeight: 700, gap: 4,
               }}
             >
               <X size={14} />

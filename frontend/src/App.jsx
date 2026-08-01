@@ -48,13 +48,19 @@ function RoleGuard({ allowedRoles, children }) {
 
 function App() {
   useEffect(() => {
-    // Prime speechSynthesis on first user gesture so autoplay policy allows later calls
+    // Unlock AudioContext on first user gesture — stays unlocked for the whole session.
+    // speechSynthesis needs per-call gesture; AudioContext only needs one-time unlock.
     const unlock = () => {
-      if (!window.speechSynthesis || window._speechPrimed) return;
-      const utter = new SpeechSynthesisUtterance("");
-      utter.volume = 0;
-      window.speechSynthesis.speak(utter);
-      window._speechPrimed = true;
+      if (window._audioCtxUnlocked) return;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        ctx.resume().then(() => {
+          window._audioCtx = ctx;
+          window._audioCtxUnlocked = true;
+        });
+      } catch (_) {}
       document.removeEventListener("click", unlock);
       document.removeEventListener("keydown", unlock);
     };
