@@ -460,6 +460,8 @@ async def auto_fail_tasks():
     """Jam 23:59 WIB — task pending/in-progress otomatis jadi failed, hentikan timer."""
     from datetime import timedelta
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    if jkt_now.weekday() == 6:  # Minggu = libur
+        return
     today = jkt_now.strftime("%Y-%m-%d")
     try:
         # Task hari ini yang belum selesai → gagal
@@ -546,6 +548,8 @@ def _normalize_name(name: str, known: list) -> str:
 async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
     from datetime import timedelta
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    if target_date is None and jkt_now.weekday() == 6:  # Minggu = libur, kecuali manual
+        return {"created": 0, "skipped": 0, "info": "Hari Minggu, tidak ada generate otomatis"}
     today = target_date or jkt_now.strftime("%Y-%m-%d")
     yesterday = (jkt_now - timedelta(days=1)).strftime("%Y-%m-%d")
     created = 0
@@ -2851,6 +2855,8 @@ async def auto_daily_ai_reports():
         return
     from datetime import timedelta
     now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    if now_wib.weekday() == 6:  # Minggu = libur
+        return
     date_key = now_wib.strftime("%Y-%m-%d")
     now_iso = datetime.now(timezone.utc).isoformat()
     try:
@@ -3316,6 +3322,8 @@ async def delete_layout_task(task_id: str, current_user: dict = Depends(get_curr
 async def notify_unsubmitted_daily_reports():
     from datetime import timedelta
     now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
+    if now_wib.weekday() == 6:  # Minggu = libur
+        return
     date_key = now_wib.strftime("%Y-%m-%d")
     now_iso = datetime.now(timezone.utc).isoformat()
     try:
