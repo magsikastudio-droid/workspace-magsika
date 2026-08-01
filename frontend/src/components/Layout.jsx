@@ -167,6 +167,35 @@ export default function Layout({ children }) {
   const [alarmBannerVisible, setAlarmBannerVisible] = useState(false);
   const overdueAlarmFiredRef = useRef(new Set());
 
+  const speakOverdue = (assignee, taskTitle) => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const firstName = (assignee || "").split(" ")[0];
+    const title = (taskTitle || "").replace(/\s*—\s*.+$/, "").trim();
+    const text = `${firstName}.. waktu habis! ${title}`;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "id-ID";
+    utter.rate = 0.88;
+    utter.pitch = 1.05;
+    const pickVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      return voices.find((v) => v.lang.startsWith("id")) || voices.find((v) => v.lang.startsWith("en")) || null;
+    };
+    const voice = pickVoice();
+    if (voice) {
+      utter.voice = voice;
+      window.speechSynthesis.speak(utter);
+    } else {
+      // Voices not loaded yet — wait for voiceschanged then speak
+      window.speechSynthesis.onvoiceschanged = () => {
+        const v = pickVoice();
+        if (v) utter.voice = v;
+        window.speechSynthesis.speak(utter);
+        window.speechSynthesis.onvoiceschanged = null;
+      };
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
     const checkOverdue = async () => {
@@ -185,7 +214,7 @@ export default function Layout({ children }) {
           overdue.push({ ...t, _overtime: elapsed - t.duration_seconds });
           if (!overdueAlarmFiredRef.current.has(t.id)) {
             overdueAlarmFiredRef.current.add(t.id);
-            showLocalNotification("⏰ Waktu Habis!", `${t.title} — ${t.assignee}`);
+            speakOverdue(t.assignee, t.title);
             hasNew = true;
           }
         });
