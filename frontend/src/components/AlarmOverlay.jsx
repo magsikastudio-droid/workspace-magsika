@@ -1,6 +1,51 @@
 import React, { useEffect, useRef } from "react";
 import { useAlarm } from "../context/AlarmContext";
 
+function speakApproval(taskTitle, assignee) {
+  // Try backend TTS via global AudioContext first
+  const ctx = window._audioCtx;
+  const name = (assignee || "").split(" ")[0];
+  const title = (taskTitle || "").replace(/\s*—\s*.+$/, "").trim();
+  const text = name ? `${name} minta approval! ${title}` : `Ada task minta approval! ${title}`;
+  if (ctx && ctx.state === "running") {
+    const token = localStorage.getItem("admin_dashboard_token");
+    fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ text }),
+    })
+      .then((r) => r.json())
+      .then(({ audio }) => {
+        const binary = atob(audio);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return ctx.decodeAudioData(bytes.buffer);
+      })
+      .then((buf) => {
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start(ctx.currentTime + 1.5); // after the alarm beeps
+      })
+      .catch(() => {});
+    return;
+  }
+  // Fallback: speechSynthesis (only works if called from gesture context, best-effort)
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "id-ID";
+  utter.rate = 0.88;
+  const run = () => {
+    const voices = window.speechSynthesis.getVoices();
+    const voice = voices.find((v) => v.lang.startsWith("id")) || voices.find((v) => v.lang.startsWith("en")) || null;
+    if (voice) utter.voice = voice;
+    window.speechSynthesis.speak(utter);
+  };
+  if (window.speechSynthesis.getVoices().length > 0) run();
+  else { window.speechSynthesis.onvoiceschanged = () => { run(); window.speechSynthesis.onvoiceschanged = null; }; }
+}
+
 function playAlarmSound(ctx) {
   const now = ctx.currentTime;
   for (let i = 0; i < 3; i++) {
@@ -47,6 +92,9 @@ export default function AlarmOverlay() {
       playAlarmSound(ctx);
       if (navigator.vibrate) navigator.vibrate([600, 200, 600]);
     }, 2000);
+
+    // Voice announcement
+    speakApproval(alarm.taskTitle, alarm.assignee);
 
     return () => {
       clearInterval(intervalRef.current);
