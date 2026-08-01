@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider } from "./context/AuthContext";
@@ -47,6 +47,25 @@ function RoleGuard({ allowedRoles, children }) {
 }
 
 function App() {
+  useEffect(() => {
+    // Prime speechSynthesis on first user gesture so autoplay policy allows later calls
+    const unlock = () => {
+      if (!window.speechSynthesis || window._speechPrimed) return;
+      const utter = new SpeechSynthesisUtterance("");
+      utter.volume = 0;
+      window.speechSynthesis.speak(utter);
+      window._speechPrimed = true;
+      document.removeEventListener("click", unlock);
+      document.removeEventListener("keydown", unlock);
+    };
+    document.addEventListener("click", unlock);
+    document.addEventListener("keydown", unlock);
+    return () => {
+      document.removeEventListener("click", unlock);
+      document.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
   return (
     <ThemeProvider>
     <AlarmProvider>
