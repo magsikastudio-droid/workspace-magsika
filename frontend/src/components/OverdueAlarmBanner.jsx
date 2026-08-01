@@ -83,10 +83,56 @@ function speakViaFallback(tasks) {
   else { window.speechSynthesis.onvoiceschanged = () => { run(); window.speechSynthesis.onvoiceschanged = null; }; }
 }
 
+function playOverdueAlarm(ctx) {
+  try {
+    const now = ctx.currentTime;
+    const pattern = [880, 0, 1100, 0, 880, 0, 1320];
+    pattern.forEach((freq, i) => {
+      if (!freq) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "square";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.28, now + i * 0.18);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.18 + 0.15);
+      osc.start(now + i * 0.18);
+      osc.stop(now + i * 0.18 + 0.15);
+    });
+  } catch (_) {}
+}
+
 export default function OverdueAlarmBanner({ tasks, onDismiss }) {
   const spokenRef = useRef(new Set());
   const pendingRef = useRef([]); // tasks queued for next user gesture
+  const alarmCtxRef = useRef(null);
+  const alarmIntervalRef = useRef(null);
   const [speaking, setSpeaking] = useState(false);
+
+  // Repeating oscillator alarm — restored from old behaviour
+  useEffect(() => {
+    if (!tasks || tasks.length === 0) {
+      clearInterval(alarmIntervalRef.current);
+      alarmCtxRef.current?.close().catch(() => {});
+      alarmCtxRef.current = null;
+      return;
+    }
+    const startAlarm = () => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        alarmCtxRef.current = ctx;
+        playOverdueAlarm(ctx);
+        alarmIntervalRef.current = setInterval(() => playOverdueAlarm(ctx), 4000);
+      } catch (_) {}
+    };
+    startAlarm();
+    return () => {
+      clearInterval(alarmIntervalRef.current);
+      alarmCtxRef.current?.close().catch(() => {});
+      alarmCtxRef.current = null;
+    };
+  }, [tasks?.length > 0 ? "active" : "inactive"]);
 
   // Synchronous speak decision — no async/await so gesture chain stays intact
   const speak = (tasksToSpeak) => {
