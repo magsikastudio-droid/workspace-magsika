@@ -12,8 +12,8 @@ const fmtOvertime = (secs) => {
 
 export default function OverdueAlarmBanner({ tasks, onDismiss }) {
   const spokenRef = useRef(new Set());
-  const pendingRef = useRef([]); // tasks blocked by gesture policy, waiting for next click
-  const bannerRef = useRef(null);
+  // Set IMMEDIATELY when new tasks arrive; cleared only when speech actually starts
+  const pendingRef = useRef([]);
   const [speaking, setSpeaking] = useState(false);
 
   const doSpeak = (tasksToSpeak) => {
@@ -30,23 +30,14 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
     utter.lang = "id-ID";
     utter.rate = 0.88;
     utter.pitch = 1.05;
-
-    utter.onerror = (e) => {
-      // Chrome blocks speak() without transient user activation → queue for next gesture
-      if (e.error === "not-allowed" || e.error === "canceled") {
-        pendingRef.current = tasksToSpeak;
-      }
-    };
-    utter.onstart = () => {
-      pendingRef.current = []; // successfully started, clear pending
-    };
+    // Only clear pending if speech actually starts successfully
+    utter.onstart = () => { pendingRef.current = []; };
 
     const run = () => {
       const voices = window.speechSynthesis.getVoices();
       const voice =
         voices.find((v) => v.lang.startsWith("id")) ||
-        voices.find((v) => v.lang.startsWith("en")) ||
-        null;
+        voices.find((v) => v.lang.startsWith("en")) || null;
       if (voice) utter.voice = voice;
       window.speechSynthesis.resume();
       window.speechSynthesis.speak(utter);
@@ -62,7 +53,9 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
     }
   };
 
-  // Auto-speak when new tasks arrive
+  // When new tasks arrive: IMMEDIATELY store as pending, then try auto-speak.
+  // If auto-speak is blocked by Chrome (silently or with error), pendingRef stays
+  // populated and the document click handler will fire it on next user interaction.
   useEffect(() => {
     if (!tasks || tasks.length === 0) return;
     if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
@@ -70,37 +63,41 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
     const newTasks = tasks.filter((t) => !spokenRef.current.has(t.id));
     if (newTasks.length > 0) {
       newTasks.forEach((t) => spokenRef.current.add(t.id));
-      doSpeak(newTasks);
+      pendingRef.current = newTasks; // store BEFORE doSpeak, not in onerror
+      doSpeak(newTasks); // onstart will clear pendingRef if successful
     }
     return () => { navigator.vibrate?.(0); };
   }, [tasks]);
 
-  // On any user click/keydown outside banner → speak pending queue
+  // Any click/keydown OUTSIDE the banner → speak pending queue
   useEffect(() => {
     const handler = (e) => {
-      // Skip if the click is inside the banner itself (has its own buttons)
-      if (bannerRef.current?.contains(e.target)) return;
-      if (pendingRef.current.length > 0) {
-        const t = pendingRef.current;
-        pendingRef.current = [];
-        doSpeak(t);
-      }
+      if (pendingRef.current.length === 0) return;
+      const t = pendingRef.current;
+      pendingRef.current = [];
+      doSpeak(t);
     };
-    document.addEventListener("click", handler, true);
-    document.addEventListener("keydown", handler, true);
+    document.addEventListener("click", handler);
+    document.addEventListener("keydown", handler);
     return () => {
-      document.removeEventListener("click", handler, true);
-      document.removeEventListener("keydown", handler, true);
+      document.removeEventListener("click", handler);
+      document.removeEventListener("keydown", handler);
     };
   }, []);
 
   if (!tasks || tasks.length === 0) return null;
 
-  const handleSpeak = () => {
+  const handleSpeak = (e) => {
+    e.stopPropagation(); // prevent document handler from double-firing
     pendingRef.current = [];
     setSpeaking(true);
     doSpeak(tasks);
     setTimeout(() => setSpeaking(false), 3000);
+  };
+
+  const handleDismiss = (e) => {
+    e.stopPropagation();
+    onDismiss();
   };
 
   return (
@@ -126,7 +123,6 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
         }
       `}</style>
       <div
-        ref={bannerRef}
         style={{
           position: "fixed",
           top: 0,
@@ -134,7 +130,10 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
           right: 0,
           zIndex: 99990,
           animation: "overdueBannerIn 0.35s ease-out forwards",
+          cursor: "pointer",
         }}
+        onClick={handleSpeak}
+        title="Klik untuk ucapkan"
       >
         <div
           style={{
@@ -151,7 +150,7 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ color: "white", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>
-              ⏰ WAKTU HABIS — Task Overdue!
+              ⏰ WAKTU HABIS — Task Overdue! <span style={{ fontWeight: 400, fontSize: 11, opacity: 0.8, textTransform: "none", letterSpacing: 0 }}>(klik untuk suara)</span>
             </p>
             <div style={{ marginTop: 5 }}>
               {tasks.map((t) => (
@@ -190,7 +189,7 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
               Ucap
             </button>
             <button
-              onClick={onDismiss}
+              onClick={handleDismiss}
               style={{
                 background: "rgba(255,255,255,0.2)",
                 border: "1px solid rgba(255,255,255,0.3)",
