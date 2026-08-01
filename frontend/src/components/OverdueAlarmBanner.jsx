@@ -18,34 +18,34 @@ function buildText(tasks) {
   }).join(". ");
 }
 
-// Play via AudioContext + backend gTTS — works without gesture after first unlock
-async function speakViaBackend(tasks) {
+// AudioContext path — no gesture needed after first unlock
+function speakViaBackend(tasks) {
   const ctx = window._audioCtx;
   if (!ctx || ctx.state !== "running") return false;
   const token = localStorage.getItem("admin_dashboard_token");
-  try {
-    const res = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ text: buildText(tasks) }),
-    });
-    if (!res.ok) return false;
-    const { audio } = await res.json();
-    const binary = atob(audio);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
-    const source = ctx.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(ctx.destination);
-    source.start(0);
-    return true;
-  } catch (_) {
-    return false;
-  }
+  fetch("/api/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ text: buildText(tasks) }),
+  })
+    .then((r) => r.json())
+    .then(({ audio }) => {
+      const binary = atob(audio);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return ctx.decodeAudioData(bytes.buffer);
+    })
+    .then((buf) => {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+    })
+    .catch(() => {});
+  return true; // optimistically true; audio plays async
 }
 
-// Fallback: Web Speech API (requires gesture, used when AudioContext not yet unlocked)
+// speechSynthesis fallback — MUST be called synchronously inside a user gesture
 function speakViaFallback(tasks) {
   if (!window.speechSynthesis) return;
   window.speechSynthesis.cancel();
@@ -66,18 +66,19 @@ function speakViaFallback(tasks) {
 
 export default function OverdueAlarmBanner({ tasks, onDismiss }) {
   const spokenRef = useRef(new Set());
-  const pendingRef = useRef([]); // waiting for AudioContext unlock (first gesture)
+  const pendingRef = useRef([]); // tasks queued for next user gesture
   const [speaking, setSpeaking] = useState(false);
 
-  const speak = async (tasksToSpeak) => {
+  // Synchronous speak decision — no async/await so gesture chain stays intact
+  const speak = (tasksToSpeak) => {
     if (!tasksToSpeak || tasksToSpeak.length === 0) return;
-    const ok = await speakViaBackend(tasksToSpeak);
-    if (!ok) {
-      // AudioContext not unlocked yet — store pending, try speechSynthesis as attempt
+    if (speakViaBackend(tasksToSpeak)) {
+      // AudioContext ready — backend TTS playing (async but gesture-free)
+      pendingRef.current = [];
+    } else {
+      // AudioContext not unlocked yet — queue and try speechSynthesis
       pendingRef.current = tasksToSpeak;
       speakViaFallback(tasksToSpeak);
-    } else {
-      pendingRef.current = [];
     }
   };
 
@@ -93,14 +94,17 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
     return () => { navigator.vibrate?.(0); };
   }, [tasks]);
 
-  // On any user gesture → if AudioContext just got unlocked, speak pending
+  // On any click/key outside banner → if AudioContext just unlocked, speak pending
   useEffect(() => {
-    const handler = async () => {
+    const handler = () => {
       if (pendingRef.current.length === 0) return;
-      // Small delay to let AudioContext unlock complete
-      await new Promise((r) => setTimeout(r, 100));
-      const ok = await speakViaBackend(pendingRef.current);
-      if (ok) pendingRef.current = [];
+      if (speakViaBackend(pendingRef.current)) {
+        pendingRef.current = [];
+      }
+      // If still not unlocked, speechSynthesis call here is in gesture stack
+      else {
+        speakViaFallback(pendingRef.current);
+      }
     };
     document.addEventListener("click", handler);
     document.addEventListener("keydown", handler);
@@ -112,10 +116,10 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
 
   if (!tasks || tasks.length === 0) return null;
 
-  const handleSpeak = async (e) => {
+  const handleSpeak = (e) => {
     e.stopPropagation();
     setSpeaking(true);
-    await speak(tasks);
+    speak(tasks);
     setTimeout(() => setSpeaking(false), 3000);
   };
 
