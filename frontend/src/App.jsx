@@ -48,35 +48,27 @@ function RoleGuard({ allowedRoles, children }) {
 
 function App() {
   useEffect(() => {
-    // Create AudioContext immediately on mount — Chrome allows auto-resume on sites
-    // with high media engagement (visited regularly). The console warning is harmless.
-    // Also wire up first-gesture unlock as fallback.
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
+    // Create global AudioContext on mount for TTS backend playback.
+    // On high-MEI sites (visited daily) Chrome auto-starts it. On first-visit,
+    // it starts suspended and unlocks on first user gesture.
     try {
-      const ctx = new AudioCtx();
-      window._audioCtx = ctx; // store immediately so banner can use it
-      ctx.resume().catch(() => {}); // auto-resume attempt (works if MEI is high)
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        window._audioCtx = ctx;
+        ctx.resume().catch(() => {});
+        // Also unlock on first gesture as fallback
+        const unlock = () => {
+          ctx.resume().catch(() => {});
+          document.removeEventListener("click", unlock, true);
+          document.removeEventListener("keydown", unlock, true);
+          document.removeEventListener("touchstart", unlock, true);
+        };
+        document.addEventListener("click", unlock, true);
+        document.addEventListener("keydown", unlock, true);
+        document.addEventListener("touchstart", unlock, true);
+      }
     } catch (_) {}
-
-    const unlock = () => {
-      const ctx = window._audioCtx;
-      if (!ctx) return;
-      ctx.resume().then(() => {
-        window._audioCtxUnlocked = true;
-      }).catch(() => {});
-      document.removeEventListener("click", unlock, true);
-      document.removeEventListener("keydown", unlock, true);
-      document.removeEventListener("touchstart", unlock, true);
-    };
-    document.addEventListener("click", unlock, true);
-    document.addEventListener("keydown", unlock, true);
-    document.addEventListener("touchstart", unlock, true);
-    return () => {
-      document.removeEventListener("click", unlock, true);
-      document.removeEventListener("keydown", unlock, true);
-      document.removeEventListener("touchstart", unlock, true);
-    };
   }, []);
 
   return (
