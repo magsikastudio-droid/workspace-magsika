@@ -1,35 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AlarmClock, X, Volume2 } from "lucide-react";
 
-function speakTasks(tasks) {
-  if (!window.speechSynthesis) return;
-  // Chrome bug: speechSynthesis can get stuck in paused state
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.resume();
-  const lines = tasks.map((t) => {
-    const name = (t.assignee || "").split(" ")[0];
-    const title = (t.title || "").replace(/\s*—\s*.+$/, "").trim();
-    return `${name}, waktu habis! ${title}`;
-  });
-  const text = lines.join(". ");
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = "id-ID";
-  utter.rate = 0.88;
-  utter.pitch = 1.05;
-  const trySpeak = () => {
-    const voices = window.speechSynthesis.getVoices();
-    const voice = voices.find((v) => v.lang.startsWith("id")) || voices.find((v) => v.lang.startsWith("en")) || null;
-    if (voice) utter.voice = voice;
-    window.speechSynthesis.resume();
-    window.speechSynthesis.speak(utter);
-  };
-  if (window.speechSynthesis.getVoices().length > 0) {
-    trySpeak();
-  } else {
-    window.speechSynthesis.onvoiceschanged = () => { trySpeak(); window.speechSynthesis.onvoiceschanged = null; };
-  }
-}
-
 const fmtOvertime = (secs) => {
   if (secs <= 0) return "baru saja";
   const h = Math.floor(secs / 3600);
@@ -41,24 +12,94 @@ const fmtOvertime = (secs) => {
 
 export default function OverdueAlarmBanner({ tasks, onDismiss }) {
   const spokenRef = useRef(new Set());
+  const pendingRef = useRef([]); // tasks blocked by gesture policy, waiting for next click
+  const bannerRef = useRef(null);
   const [speaking, setSpeaking] = useState(false);
 
+  const doSpeak = (tasksToSpeak) => {
+    if (!window.speechSynthesis || !tasksToSpeak || tasksToSpeak.length === 0) return;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.resume();
+
+    const lines = tasksToSpeak.map((t) => {
+      const name = (t.assignee || "").split(" ")[0];
+      const title = (t.title || "").replace(/\s*—\s*.+$/, "").trim();
+      return `${name}, waktu habis! ${title}`;
+    });
+    const utter = new SpeechSynthesisUtterance(lines.join(". "));
+    utter.lang = "id-ID";
+    utter.rate = 0.88;
+    utter.pitch = 1.05;
+
+    utter.onerror = (e) => {
+      // Chrome blocks speak() without transient user activation → queue for next gesture
+      if (e.error === "not-allowed" || e.error === "canceled") {
+        pendingRef.current = tasksToSpeak;
+      }
+    };
+    utter.onstart = () => {
+      pendingRef.current = []; // successfully started, clear pending
+    };
+
+    const run = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const voice =
+        voices.find((v) => v.lang.startsWith("id")) ||
+        voices.find((v) => v.lang.startsWith("en")) ||
+        null;
+      if (voice) utter.voice = voice;
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(utter);
+    };
+
+    if (window.speechSynthesis.getVoices().length > 0) {
+      run();
+    } else {
+      window.speechSynthesis.onvoiceschanged = () => {
+        run();
+        window.speechSynthesis.onvoiceschanged = null;
+      };
+    }
+  };
+
+  // Auto-speak when new tasks arrive
   useEffect(() => {
     if (!tasks || tasks.length === 0) return;
     if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
+
     const newTasks = tasks.filter((t) => !spokenRef.current.has(t.id));
     if (newTasks.length > 0) {
       newTasks.forEach((t) => spokenRef.current.add(t.id));
-      speakTasks(newTasks);
+      doSpeak(newTasks);
     }
     return () => { navigator.vibrate?.(0); };
   }, [tasks]);
 
+  // On any user click/keydown outside banner → speak pending queue
+  useEffect(() => {
+    const handler = (e) => {
+      // Skip if the click is inside the banner itself (has its own buttons)
+      if (bannerRef.current?.contains(e.target)) return;
+      if (pendingRef.current.length > 0) {
+        const t = pendingRef.current;
+        pendingRef.current = [];
+        doSpeak(t);
+      }
+    };
+    document.addEventListener("click", handler, true);
+    document.addEventListener("keydown", handler, true);
+    return () => {
+      document.removeEventListener("click", handler, true);
+      document.removeEventListener("keydown", handler, true);
+    };
+  }, []);
+
   if (!tasks || tasks.length === 0) return null;
 
   const handleSpeak = () => {
+    pendingRef.current = [];
     setSpeaking(true);
-    speakTasks(tasks);
+    doSpeak(tasks);
     setTimeout(() => setSpeaking(false), 3000);
   };
 
@@ -85,6 +126,7 @@ export default function OverdueAlarmBanner({ tasks, onDismiss }) {
         }
       `}</style>
       <div
+        ref={bannerRef}
         style={{
           position: "fixed",
           top: 0,
