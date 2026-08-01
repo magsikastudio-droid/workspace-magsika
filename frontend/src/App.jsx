@@ -48,19 +48,23 @@ function RoleGuard({ allowedRoles, children }) {
 
 function App() {
   useEffect(() => {
-    // AudioContext must be created AND resumed from a user gesture.
-    // We wait for the first real click/key, then unlock once — stays unlocked for the session.
+    // Create AudioContext immediately on mount — Chrome allows auto-resume on sites
+    // with high media engagement (visited regularly). The console warning is harmless.
+    // Also wire up first-gesture unlock as fallback.
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    try {
+      const ctx = new AudioCtx();
+      window._audioCtx = ctx; // store immediately so banner can use it
+      ctx.resume().catch(() => {}); // auto-resume attempt (works if MEI is high)
+    } catch (_) {}
+
     const unlock = () => {
-      if (window._audioCtxUnlocked) return;
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = new AudioCtx();
-        ctx.resume().then(() => {
-          window._audioCtx = ctx;
-          window._audioCtxUnlocked = true;
-        }).catch(() => {});
-      } catch (_) {}
+      const ctx = window._audioCtx;
+      if (!ctx) return;
+      ctx.resume().then(() => {
+        window._audioCtxUnlocked = true;
+      }).catch(() => {});
       document.removeEventListener("click", unlock, true);
       document.removeEventListener("keydown", unlock, true);
       document.removeEventListener("touchstart", unlock, true);
