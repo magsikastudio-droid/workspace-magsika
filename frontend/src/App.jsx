@@ -48,28 +48,37 @@ function RoleGuard({ allowedRoles, children }) {
 
 function App() {
   useEffect(() => {
-    // Unlock AudioContext on first user gesture — stays unlocked for the whole session.
-    // speechSynthesis needs per-call gesture; AudioContext only needs one-time unlock.
-    const unlock = () => {
+    const initAudio = async () => {
       if (window._audioCtxUnlocked) return;
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
         const ctx = new AudioCtx();
-        ctx.resume().then(() => {
+        // Chrome allows auto-resume if site has prior media engagement score
+        // (user has used the site before) — works without gesture for returning users
+        try { await ctx.resume(); } catch (_) {}
+        if (ctx.state === "running") {
           window._audioCtx = ctx;
           window._audioCtxUnlocked = true;
-        });
+          return; // done — no gesture needed
+        }
+        // Not yet running: wait for first real user gesture as fallback
+        const unlock = () => {
+          if (window._audioCtxUnlocked) return;
+          ctx.resume().then(() => {
+            window._audioCtx = ctx;
+            window._audioCtxUnlocked = true;
+          }).catch(() => {});
+          document.removeEventListener("click", unlock, true);
+          document.removeEventListener("keydown", unlock, true);
+          document.removeEventListener("touchstart", unlock, true);
+        };
+        document.addEventListener("click", unlock, true);
+        document.addEventListener("keydown", unlock, true);
+        document.addEventListener("touchstart", unlock, true);
       } catch (_) {}
-      document.removeEventListener("click", unlock);
-      document.removeEventListener("keydown", unlock);
     };
-    document.addEventListener("click", unlock);
-    document.addEventListener("keydown", unlock);
-    return () => {
-      document.removeEventListener("click", unlock);
-      document.removeEventListener("keydown", unlock);
-    };
+    initAudio();
   }, []);
 
   return (
