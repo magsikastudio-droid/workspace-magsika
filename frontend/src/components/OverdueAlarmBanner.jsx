@@ -18,10 +18,29 @@ function buildText(tasks) {
   }).join(". ");
 }
 
+// Play a short beep via AudioContext oscillator (works if ctx is running)
+function playBeep(ctx) {
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.35, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.6);
+  } catch (_) {}
+}
+
 // AudioContext path — no gesture needed after first unlock
 function speakViaBackend(tasks) {
   const ctx = window._audioCtx;
   if (!ctx || ctx.state !== "running") return false;
+  // Play beep immediately as instant alert
+  playBeep(ctx);
+  // Then fetch TTS audio and play it
   const token = localStorage.getItem("admin_dashboard_token");
   fetch("/api/tts", {
     method: "POST",
@@ -39,10 +58,10 @@ function speakViaBackend(tasks) {
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.connect(ctx.destination);
-      src.start(0);
+      src.start(ctx.currentTime + 0.7); // after the beep
     })
     .catch(() => {});
-  return true; // optimistically true; audio plays async
+  return true;
 }
 
 // speechSynthesis fallback — MUST be called synchronously inside a user gesture
