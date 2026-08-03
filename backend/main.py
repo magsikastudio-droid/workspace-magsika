@@ -925,6 +925,13 @@ async def public_queue():
     except Exception:
         records = mock_orders
 
+    from datetime import timedelta
+    done_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    records = [
+        r for r in records
+        if r.get("status") != "Done" or (r.get("completed_at") or "")[:10] >= done_cutoff
+    ]
+
     def order_key(r):
         return str(r.get("_id")) if r.get("_id") else r.get("id", "")
 
