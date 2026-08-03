@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="Live commission queue — track the status of active orders in real time." />
+<meta property="og:title" content="Magsika Queue" />
+<meta property="og:description" content="Live commission queue — track the status of active orders in real time." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
 <title>Magsika Queue</title>
 <style>
   :root {
@@ -242,11 +246,28 @@ function formatDuration(totalSeconds) {
   return [h, m, sec].map(v => String(v).padStart(2, "0")).join(":");
 }
 
+function escapeHtml(str) {
+  return String(str ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function timerElapsedNow(timer) {
   if (!timer) return 0;
   let base = timer.elapsed_seconds || 0;
   if (timer.running && timer.started_at) {
-    base += (Date.now() - new Date(timer.started_at).getTime()) / 1000;
+    const started = new Date(timer.started_at).getTime();
+    const now = Date.now();
+    if (timer.date && timer.date < todayStr()) {
+      const endOfDay = new Date(timer.date + "T23:59:59").getTime();
+      base += Math.max(0, Math.min(endOfDay, now) - started) / 1000;
+    } else {
+      base += Math.max(0, now - started) / 1000;
+    }
   }
   return base;
 }
@@ -258,21 +279,21 @@ function renderCard(order) {
   if (timer && (timer.running || (timer.elapsed_seconds || 0) > 0)) {
     const running = !!timer.running;
     timerHtml = `
-      <div class="timer ${running ? "running" : ""}" data-running="${running}" data-elapsed="${timer.elapsed_seconds || 0}" data-started="${timer.started_at || ""}">
+      <div class="timer ${running ? "running" : ""}" data-running="${running}" data-elapsed="${timer.elapsed_seconds || 0}" data-started="${timer.started_at || ""}" data-date="${timer.date || ""}">
         ${running ? '<span class="tdot"></span>' : "⏱"} <span class="timer-value">${formatDuration(timerElapsedNow(timer))}</span>
       </div>`;
   }
   return `
     <div class="card">
-      <div class="project">${order.project || "Untitled"}</div>
-      ${order.client ? `<div class="client">${order.client}</div>` : ""}
+      <div class="project">${escapeHtml(order.project || "Untitled")}</div>
+      ${order.client ? `<div class="client">${escapeHtml(order.client)}</div>` : ""}
       <div class="meta">
-        ${order.work_type ? `<span class="badge">${order.work_type}</span>` : ""}
-        ${order.deadline ? `<span>Due ${order.deadline}</span>` : ""}
+        ${order.work_type ? `<span class="badge">${escapeHtml(order.work_type)}</span>` : ""}
+        ${order.deadline ? `<span>Due ${escapeHtml(order.deadline)}</span>` : ""}
       </div>
       ${timerHtml}
       ${pct !== null ? `<div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>` : ""}
-      ${order.code ? `<div class="code">${order.code}</div>` : ""}
+      ${order.code ? `<div class="code">${escapeHtml(order.code)}</div>` : ""}
     </div>
   `;
 }
@@ -292,7 +313,7 @@ function render(orders) {
     return `
       <div class="column">
         <div class="column-header" style="--dot:${color}">
-          <span class="col-title"><span class="dot"></span>${status}</span>
+          <span class="col-title"><span class="dot"></span>${escapeHtml(status)}</span>
           <span class="count">${items.length}</span>
         </div>
         <div class="cards">
@@ -305,9 +326,12 @@ function render(orders) {
 
 function tickTimers() {
   document.querySelectorAll('.timer[data-running="true"]').forEach(el => {
-    const base = parseFloat(el.getAttribute("data-elapsed")) || 0;
-    const started = el.getAttribute("data-started");
-    const elapsed = started ? base + (Date.now() - new Date(started).getTime()) / 1000 : base;
+    const elapsed = timerElapsedNow({
+      running: true,
+      elapsed_seconds: parseFloat(el.getAttribute("data-elapsed")) || 0,
+      started_at: el.getAttribute("data-started") || null,
+      date: el.getAttribute("data-date") || null,
+    });
     const valueEl = el.querySelector(".timer-value");
     if (valueEl) valueEl.textContent = formatDuration(elapsed);
   });

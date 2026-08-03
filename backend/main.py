@@ -901,6 +901,7 @@ def format_public_order(record: dict, task: Optional[dict] = None) -> dict:
             "running": bool(task.get("timer_started")),
             "elapsed_seconds": task.get("time_elapsed", 0) or 0,
             "started_at": task.get("timer_started"),
+            "date": task.get("date"),
         }
     return {
         "code": build_public_code(record),
