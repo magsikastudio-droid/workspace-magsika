@@ -1,74 +1,118 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Magsika Studio — Order Queue</title>
+<title>Magsika Queue</title>
 <style>
   :root {
     color-scheme: dark;
-    --bg: #0f1115;
-    --panel: #171a21;
-    --panel-2: #1e222b;
-    --border: #2a2f3a;
-    --text: #e8eaed;
-    --muted: #9aa0ac;
-    --accent: #6ea8fe;
+    --bg: #0b0d12;
+    --panel: #14161d;
+    --panel-2: #1b1e27;
+    --border: #262a35;
+    --text: #eef0f4;
+    --muted: #8b90a0;
+    --accent: #7aa2ff;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg);
+    background: radial-gradient(1200px 600px at 50% -10%, #191c26 0%, var(--bg) 60%);
     color: var(--text);
     min-height: 100vh;
   }
   header {
-    padding: 20px 24px 12px;
-    border-bottom: 1px solid var(--border);
+    padding: 40px 24px 28px;
+    text-align: center;
   }
   header h1 {
-    margin: 0 0 4px;
-    font-size: 20px;
-  }
-  header p {
     margin: 0;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, #ffffff 0%, #9fb4ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .live-badge {
+    margin-top: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
     color: var(--muted);
-    font-size: 13px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 0 0 rgba(74,222,128,0.6);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(74,222,128,0.55); }
+    70%  { box-shadow: 0 0 0 7px rgba(74,222,128,0); }
+    100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
   }
   #board {
     display: flex;
-    gap: 16px;
-    padding: 20px 24px;
+    gap: 18px;
+    padding: 4px 24px 40px;
     overflow-x: auto;
     align-items: flex-start;
   }
   .column {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    min-width: 260px;
+    border-radius: 14px;
+    min-width: 270px;
     max-width: 300px;
-    flex: 1 0 260px;
+    flex: 1 0 270px;
+    overflow: hidden;
   }
   .column-header {
-    padding: 12px 14px;
+    padding: 14px 16px;
     border-bottom: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-weight: 600;
-    font-size: 14px;
+    font-size: 13.5px;
+    letter-spacing: 0.2px;
+    position: relative;
   }
+  .column-header::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: var(--dot, var(--accent));
+  }
+  .column-header .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dot, var(--accent));
+    display: inline-block;
+    margin-right: 8px;
+  }
+  .col-title { display: flex; align-items: center; }
   .count {
     background: var(--panel-2);
     color: var(--muted);
     border-radius: 999px;
     padding: 2px 9px;
-    font-size: 12px;
+    font-size: 11.5px;
+    font-weight: 600;
   }
   .cards {
-    padding: 10px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -77,22 +121,35 @@
   .card {
     background: var(--panel-2);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
+    border-left: 3px solid var(--dot, var(--accent));
+    border-radius: 10px;
+    padding: 12px 13px;
+    transition: transform 0.15s ease, border-color 0.15s ease;
   }
-  .card .code {
-    font-size: 12px;
-    color: var(--accent);
-    font-weight: 600;
-    letter-spacing: 0.3px;
+  .card:hover {
+    transform: translateY(-1px);
+    border-color: #3a3f4f;
   }
   .card .project {
-    font-size: 13px;
-    margin-top: 3px;
+    font-size: 13.5px;
+    font-weight: 600;
     color: var(--text);
+    line-height: 1.3;
+  }
+  .card .client {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .card .code {
+    font-size: 10px;
+    color: #565c6d;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    margin-top: 6px;
+    word-break: break-word;
   }
   .card .meta {
-    margin-top: 6px;
+    margin-top: 8px;
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
@@ -100,13 +157,31 @@
     color: var(--muted);
   }
   .badge {
-    background: rgba(110,168,254,0.12);
+    background: rgba(122,162,255,0.12);
     color: var(--accent);
     border-radius: 5px;
-    padding: 1px 6px;
+    padding: 2px 7px;
+    font-weight: 500;
+  }
+  .timer {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--muted);
+  }
+  .timer.running { color: #4ade80; }
+  .timer .tdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4ade80;
+    animation: pulse 1.6s infinite;
   }
   .progress {
-    margin-top: 8px;
+    margin-top: 9px;
     height: 4px;
     border-radius: 3px;
     background: var(--border);
@@ -123,26 +198,35 @@
     text-align: center;
   }
   #status-line {
-    padding: 0 24px 16px;
-    color: var(--muted);
-    font-size: 12px;
+    text-align: center;
+    padding: 0 24px 24px;
+    color: #4b5060;
+    font-size: 11px;
   }
-  .error {
-    color: #ff8a8a;
-  }
+  .error { color: #ff8a8a; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Magsika Studio — Order Queue</h1>
-  <p>Status antrian pengerjaan order secara live. Update otomatis setiap 20 detik.</p>
+  <h1>Magsika Queue</h1>
+  <div class="live-badge"><span class="live-dot"></span>Live</div>
 </header>
 <div id="board"></div>
 <div id="status-line"></div>
 
 <script>
-const STATUS_ORDER = ["Pending", "Modeling", "Teksturing", "Rigging", "Done"];
+const STATUS_ORDER = ["Need Designer", "Pending", "Modeling", "Teksturing", "Rigging", "Revisi", "Done"];
+const STATUS_COLORS = {
+  "Need Designer": "#f5a623",
+  "Pending": "#8b90a0",
+  "Modeling": "#7aa2ff",
+  "Teksturing": "#c792ea",
+  "Rigging": "#ff9f68",
+  "Revisi": "#ff6b6b",
+  "Done": "#4ade80",
+};
 const REFRESH_MS = 20000;
+let latestOrders = [];
 
 function milestoneProgress(milestones) {
   if (!milestones || !milestones.length) return null;
@@ -150,25 +234,51 @@ function milestoneProgress(milestones) {
   return Math.round((done / milestones.length) * 100);
 }
 
+function formatDuration(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return [h, m, sec].map(v => String(v).padStart(2, "0")).join(":");
+}
+
+function timerElapsedNow(timer) {
+  if (!timer) return 0;
+  let base = timer.elapsed_seconds || 0;
+  if (timer.running && timer.started_at) {
+    base += (Date.now() - new Date(timer.started_at).getTime()) / 1000;
+  }
+  return base;
+}
+
 function renderCard(order) {
   const pct = milestoneProgress(order.milestones);
-  const artists = (order.artists || []).join(", ");
+  const timer = order.timer;
+  let timerHtml = "";
+  if (timer && (timer.running || (timer.elapsed_seconds || 0) > 0)) {
+    const running = !!timer.running;
+    timerHtml = `
+      <div class="timer ${running ? "running" : ""}" data-running="${running}" data-elapsed="${timer.elapsed_seconds || 0}" data-started="${timer.started_at || ""}">
+        ${running ? '<span class="tdot"></span>' : "⏱"} <span class="timer-value">${formatDuration(timerElapsedNow(timer))}</span>
+      </div>`;
+  }
   return `
     <div class="card">
-      <div class="code">${order.order_id || order.folder_code || "—"}</div>
       <div class="project">${order.project || "Untitled"}</div>
+      ${order.client ? `<div class="client">${order.client}</div>` : ""}
       <div class="meta">
         ${order.work_type ? `<span class="badge">${order.work_type}</span>` : ""}
-        ${order.market ? `<span class="badge">${order.market}</span>` : ""}
-        ${order.deadline ? `<span>Deadline: ${order.deadline}</span>` : ""}
+        ${order.deadline ? `<span>Due ${order.deadline}</span>` : ""}
       </div>
-      ${artists ? `<div class="meta">${artists}</div>` : ""}
+      ${timerHtml}
       ${pct !== null ? `<div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>` : ""}
+      ${order.code ? `<div class="code">${order.code}</div>` : ""}
     </div>
   `;
 }
 
 function render(orders) {
+  latestOrders = orders;
   const board = document.getElementById("board");
   const grouped = {};
   for (const o of orders) {
@@ -178,18 +288,29 @@ function render(orders) {
   const statuses = [...STATUS_ORDER.filter(s => grouped[s]), ...Object.keys(grouped).filter(s => !STATUS_ORDER.includes(s))];
   board.innerHTML = statuses.map(status => {
     const items = grouped[status] || [];
+    const color = STATUS_COLORS[status] || "#7aa2ff";
     return `
       <div class="column">
-        <div class="column-header">
-          <span>${status}</span>
+        <div class="column-header" style="--dot:${color}">
+          <span class="col-title"><span class="dot"></span>${status}</span>
           <span class="count">${items.length}</span>
         </div>
         <div class="cards">
-          ${items.length ? items.map(renderCard).join("") : `<div class="empty-col">Tidak ada order</div>`}
+          ${items.length ? items.map(renderCard).join("") : `<div class="empty-col">No orders</div>`}
         </div>
       </div>
     `;
   }).join("");
+}
+
+function tickTimers() {
+  document.querySelectorAll('.timer[data-running="true"]').forEach(el => {
+    const base = parseFloat(el.getAttribute("data-elapsed")) || 0;
+    const started = el.getAttribute("data-started");
+    const elapsed = started ? base + (Date.now() - new Date(started).getTime()) / 1000 : base;
+    const valueEl = el.querySelector(".timer-value");
+    if (valueEl) valueEl.textContent = formatDuration(elapsed);
+  });
 }
 
 async function load() {
@@ -199,16 +320,17 @@ async function load() {
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     render(data.orders || []);
-    line.textContent = "Terakhir update: " + new Date().toLocaleTimeString("id-ID");
+    line.textContent = "";
     line.classList.remove("error");
   } catch (e) {
-    line.textContent = "Gagal memuat data: " + e.message;
+    line.textContent = "Unable to load data: " + e.message;
     line.classList.add("error");
   }
 }
 
 load();
 setInterval(load, REFRESH_MS);
+setInterval(tickTimers, 1000);
 </script>
 </body>
 </html>
