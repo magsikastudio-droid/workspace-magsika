@@ -884,33 +884,69 @@ async def activate_milestone(order_id: str, milestone_idx: int, current_user: di
     return {"order": format_order(updated)}
 
 
-def format_public_order(record: dict) -> dict:
+def build_public_code(record: dict) -> str:
+    date_str = record.get("order_date") or (record.get("created_at", "")[:10] if record.get("created_at") else "")
+    digits = date_str.replace("-", "")
+    date6 = digits[2:] if len(digits) >= 8 else digits
+    client = (record.get("client") or "").strip()
+    project = (record.get("project") or "").strip()
+    return "-".join(p for p in [date6, client, project] if p)
+
+
+def format_public_order(record: dict, task: Optional[dict] = None) -> dict:
     milestones = record.get("milestones", []) or []
+    timer = None
+    if task:
+        timer = {
+            "running": bool(task.get("timer_started")),
+            "elapsed_seconds": task.get("time_elapsed", 0) or 0,
+            "started_at": task.get("timer_started"),
+        }
     return {
-        "order_id": record.get("order_id", ""),
-        "folder_code": record.get("folder_code", ""),
+        "code": build_public_code(record),
+        "client": record.get("client", ""),
         "project": record.get("project", "Untitled"),
         "work_type": record.get("work_type", ""),
         "status": record.get("status", "Pending"),
-        "market": record.get("market", "Magsika"),
-        "platform": record.get("platform", ""),
         "deadline": record.get("deadline"),
-        "order_date": record.get("order_date", record.get("created_at", "")[:10] if record.get("created_at") else ""),
-        "artists": (lambda v: v if isinstance(v, list) else ([v] if v else []))(record.get("artists")),
         "milestones": [{"title": m.get("title", ""), "status": m.get("status", "pending")} for m in milestones],
+        "timer": timer,
     }
 
 
 @app.get("/public/queue")
 async def public_queue():
-    """Read-only, tanpa auth — dipakai oleh subdomain queue.magsikastudio.com.
-    Sengaja tidak menyertakan client, total, payment_status, marketer, notes, fee — data privat."""
+    """Read-only, no auth — used by queue.magsikastudio.com.
+    Deliberately excludes total, payment_status, marketer, notes, fee, artists/talent names,
+    and internal account/market codes (market, platform, raw folder_code, order_id)."""
     try:
         records = await db.orders.find({"status": {"$ne": "Cancel"}}).to_list(300)
     except Exception:
         records = mock_orders
+
+    def order_key(r):
+        return str(r.get("_id")) if r.get("_id") else r.get("id", "")
+
+    order_ids = [order_key(r) for r in records]
+    task_map: Dict[str, Any] = {}
+    try:
+        task_records = await db.tasks.find({"order_id": {"$in": order_ids}}).to_list(3000)
+
+        def rank(tt):
+            return (1 if tt.get("timer_started") else 0, tt.get("date") or "")
+
+        for t in task_records:
+            oid = t.get("order_id")
+            if not oid:
+                continue
+            existing = task_map.get(oid)
+            if existing is None or rank(t) > rank(existing):
+                task_map[oid] = t
+    except Exception:
+        pass
+
     records.sort(key=lambda o: (o.get("deadline") is None, o.get("deadline") or ""))
-    return {"orders": [format_public_order(record) for record in records]}
+    return {"orders": [format_public_order(r, task_map.get(order_key(r))) for r in records]}
 
 
 @app.get("/freelance/artists")
