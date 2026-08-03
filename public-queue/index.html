@@ -242,6 +242,79 @@
     font-size: 11px;
   }
   .error { color: #ff8a8a; }
+  .card { cursor: pointer; }
+  #modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(6,7,10,0.7);
+    backdrop-filter: blur(2px);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 50;
+  }
+  #modal-overlay.open { display: flex; }
+  .modal {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    width: 100%;
+    max-width: 420px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-project { font-size: 18px; font-weight: 700; padding-right: 30px; }
+  .modal-client { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .modal-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .modal-last-updated {
+    margin-top: 16px;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  .modal-last-updated strong { color: var(--accent); }
+  .modal-history-title {
+    margin-top: 18px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+  }
+  .history-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+  .history-item:last-child { border-bottom: none; }
+  .history-date { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
+  .history-status { flex: 1; text-align: left; margin-left: 10px; }
+  .history-time { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -260,6 +333,7 @@
 </header>
 <div id="board"></div>
 <div id="status-line"></div>
+<div id="modal-overlay"></div>
 
 <script>
 const STATUS_ORDER = ["Need Designer", "Pending", "Modeling", "Teksturing", "Rigging", "Revisi", "Done"];
@@ -328,7 +402,7 @@ function renderCard(order) {
       </div>`;
   }
   return `
-    <div class="card">
+    <div class="card" data-code="${escapeHtml(order.code)}">
       <div class="project">${escapeHtml(order.project || "Untitled")}</div>
       ${order.client ? `<div class="client">${escapeHtml(order.client)}</div>` : ""}
       <div class="meta">
@@ -390,6 +464,73 @@ function tickTimers() {
     if (valueEl) valueEl.textContent = formatDuration(elapsed);
   });
 }
+
+const TASK_STATUS_LABELS = {
+  "done": "Completed",
+  "in progress": "Work in progress",
+  "pending": "Scheduled",
+  "menunggu_review": "Submitted for review",
+  "in_revision": "Revision requested",
+  "failed": "Rescheduled",
+};
+
+function humanizeTaskStatus(status) {
+  if (TASK_STATUS_LABELS[status]) return TASK_STATUS_LABELS[status];
+  if (!status) return "Unknown";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function openModal(order) {
+  const overlay = document.getElementById("modal-overlay");
+  const history = order.history || [];
+  const lastUpdated = history.length ? history[0].date : null;
+  const historyHtml = history.length
+    ? history.map(h => `
+        <div class="history-item">
+          <span class="history-date">${escapeHtml(h.date || "")}</span>
+          <span class="history-status">${escapeHtml(humanizeTaskStatus(h.status))}</span>
+          ${h.elapsed_seconds > 0 ? `<span class="history-time">${formatDuration(h.elapsed_seconds)}</span>` : ""}
+        </div>`).join("")
+    : `<div class="empty-col">No activity recorded yet</div>`;
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <button class="modal-close" aria-label="Close">&times;</button>
+      <div class="modal-project">${escapeHtml(order.project || "Untitled")}</div>
+      ${order.client ? `<div class="modal-client">${escapeHtml(order.client)}</div>` : ""}
+      <div class="modal-meta">
+        ${order.work_type ? `<span class="badge">${escapeHtml(order.work_type)}</span>` : ""}
+        <span class="badge">${escapeHtml(order.status)}</span>
+        ${order.deadline ? `<span>Due ${escapeHtml(order.deadline)}</span>` : ""}
+      </div>
+      <div class="modal-last-updated">${lastUpdated ? `Last worked on: <strong>${escapeHtml(lastUpdated)}</strong>` : "No activity recorded yet"}</div>
+      <div class="modal-history-title">Progress history</div>
+      ${historyHtml}
+    </div>
+  `;
+  overlay.classList.add("open");
+  overlay.querySelector(".modal-close").addEventListener("click", closeModal);
+}
+
+function closeModal() {
+  document.getElementById("modal-overlay").classList.remove("open");
+}
+
+document.getElementById("board").addEventListener("click", (e) => {
+  const card = e.target.closest(".card");
+  if (!card) return;
+  const code = card.getAttribute("data-code");
+  const order = allOrders.find(o => o.code === code);
+  if (order) openModal(order);
+});
+
+document.getElementById("modal-overlay").addEventListener("click", (e) => {
+  if (e.target.id === "modal-overlay") closeModal();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeModal();
+});
 
 async function load() {
   const line = document.getElementById("status-line");
