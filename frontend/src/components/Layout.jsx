@@ -83,13 +83,14 @@ const NAV_SECTIONS = [
       { to: "/settings",     label: "Settings",     icon: SettingsIcon,    roles: ["admin", "pm", "talent"] },
     ],
   },
-  {
-    label: "Strategi",
-    items: [
-      { to: "/rencana/teknis", label: "Rencana Teknis",  icon: Zap,     roles: ["admin", "pm"] },
-      { to: "/rencana/market", label: "Rencana Market",  icon: Target,  roles: ["admin", "pm"] },
-    ],
-  },
+  // Sementara disembunyikan dari sidebar — lihat percakapan sebelumnya untuk konteks
+  // {
+  //   label: "Strategi",
+  //   items: [
+  //     { to: "/rencana/teknis", label: "Rencana Teknis",  icon: Zap,     roles: ["admin", "pm"] },
+  //     { to: "/rencana/market", label: "Rencana Market",  icon: Target,  roles: ["admin", "pm"] },
+  //   ],
+  // },
 ];
 
 export default function Layout({ children }) {
