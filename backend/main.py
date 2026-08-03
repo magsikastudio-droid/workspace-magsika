@@ -921,7 +921,10 @@ async def public_queue():
     Deliberately excludes total, payment_status, marketer, notes, fee, artists/talent names,
     and internal account/market codes (market, platform, raw folder_code, order_id)."""
     try:
-        records = await db.orders.find({"status": {"$ne": "Cancel"}}).to_list(300)
+        records = await db.orders.find({
+            "status": {"$ne": "Cancel"},
+            "folder_code": {"$not": {"$regex": "eirene|ltk", "$options": "i"}},
+        }).to_list(300)
     except Exception:
         records = mock_orders
 
