@@ -66,20 +66,52 @@
     70%  { box-shadow: 0 0 0 7px rgba(74,222,128,0); }
     100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
   }
-  #board {
+  .search-wrap {
+    margin-top: 16px;
     display: flex;
+    justify-content: center;
+  }
+  .search-box {
+    position: relative;
+    width: 100%;
+    max-width: 360px;
+  }
+  .search-box svg {
+    position: absolute;
+    left: 13px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: var(--muted);
+    stroke-width: 2;
+    pointer-events: none;
+  }
+  #search {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 9px 14px 9px 36px;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  #search::placeholder { color: var(--muted); }
+  #search:focus { border-color: var(--accent); }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
     gap: 18px;
     padding: 4px 24px 40px;
-    overflow-x: auto;
-    align-items: flex-start;
+    align-items: start;
   }
   .column {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 14px;
-    min-width: 270px;
-    max-width: 300px;
-    flex: 1 0 270px;
     overflow: hidden;
   }
   .column-header {
@@ -219,6 +251,12 @@
     <svg viewBox="0 0 24 24"><path d="M20.317 4.369A19.791 19.791 0 0 0 16.558 3c-.211.375-.444.87-.608 1.262a18.27 18.27 0 0 0-5.9 0A12.64 12.64 0 0 0 9.442 3a19.736 19.736 0 0 0-3.762 1.37C2.68 8.58 1.907 12.678 2.294 16.72a19.9 19.9 0 0 0 5.993 3.03c.483-.658.914-1.357 1.284-2.09a12.9 12.9 0 0 1-2.022-.97c.17-.124.336-.253.497-.386 3.9 1.81 8.13 1.81 11.984 0 .162.133.328.262.497.386-.646.383-1.323.71-2.024.971.37.732.8 1.431 1.283 2.089a19.83 19.83 0 0 0 6.002-3.03c.462-4.687-.766-8.746-3.471-12.351ZM8.68 14.246c-1.156 0-2.102-1.06-2.102-2.36 0-1.303.926-2.362 2.102-2.362 1.187 0 2.123 1.069 2.103 2.362 0 1.3-.926 2.36-2.103 2.36Zm6.647 0c-1.157 0-2.102-1.06-2.102-2.36 0-1.303.925-2.362 2.102-2.362 1.187 0 2.123 1.069 2.102 2.362 0 1.3-.915 2.36-2.102 2.36Z"/></svg>
     Join our Discord
   </a>
+  <div class="search-wrap">
+    <div class="search-box">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="search" placeholder="Search your name or project..." autocomplete="off" />
+    </div>
+  </div>
 </header>
 <div id="board"></div>
 <div id="status-line"></div>
@@ -235,7 +273,8 @@ const STATUS_COLORS = {
   "Done": "#4ade80",
 };
 const REFRESH_MS = 20000;
-let latestOrders = [];
+let allOrders = [];
+let searchQuery = "";
 
 function milestoneProgress(milestones) {
   if (!milestones || !milestones.length) return null;
@@ -303,11 +342,21 @@ function renderCard(order) {
   `;
 }
 
-function render(orders) {
-  latestOrders = orders;
+function matchesSearch(order, q) {
+  if (!q) return true;
+  const haystack = [order.client, order.project, order.code].filter(Boolean).join(" ").toLowerCase();
+  return haystack.includes(q);
+}
+
+function renderFiltered() {
   const board = document.getElementById("board");
+  const filtered = allOrders.filter(o => matchesSearch(o, searchQuery));
+  if (searchQuery && filtered.length === 0) {
+    board.innerHTML = `<div class="empty-col" style="grid-column: 1 / -1; padding: 40px;">No orders match "${escapeHtml(searchQuery)}"</div>`;
+    return;
+  }
   const grouped = {};
-  for (const o of orders) {
+  for (const o of filtered) {
     const s = o.status || "Pending";
     (grouped[s] = grouped[s] || []).push(o);
   }
@@ -348,7 +397,8 @@ async function load() {
     const res = await fetch("/api/public/queue");
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
-    render(data.orders || []);
+    allOrders = data.orders || [];
+    renderFiltered();
     line.textContent = "";
     line.classList.remove("error");
   } catch (e) {
@@ -356,6 +406,11 @@ async function load() {
     line.classList.add("error");
   }
 }
+
+document.getElementById("search").addEventListener("input", (e) => {
+  searchQuery = e.target.value.trim().toLowerCase();
+  renderFiltered();
+});
 
 load();
 setInterval(load, REFRESH_MS);
