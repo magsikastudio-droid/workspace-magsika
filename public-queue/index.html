@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Magsika Studio — Order Queue</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e8eaed;
+    --muted: #9aa0ac;
+    --accent: #6ea8fe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    padding: 20px 24px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    margin: 0 0 4px;
+    font-size: 20px;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  #board {
+    display: flex;
+    gap: 16px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    align-items: flex-start;
+  }
+  .column {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    min-width: 260px;
+    max-width: 300px;
+    flex: 1 0 260px;
+  }
+  .column-header {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .count {
+    background: var(--panel-2);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 12px;
+  }
+  .cards {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 40px;
+  }
+  .card {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .card .code {
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .card .project {
+    font-size: 13px;
+    margin-top: 3px;
+    color: var(--text);
+  }
+  .card .meta {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .badge {
+    background: rgba(110,168,254,0.12);
+    color: var(--accent);
+    border-radius: 5px;
+    padding: 1px 6px;
+  }
+  .progress {
+    margin-top: 8px;
+    height: 4px;
+    border-radius: 3px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+  }
+  .empty-col {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 10px 4px;
+    text-align: center;
+  }
+  #status-line {
+    padding: 0 24px 16px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .error {
+    color: #ff8a8a;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Magsika Studio — Order Queue</h1>
+  <p>Status antrian pengerjaan order secara live. Update otomatis setiap 20 detik.</p>
+</header>
+<div id="board"></div>
+<div id="status-line"></div>
+
+<script>
+const STATUS_ORDER = ["Pending", "Modeling", "Teksturing", "Rigging", "Done"];
+const REFRESH_MS = 20000;
+
+function milestoneProgress(milestones) {
+  if (!milestones || !milestones.length) return null;
+  const done = milestones.filter(m => m.status === "done").length;
+  return Math.round((done / milestones.length) * 100);
+}
+
+function renderCard(order) {
+  const pct = milestoneProgress(order.milestones);
+  const artists = (order.artists || []).join(", ");
+  return `
+    <div class="card">
+      <div class="code">${order.order_id || order.folder_code || "—"}</div>
+      <div class="project">${order.project || "Untitled"}</div>
+      <div class="meta">
+        ${order.work_type ? `<span class="badge">${order.work_type}</span>` : ""}
+        ${order.market ? `<span class="badge">${order.market}</span>` : ""}
+        ${order.deadline ? `<span>Deadline: ${order.deadline}</span>` : ""}
+      </div>
+      ${artists ? `<div class="meta">${artists}</div>` : ""}
+      ${pct !== null ? `<div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>` : ""}
+    </div>
+  `;
+}
+
+function render(orders) {
+  const board = document.getElementById("board");
+  const grouped = {};
+  for (const o of orders) {
+    const s = o.status || "Pending";
+    (grouped[s] = grouped[s] || []).push(o);
+  }
+  const statuses = [...STATUS_ORDER.filter(s => grouped[s]), ...Object.keys(grouped).filter(s => !STATUS_ORDER.includes(s))];
+  board.innerHTML = statuses.map(status => {
+    const items = grouped[status] || [];
+    return `
+      <div class="column">
+        <div class="column-header">
+          <span>${status}</span>
+          <span class="count">${items.length}</span>
+        </div>
+        <div class="cards">
+          ${items.length ? items.map(renderCard).join("") : `<div class="empty-col">Tidak ada order</div>`}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function load() {
+  const line = document.getElementById("status-line");
+  try {
+    const res = await fetch("/api/public/queue");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    render(data.orders || []);
+    line.textContent = "Terakhir update: " + new Date().toLocaleTimeString("id-ID");
+    line.classList.remove("error");
+  } catch (e) {
+    line.textContent = "Gagal memuat data: " + e.message;
+    line.classList.add("error");
+  }
+}
+
+load();
+setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>
