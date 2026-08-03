@@ -893,16 +893,29 @@ def build_public_code(record: dict) -> str:
     return "-".join(p for p in [date6, client, project] if p)
 
 
-def format_public_order(record: dict, task: Optional[dict] = None) -> dict:
+def format_public_order(record: dict, tasks: Optional[list] = None) -> dict:
     milestones = record.get("milestones", []) or []
+    tasks = tasks or []
+    # tasks is sorted oldest -> newest; most recent first for history/timer purposes
+    recent_first = list(reversed(tasks))
+    running_task = next((t for t in recent_first if t.get("timer_started")), None)
+    current_task = running_task or (recent_first[0] if recent_first else None)
     timer = None
-    if task:
+    if current_task:
         timer = {
-            "running": bool(task.get("timer_started")),
-            "elapsed_seconds": task.get("time_elapsed", 0) or 0,
-            "started_at": task.get("timer_started"),
-            "date": task.get("date"),
+            "running": bool(current_task.get("timer_started")),
+            "elapsed_seconds": current_task.get("time_elapsed", 0) or 0,
+            "started_at": current_task.get("timer_started"),
+            "date": current_task.get("date"),
         }
+    history = [
+        {
+            "date": t.get("date"),
+            "status": t.get("status", "pending"),
+            "elapsed_seconds": t.get("time_elapsed", 0) or 0,
+        }
+        for t in recent_first[:20]
+    ]
     return {
         "code": build_public_code(record),
         "client": record.get("client", ""),
@@ -912,6 +925,7 @@ def format_public_order(record: dict, task: Optional[dict] = None) -> dict:
         "deadline": record.get("deadline"),
         "milestones": [{"title": m.get("title", ""), "status": m.get("status", "pending")} for m in milestones],
         "timer": timer,
+        "history": history,
     }
 
 
@@ -939,20 +953,16 @@ async def public_queue():
         return str(r.get("_id")) if r.get("_id") else r.get("id", "")
 
     order_ids = [order_key(r) for r in records]
-    task_map: Dict[str, Any] = {}
+    task_map: Dict[str, list] = {}
     try:
         task_records = await db.tasks.find({"order_id": {"$in": order_ids}}).to_list(3000)
-
-        def rank(tt):
-            return (1 if tt.get("timer_started") else 0, tt.get("date") or "")
-
         for t in task_records:
             oid = t.get("order_id")
             if not oid:
                 continue
-            existing = task_map.get(oid)
-            if existing is None or rank(t) > rank(existing):
-                task_map[oid] = t
+            task_map.setdefault(oid, []).append(t)
+        for oid in task_map:
+            task_map[oid].sort(key=lambda t: (t.get("date") or "", str(t.get("_id") or "")))
     except Exception:
         pass
 
