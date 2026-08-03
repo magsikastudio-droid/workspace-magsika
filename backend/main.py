@@ -444,6 +444,13 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+public_manager = ConnectionManager()
+
+
+async def broadcast_all(message: dict):
+    await manager.broadcast(message)
+    await public_manager.broadcast({"type": "refresh"})
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -674,6 +681,17 @@ async def ws_endpoint(websocket: WebSocket, token: str = Query(None)):
         manager.disconnect(websocket)
 
 
+@app.websocket("/public/ws")
+async def public_ws_endpoint(websocket: WebSocket):
+    """No auth — only tells the public queue page to refetch, carries no order data itself."""
+    await public_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        public_manager.disconnect(websocket)
+
+
 def verify_default_admin(username: str, password: str) -> Optional[dict]:
     if username == "admin" and password == "password":
         return {
@@ -764,7 +782,7 @@ async def create_order(order: OrderCreate, current_user: dict = Depends(get_curr
         result_order = format_order({**payload, "_id": result.inserted_id})
     except Exception:
         result_order = format_order({**payload, "id": f"mock-{len(mock_orders) + 1}"})
-    await manager.broadcast({"type": "orders_updated"})
+    await broadcast_all({"type": "orders_updated"})
     return {"order": result_order}
 
 
@@ -805,7 +823,7 @@ async def update_order(order_id: str, order: OrderUpdate, current_user: dict = D
         updated = None
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    await manager.broadcast({"type": "orders_updated"})
+    await broadcast_all({"type": "orders_updated"})
     return {"order": format_order(updated)}
 
 
@@ -822,7 +840,7 @@ async def delete_order(order_id: str, current_user: dict = Depends(get_current_u
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete order")
-    await manager.broadcast({"type": "orders_updated"})
+    await broadcast_all({"type": "orders_updated"})
     return {"deleted": True}
 
 
@@ -855,8 +873,8 @@ async def complete_milestone(order_id: str, milestone_idx: int, current_user: di
         except Exception:
             pass
     updated = await db.orders.find_one({"_id": object_id})
-    await manager.broadcast({"type": "orders_updated"})
-    await manager.broadcast({"type": "tasks_updated"})
+    await broadcast_all({"type": "orders_updated"})
+    await broadcast_all({"type": "tasks_updated"})
     return {"order": format_order(updated)}
 
 
@@ -880,7 +898,7 @@ async def activate_milestone(order_id: str, milestone_idx: int, current_user: di
     milestones[milestone_idx]["status"] = "active"
     await db.orders.update_one({"_id": object_id}, {"$set": {"milestones": milestones}})
     updated = await db.orders.find_one({"_id": object_id})
-    await manager.broadcast({"type": "orders_updated"})
+    await broadcast_all({"type": "orders_updated"})
     return {"order": format_order(updated)}
 
 
@@ -967,7 +985,17 @@ async def public_queue():
         pass
 
     records.sort(key=lambda o: (o.get("deadline") is None, o.get("deadline") or ""))
-    return {"orders": [format_public_order(r, task_map.get(order_key(r))) for r in records]}
+
+    try:
+        settings_doc = await db.settings.find_one({"key": "commissions_open"})
+        commissions_open = settings_doc.get("open", True) if settings_doc else True
+    except Exception:
+        commissions_open = True
+
+    return {
+        "orders": [format_public_order(r, task_map.get(order_key(r))) for r in records],
+        "commissions_open": commissions_open,
+    }
 
 
 @app.get("/freelance/artists")
@@ -1085,7 +1113,7 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
             await db.orders.update_one({"_id": ObjectId(oid)}, {"$addToSet": {"artists": assignee}})
         except Exception:
             pass
-    await manager.broadcast({"type": "tasks_updated"})
+    await broadcast_all({"type": "tasks_updated"})
     return {"task": result_task}
 
 
@@ -1145,7 +1173,7 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
         except Exception:
             pass
 
-    await manager.broadcast({"type": "tasks_updated"})
+    await broadcast_all({"type": "tasks_updated"})
     return {"task": format_task(updated)}
 
 
@@ -1158,7 +1186,7 @@ async def delete_task(task_id: str, current_user: dict = Depends(get_current_use
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete task")
-    await manager.broadcast({"type": "tasks_updated"})
+    await broadcast_all({"type": "tasks_updated"})
     return {"deleted": True}
 
 
@@ -1740,6 +1768,35 @@ async def update_bank_info(data: BankInfoUpdate, current_user: dict = Depends(ge
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Commissions Open/Closed (shown on the public queue page) ──────────────
+
+class CommissionsOpenUpdate(BaseModel):
+    open: bool
+
+@app.get("/settings/commissions-open")
+async def get_commissions_open(current_user: dict = Depends(get_current_user)):
+    try:
+        doc = await db.settings.find_one({"key": "commissions_open"})
+        return {"open": doc.get("open", True) if doc else True}
+    except Exception:
+        return {"open": True}
+
+@app.put("/settings/commissions-open")
+async def update_commissions_open(data: CommissionsOpenUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        await db.settings.update_one(
+            {"key": "commissions_open"},
+            {"$set": {"key": "commissions_open", "open": data.open}},
+            upsert=True,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    await broadcast_all({"type": "commissions_open_updated"})
+    return {"open": data.open}
 
 
 # ─── Daily Report Deadline Settings ─────────────────────────────────────────
