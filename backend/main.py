@@ -884,6 +884,35 @@ async def activate_milestone(order_id: str, milestone_idx: int, current_user: di
     return {"order": format_order(updated)}
 
 
+def format_public_order(record: dict) -> dict:
+    milestones = record.get("milestones", []) or []
+    return {
+        "order_id": record.get("order_id", ""),
+        "folder_code": record.get("folder_code", ""),
+        "project": record.get("project", "Untitled"),
+        "work_type": record.get("work_type", ""),
+        "status": record.get("status", "Pending"),
+        "market": record.get("market", "Magsika"),
+        "platform": record.get("platform", ""),
+        "deadline": record.get("deadline"),
+        "order_date": record.get("order_date", record.get("created_at", "")[:10] if record.get("created_at") else ""),
+        "artists": (lambda v: v if isinstance(v, list) else ([v] if v else []))(record.get("artists")),
+        "milestones": [{"title": m.get("title", ""), "status": m.get("status", "pending")} for m in milestones],
+    }
+
+
+@app.get("/public/queue")
+async def public_queue():
+    """Read-only, tanpa auth — dipakai oleh subdomain queue.magsikastudio.com.
+    Sengaja tidak menyertakan client, total, payment_status, marketer, notes, fee — data privat."""
+    try:
+        records = await db.orders.find({"status": {"$ne": "Cancel"}}).to_list(300)
+    except Exception:
+        records = mock_orders
+    records.sort(key=lambda o: (o.get("deadline") is None, o.get("deadline") or ""))
+    return {"orders": [format_public_order(record) for record in records]}
+
+
 @app.get("/freelance/artists")
 async def list_freelance_artists(current_user: dict = Depends(get_current_user)):
     try:
