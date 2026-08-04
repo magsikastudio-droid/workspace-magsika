@@ -90,7 +90,7 @@ export const WORK_TYPE_OPTIONS = [
   "Paid Consultation",
 ];
 
-export const MARKETER_OPTIONS = ["Ivo", "Novita", "Lainnya"];
+export const MARKETER_OPTIONS = ["Ivo", "Novita", "Maul", "Lainnya"];
 
 export const PAYMENT_OPTIONS = ["Belum Lunas", "DP", "Lunas"];
 
