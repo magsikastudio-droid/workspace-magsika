@@ -5,7 +5,7 @@ import {
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
-  Send, Loader2, LayoutGrid, Receipt, Database,
+  Send, Loader2, LayoutGrid, Receipt, Database, ExternalLink,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -58,6 +58,7 @@ const NAV_SECTIONS = [
       { to: "/daily-chat",   label: "Daily Chat",   icon: MessageSquare,   roles: ["admin"] },
       { to: "/orders",       label: "Orders",       icon: ClipboardList,   roles: ["admin"] },
       { to: "/order-layout", label: "Order Layout",  icon: LayoutGrid,      roles: ["admin", "pm", "talent"] },
+      { to: "https://queue.magsikastudio.com", label: "Public Queue", icon: ExternalLink, roles: ["admin", "pm", "talent"], external: true },
       { to: "/board",        label: "Board",        icon: Kanban,          roles: ["admin", "pm", "talent"] },
       { to: "/todo",          label: "To Do",         icon: CheckSquare,  roles: ["admin", "pm", "talent"] },
       { to: "/daily-report",  label: "Daily Report",  icon: BookOpen,     roles: ["admin", "pm", "talent"] },
@@ -458,6 +459,19 @@ export default function Layout({ children }) {
 }
 
 function NavItem({ item, badge = 0 }) {
+  if (item.external) {
+    return (
+      <a
+        href={item.to}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 transition-all hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-200"
+      >
+        <item.icon size={16} className="text-slate-400 dark:text-slate-600" />
+        <span className="flex-1">{item.label}</span>
+      </a>
+    );
+  }
   return (
     <NavLink
       to={item.to}
