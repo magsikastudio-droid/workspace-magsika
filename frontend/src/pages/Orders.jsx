@@ -215,7 +215,11 @@ export default function OrdersPage() {
   };
 
   const handleInlineUpdate = async (orderId, field, value) => {
-    try { await updateOrder(orderId, { [field]: value }); } catch { toast.error("Gagal update"); }
+    try {
+      // Kalau admin manual update status → clear flag auto-update
+      const extra = field === "status" ? { status_auto_updated: false, status_auto_source: "" } : {};
+      await updateOrder(orderId, { [field]: value, ...extra });
+    } catch { toast.error("Gagal update"); }
   };
 
   const handleCompleteMilestone = async (orderId, idx) => {
@@ -421,9 +425,14 @@ export default function OrdersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <select value={normalizeStatus(order.status)} onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)} className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer" style={{ background: sc.bg, color: sc.text }}>
-                        {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
-                      </select>
+                      <div className="flex items-center gap-1">
+                        <select value={normalizeStatus(order.status)} onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)} className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer" style={{ background: sc.bg, color: sc.text }}>
+                          {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+                        </select>
+                        {order.status_auto_updated && (
+                          <span title={`Auto dari task: ${order.status_auto_source || ""}`} className="text-[10px] text-violet-500 font-bold cursor-help">⚡</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3"><PaymentSelect orderId={order.id} value={order.payment_status} onUpdate={handleInlineUpdate} /></td>
                     <td className="px-4 py-3">
@@ -518,14 +527,19 @@ export default function OrdersPage() {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <select
-                              value={normalizeStatus(order.status)}
-                              onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)}
-                              className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
-                              style={{ background: sc.bg, color: sc.text }}
-                            >
-                              {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
-                            </select>
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={normalizeStatus(order.status)}
+                                onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)}
+                                className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
+                                style={{ background: sc.bg, color: sc.text }}
+                              >
+                                {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+                              </select>
+                              {order.status_auto_updated && (
+                                <span title={`Auto dari task: ${order.status_auto_source || ""}`} className="text-[10px] text-violet-500 font-bold cursor-help">⚡</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             <PaymentSelect orderId={order.id} value={order.payment_status} onUpdate={handleInlineUpdate} />
