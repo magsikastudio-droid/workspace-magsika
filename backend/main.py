@@ -2,7 +2,7 @@ import os
 import io
 import json
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 try:
@@ -934,12 +934,22 @@ def format_public_order(record: dict, tasks: Optional[list] = None) -> dict:
         }
         for t in recent_first[:20]
     ]
+
+    # Orders still in the "Pending" bucket get split by today's to-do activity so the
+    # public board reflects actual daily work, not just the coarse order-level stage.
+    status = record.get("status", "Pending")
+    if status == "Pending":
+        jkt_today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+        today_task = next((t for t in recent_first if t.get("date") == jkt_today), None)
+        if today_task:
+            status = "In Progress" if today_task.get("status") == "in progress" else "Scheduled"
+
     return {
         "code": build_public_code(record),
         "client": record.get("client", ""),
         "project": record.get("project", "Untitled"),
         "work_type": record.get("work_type", ""),
-        "status": record.get("status", "Pending"),
+        "status": status,
         "deadline": record.get("deadline"),
         "milestones": [{"title": m.get("title", ""), "status": m.get("status", "pending")} for m in milestones],
         "timer": timer,
@@ -960,7 +970,6 @@ async def public_queue():
     except Exception:
         records = mock_orders
 
-    from datetime import timedelta
     done_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
     records = [
         r for r in records
