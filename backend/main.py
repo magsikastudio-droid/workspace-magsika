@@ -1126,6 +1126,42 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
     return {"task": result_task}
 
 
+def detect_order_status_from_title(title: str) -> Optional[str]:
+    """Deteksi status order dari judul/catatan task berdasarkan kemiripan kata kunci."""
+    t = (title or "").lower()
+    # Multi-word patterns dulu (lebih spesifik)
+    if ("coloring" in t and ("3d" in t or "print" in t)) or ("3d print" in t and "color" in t):
+        return "Coloring 3D Print"
+    if "waiting file" in t or "menunggu file" in t or "wait file" in t or "tunggu file" in t:
+        return "Waiting File"
+    if "waiting feedback" in t or "menunggu feedback" in t or "wait feedback" in t or "tunggu feedback" in t:
+        return "Waiting Feedback"
+    if "need designer" in t or "cari designer" in t or "butuh designer" in t:
+        return "Need Designer"
+    if "ready to send" in t or "siap kirim" in t or "ready send" in t:
+        return "Ready to Send"
+    if ("cut" in t and "key" in t) or "cut&key" in t or "cut key" in t:
+        return "Cut & Key"
+    # Single-word patterns
+    if "articulat" in t:
+        return "Articulate"
+    if "deliver" in t:
+        return "Delivered"
+    if "render" in t:
+        return "Rendering"
+    if "animat" in t:
+        return "Animation"
+    if "riggin" in t or (" rig " in t) or t.endswith(" rig") or t.startswith("rig "):
+        return "Rigging"
+    if "revisi" in t or "revision" in t or "revise" in t:
+        return "Revisi"
+    if "tekstur" in t or "textur" in t or "texture" in t:
+        return "Teksturing"
+    if "model" in t:
+        return "Modeling"
+    return None
+
+
 @app.patch("/tasks/{task_id}")
 async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depends(get_current_user)):
     payload = task.dict(exclude_unset=True)
@@ -1181,6 +1217,28 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
             )
         except Exception:
             pass
+
+    # Auto-update status order dari keyword judul task saat mulai dikerjakan
+    if new_status == "in progress":
+        order_id_str = (updated.get("order_id") or "").strip()
+        task_title = updated.get("title", "")
+        detected = detect_order_status_from_title(task_title)
+        if order_id_str and detected:
+            try:
+                order_oid = ObjectId(order_id_str)
+                order_doc = await db.orders.find_one({"_id": order_oid})
+                if order_doc and order_doc.get("status") not in ["Done", "Cancel"]:
+                    await db.orders.update_one(
+                        {"_id": order_oid},
+                        {"$set": {
+                            "status": detected,
+                            "status_auto_updated": True,
+                            "status_auto_source": task_title,
+                        }}
+                    )
+                    await broadcast_all({"type": "orders_updated"})
+            except Exception:
+                pass
 
     await broadcast_all({"type": "tasks_updated"})
     return {"task": format_task(updated)}
