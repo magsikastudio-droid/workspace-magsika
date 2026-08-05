@@ -927,6 +927,17 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onAppro
             </>
           )}
 
+          {/* Admin/PM: pulihkan task gagal → tandai selesai */}
+          {isFailed && isAdminOrPM && (
+            <button
+              onClick={stopProp(() => onApprove(task))}
+              title="Tim sudah selesai tapi lupa klik Done?"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition"
+            >
+              <CheckCircle2 size={12} /> Tandai Selesai
+            </button>
+          )}
+
           {/* Waktu kerja jika sudah selesai */}
           {(isDone || isFailed) && elapsed > 0 && (
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-mono font-semibold text-slate-600">
