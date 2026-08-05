@@ -995,28 +995,24 @@ def format_public_order(record: dict, tasks: Optional[list] = None, estimated_st
     ]
 
     # The public board only ever shows 4 columns: Pending / Scheduled / In Progress / Done.
-    # "status" below is the column; "label" is the specific stage shown on the card itself
-    # (Modeling, Rigging, Revisi, Need Designer, etc — same wording as the internal Orders page).
+    # The COLUMN always reflects today's actual to-do activity (so a "Rigging"-stage order
+    # with no one working on it right now doesn't sit stuck in "In Progress"). The LABEL
+    # shows the order's production stage (Modeling, Rigging, Revisi, Need Designer, etc —
+    # same wording as the internal Orders page) so that info isn't lost.
     raw_status = record.get("status", "Pending")
     label = raw_status
     if raw_status == "Done":
         column = "Done"
-    elif raw_status in ("Pending", "Need Designer"):
-        if raw_status == "Need Designer":
-            column = "Pending"
-        else:
-            jkt_today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
-            today_task = next((t for t in recent_first if t.get("date") == jkt_today), None)
-            if today_task:
-                if today_task.get("status") == "in progress":
-                    column, label = "In Progress", "In Progress"
-                else:
-                    column, label = "Scheduled", "Scheduled"
-            else:
-                column = "Pending"
     else:
-        # Modeling, Teksturing, Rigging, Revisi, or any other in-production stage
-        column = "In Progress"
+        jkt_today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+        today_task = next((t for t in recent_first if t.get("date") == jkt_today), None)
+        if today_task:
+            column = "In Progress" if today_task.get("status") == "in progress" else "Scheduled"
+        else:
+            column = "Pending"
+        # No more specific stage to show than the column itself yet
+        if raw_status in ("Pending", "Need Designer") and column in ("Scheduled", "In Progress"):
+            label = column
 
     return {
         "code": build_public_code(record),
