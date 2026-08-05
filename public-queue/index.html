@@ -431,14 +431,22 @@ function timerElapsedNow(timer) {
 }
 
 function formatStartTime(iso) {
+  // Uses the visitor's own local timezone (no explicit timeZone override), so
+  // whoever is viewing sees the time converted to wherever they are.
   if (!iso) return "";
-  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }) + " WIB";
+  const d = new Date(iso);
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}.${m}`;
 }
 
 function renderCard(order) {
   const pct = milestoneProgress(order.milestones);
   const timer = order.timer;
   const labelColor = LABEL_COLORS[order.label] || "#7aa2ff";
+  const labelText = order.label === "Scheduled" && order.estimated_start
+    ? `Scheduled at ${formatStartTime(order.estimated_start)}`
+    : order.label;
   let timerHtml = "";
   if (timer && (timer.running || (timer.elapsed_seconds || 0) > 0)) {
     const running = !!timer.running;
@@ -454,7 +462,7 @@ function renderCard(order) {
       ${order.client ? `<div class="client">${escapeHtml(order.client)}</div>` : ""}
       <div class="meta">
         ${order.work_type ? `<span class="badge">${escapeHtml(order.work_type)}</span>` : ""}
-        ${order.label ? `<span class="badge" style="background:${labelColor}22; color:${labelColor}">${escapeHtml(order.label)}</span>` : ""}
+        ${order.label ? `<span class="badge" style="background:${labelColor}22; color:${labelColor}">${escapeHtml(labelText)}</span>` : ""}
       </div>
       ${timerHtml}
       ${pct !== null ? `<div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>` : ""}
@@ -547,7 +555,7 @@ function openModal(order) {
       ${order.client ? `<div class="modal-client">${escapeHtml(order.client)}</div>` : ""}
       <div class="modal-meta">
         ${order.work_type ? `<span class="badge">${escapeHtml(order.work_type)}</span>` : ""}
-        ${order.label ? `<span class="badge" style="background:${(LABEL_COLORS[order.label] || "#7aa2ff")}22; color:${LABEL_COLORS[order.label] || "#7aa2ff"}">${escapeHtml(order.label)}</span>` : ""}
+        ${order.label ? `<span class="badge" style="background:${(LABEL_COLORS[order.label] || "#7aa2ff")}22; color:${LABEL_COLORS[order.label] || "#7aa2ff"}">${escapeHtml(order.label === "Scheduled" && order.estimated_start ? `Scheduled at ${formatStartTime(order.estimated_start)}` : order.label)}</span>` : ""}
       </div>
       <div class="modal-last-updated">${lastUpdated ? `Last worked on: <strong>${escapeHtml(lastUpdated)}</strong>` : "No activity recorded yet"}</div>
       <div class="modal-history-title">Progress history</div>
