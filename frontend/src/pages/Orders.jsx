@@ -797,6 +797,11 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
               <span className="inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
                 {order.payment_status || "Belum Lunas"}
               </span>
+              {order.stream_allowed && (
+                <span className="inline-flex items-center gap-1 rounded-lg bg-red-100 px-2.5 py-1 text-xs font-bold text-red-600">
+                  🔴 Live Stream
+                </span>
+              )}
               {order.payment_status === "DP" && order.dp_paid > 0 && (
                 <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-700">
                   Sisa: {formatMoney(Math.max(0, (order.total || 0) - order.dp_paid / exchangeRate))}
@@ -1025,6 +1030,25 @@ function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDelete, onComplete
                   <label className="space-y-1 text-xs font-medium text-slate-500">Jenis Pekerjaan<select value={form.work_type} onChange={set("work_type")} className={inp}>{WORK_TYPE_OPTIONS.map((w) => <option key={w}>{w}</option>)}</select></label>
                   <label className="space-y-1 text-xs font-medium text-slate-500">Status<select value={form.status} onChange={set("status")} className={inp}>{STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}</select></label>
                 </div>
+                {/* LIVE STREAM TOGGLE */}
+                <button
+                  type="button"
+                  onClick={() => setForm((p) => ({ ...p, stream_allowed: !p.stream_allowed }))}
+                  className={`mt-3 w-full flex items-center justify-between rounded-xl border px-4 py-3 transition ${
+                    form.stream_allowed ? "border-red-300 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`text-lg leading-none ${form.stream_allowed ? "animate-pulse" : "opacity-40"}`}>🔴</span>
+                    <div className="text-left">
+                      <p className={`text-sm font-semibold ${form.stream_allowed ? "text-red-700" : "text-slate-600"}`}>Live Stream</p>
+                      <p className="text-xs text-slate-400">Tim harus streaming saat mengerjakan</p>
+                    </div>
+                  </div>
+                  <div className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${form.stream_allowed ? "bg-red-500" : "bg-slate-200"}`}>
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${form.stream_allowed ? "translate-x-6" : "translate-x-1"}`} />
+                  </div>
+                </button>
               </div>
               {/* Milestones editor */}
               <div className="px-6 py-4">
