@@ -633,6 +633,50 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
     });
   }, [tasks]);
 
+  /* ── Real-time schedule: estimated start time per task ────────────
+     Default work start: 09:00. Lunch break: 11:30–13:00.
+     Tasks are iterated in drag/order_num order (the `tasks` prop).
+     Done / failed / menunggu_review tasks are skipped (they're over).
+     Remaining duration of each task (duration - elapsed) drives the
+     cursor so the schedule updates live every second via `now`.    */
+  const schedule = useMemo(() => {
+    const WORK_START  = 9 * 60 + 0;   // 540 min → 09:00
+    const BREAK_START = 11 * 60 + 30; // 690 min → 11:30
+    const BREAK_END   = 13 * 60 + 0;  // 780 min → 13:00
+    const result = {};
+    let cursor = WORK_START;
+
+    for (const task of tasks) {
+      // Skip completed tasks — they don't occupy future slots
+      if (["done", "failed", "menunggu_review"].includes(task.status)) continue;
+
+      // If cursor fell into the break window, push to end of break
+      if (cursor >= BREAK_START && cursor < BREAK_END) cursor = BREAK_END;
+
+      // Record this task's estimated start label
+      if (task.duration_seconds) {
+        const h = Math.floor(cursor / 60);
+        const m = cursor % 60;
+        result[task.id] = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      } else {
+        result[task.id] = null; // no duration → can't schedule
+      }
+
+      // Advance cursor by the task's REMAINING duration
+      if (task.duration_seconds) {
+        const elapsed = getElapsed(task, now);
+        const remainMins = Math.ceil(Math.max(0, task.duration_seconds - elapsed) / 60);
+        let endMins = cursor + remainMins;
+        // If task spans the lunch break, add break length (90 min)
+        if (cursor < BREAK_START && endMins > BREAK_START) {
+          endMins += BREAK_END - BREAK_START;
+        }
+        cursor = endMins;
+      }
+    }
+    return result;
+  }, [tasks, now]);
+
   return (
     <div>
       <div className="mb-2 flex items-center gap-2.5">
@@ -651,6 +695,7 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
         {sortedTasks.map((task) => (
           <TaskCard
             key={task.id} task={task} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
+            estStart={schedule[task.id] ?? null}
             onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
             onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
             onDragStart={onDragStart} onDragOver={onDragOver}
@@ -662,7 +707,7 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
 }
 
 /* ─── TaskCard ──────────────────────────────────────────────────── */
-function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, compact = false }) {
+function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, estStart = null, compact = false }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
   const activeMilestone = useMemo(() => {
@@ -793,8 +838,17 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onAppro
               : isOverdue ? `Overdue +${fmtCountdown(Math.abs(countdown))}` : fmtCountdown(countdown)
             }
           </span>
-          {!hasStarted && <span className="ml-auto text-[10px] text-slate-400 font-medium">durasi</span>}
-          {isUrgent && <span className="ml-auto text-[10px] text-orange-500 font-semibold animate-pulse">Segera!</span>}
+          {/* Right side: schedule label + contextual label */}
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            {/* Estimated start time — shown when not running and not finished */}
+            {estStart && !isRunning && (
+              <span className="flex items-center gap-0.5 text-[10px] font-mono font-semibold text-indigo-400">
+                🕐 {estStart}
+              </span>
+            )}
+            {!hasStarted && <span className="text-[10px] text-slate-400 font-medium">durasi</span>}
+            {isUrgent && <span className="text-[10px] text-orange-500 font-semibold animate-pulse">Segera!</span>}
+          </div>
         </div>
       )}
 
