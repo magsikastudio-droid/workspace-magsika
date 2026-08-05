@@ -812,14 +812,24 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onAppro
                 </p>
               )}
             </div>
-            {isAdminOrPM && (
-              <div className="flex items-center gap-1 shrink-0">
-                <button onClick={stopProp(() => onEdit({ ...task }))} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
-                  <Pencil size={13} />
-                </button>
-                <button onClick={stopProp(() => onDelete(task.id))} title="Hapus" className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
-                  <X size={13} />
-                </button>
+            {/* Top-right: estimated start chip + admin edit/delete */}
+            {(estStart || isAdminOrPM) && (
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                {estStart && !isFinished && !isRunning && (
+                  <span className="text-sm font-semibold font-mono text-indigo-500 leading-none whitespace-nowrap">
+                    🕐 {estStart}
+                  </span>
+                )}
+                {isAdminOrPM && (
+                  <div className="flex items-center gap-1">
+                    <button onClick={stopProp(() => onEdit({ ...task }))} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
+                      <Pencil size={13} />
+                    </button>
+                    <button onClick={stopProp(() => onDelete(task.id))} title="Hapus" className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
+                      <X size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -845,17 +855,8 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onAppro
               : isOverdue ? `Overdue +${fmtCountdown(Math.abs(countdown))}` : fmtCountdown(countdown)
             }
           </span>
-          {/* Right side: schedule label + contextual label */}
-          <div className="ml-auto flex items-center gap-2 shrink-0">
-            {/* Estimated start time — shown when not running and not finished */}
-            {estStart && !isRunning && (
-              <span className="flex items-center gap-0.5 text-[10px] font-mono font-semibold text-indigo-400">
-                🕐 {estStart}
-              </span>
-            )}
-            {!hasStarted && <span className="text-[10px] text-slate-400 font-medium">durasi</span>}
-            {isUrgent && <span className="text-[10px] text-orange-500 font-semibold animate-pulse">Segera!</span>}
-          </div>
+          {!hasStarted && <span className="ml-auto text-[10px] text-slate-400 font-medium">durasi</span>}
+          {isUrgent && <span className="ml-auto text-[10px] text-orange-500 font-semibold animate-pulse">Segera!</span>}
         </div>
       )}
 
