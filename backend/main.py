@@ -272,6 +272,7 @@ class OrderCreate(BaseModel):
     revision_count: Optional[int] = 0
     completed_at: Optional[str] = None
     milestones: Optional[List[Dict[str, Any]]] = []
+    stream_allowed: Optional[bool] = False
 
 
 class LayoutTaskCreate(BaseModel):
@@ -315,6 +316,7 @@ class OrderUpdate(BaseModel):
     revision_count: Optional[int] = None
     completed_at: Optional[str] = None
     milestones: Optional[List[Dict[str, Any]]] = None
+    stream_allowed: Optional[bool] = None
 
 
 class ChatEntryCreate(BaseModel):
