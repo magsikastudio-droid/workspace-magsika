@@ -214,6 +214,14 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     margin-top: 6px;
     word-break: break-word;
+    text-transform: uppercase;
+  }
+  .column-done {
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+  }
+  .column-done:hover {
+    opacity: 0.95;
   }
   .card .meta {
     margin-top: 8px;
@@ -494,7 +502,7 @@ function renderFiltered() {
     const items = grouped[status] || [];
     const color = STATUS_COLORS[status] || "#7aa2ff";
     return `
-      <div class="column">
+      <div class="column ${status === "Done" ? "column-done" : ""}">
         <div class="column-header" style="--dot:${color}">
           <span class="col-title"><span class="dot"></span>${escapeHtml(status)}</span>
           <span class="count">${items.length}</span>
