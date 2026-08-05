@@ -999,7 +999,7 @@ def format_public_order(record: dict, tasks: Optional[list] = None, estimated_st
         for t in recent_first[:20]
     ]
 
-    # The public board only ever shows 4 columns: Pending / Scheduled / In Progress / Done.
+    # The public board shows 5 columns: Pending / Scheduled / In Progress / Quality Control / Done.
     # The COLUMN always reflects today's actual to-do activity (so a "Rigging"-stage order
     # with no one working on it right now doesn't sit stuck in "In Progress"). The LABEL
     # shows the order's production stage (Modeling, Rigging, Revisi, Need Designer, etc —
@@ -1015,11 +1015,17 @@ def format_public_order(record: dict, tasks: Optional[list] = None, estimated_st
             is_running_today = any(
                 t.get("timer_started") or t.get("status") == "in progress" for t in today_tasks
             )
-            column = "In Progress" if is_running_today else "Scheduled"
+            is_in_review = any(t.get("status") == "menunggu_review" for t in today_tasks)
+            if is_running_today:
+                column = "In Progress"
+            elif is_in_review:
+                column = "Quality Control"
+            else:
+                column = "Scheduled"
         else:
             column = "Pending"
         # No more specific stage to show than the column itself yet
-        if raw_status in ("Pending", "Need Designer") and column in ("Scheduled", "In Progress"):
+        if raw_status in ("Pending", "Need Designer") and column in ("Scheduled", "In Progress", "Quality Control"):
             label = column
 
     return {
