@@ -375,21 +375,23 @@
 <div id="modal-overlay"></div>
 
 <script>
-const STATUS_ORDER = ["Pending", "Scheduled", "In Progress", "Done"];
+const STATUS_ORDER = ["Pending", "Scheduled", "In Progress", "Quality Control", "Done"];
 const STATUS_COLORS = {
   "Pending": "#8b90a0",
   "Scheduled": "#5eead4",
   "In Progress": "#60a5fa",
+  "Quality Control": "#c792ea",
   "Done": "#4ade80",
 };
-// Per-card label colors — more granular than the 4 board columns above.
+// Per-card label colors — more granular than the 5 board columns above.
 const LABEL_COLORS = {
   "Need Designer": "#f5a623",
   "Pending": "#8b90a0",
   "Scheduled": "#5eead4",
   "In Progress": "#60a5fa",
+  "Quality Control": "#c792ea",
   "Modeling": "#7aa2ff",
-  "Teksturing": "#c792ea",
+  "Teksturing": "#a78bfa",
   "Rigging": "#ff9f68",
   "Revisi": "#ff6b6b",
   "Done": "#4ade80",
