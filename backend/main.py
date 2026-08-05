@@ -911,7 +911,66 @@ def build_public_code(record: dict) -> str:
     return "-".join(p for p in [date6, client, project] if p)
 
 
-def format_public_order(record: dict, tasks: Optional[list] = None) -> dict:
+async def compute_estimated_starts(jkt_today: str) -> Dict[str, str]:
+    """Server-side mirror of Todo.jsx's computeSchedule(): per-assignee queue, 09:00 work
+    start, 11:30-13:00 lunch break, cursor advances by each task's remaining duration.
+    Returns {order_id: iso_datetime_with_wib_offset} — assignee grouping is internal only,
+    never exposed, so the public payload still carries no talent identity."""
+    WORK_START = 9 * 60
+    BREAK_START = 11 * 60 + 30
+    BREAK_END = 13 * 60
+    wib = timezone(timedelta(hours=7))
+
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    now_mins = jkt_now.hour * 60 + jkt_now.minute + jkt_now.second / 60
+
+    try:
+        today_tasks = await db.tasks.find({"date": jkt_today}).to_list(2000)
+    except Exception:
+        return {}
+
+    by_assignee: Dict[str, list] = {}
+    for t in today_tasks:
+        by_assignee.setdefault(t.get("assignee") or "?", []).append(t)
+
+    result: Dict[str, str] = {}
+    for tlist in by_assignee.values():
+        tlist.sort(key=lambda t: t.get("order_num") if t.get("order_num") is not None else 999)
+        cursor = max(WORK_START, now_mins)
+        for t in tlist:
+            if t.get("status") in ("done", "failed", "menunggu_review"):
+                continue
+            if BREAK_START <= cursor < BREAK_END:
+                cursor = BREAK_END
+
+            duration = t.get("duration_seconds")
+            oid = t.get("order_id")
+            if duration and oid:
+                h, m = int(cursor // 60), int(cursor % 60)
+                if h < 24:
+                    try:
+                        start_dt = datetime.strptime(f"{jkt_today} {h:02d}:{m:02d}", "%Y-%m-%d %H:%M").replace(tzinfo=wib)
+                        result[oid] = start_dt.isoformat()
+                    except ValueError:
+                        pass
+
+            if duration:
+                elapsed = t.get("time_elapsed", 0) or 0
+                if t.get("timer_started"):
+                    try:
+                        started = datetime.fromisoformat(str(t["timer_started"]).replace("Z", "+00:00"))
+                        elapsed += (datetime.now(timezone.utc) - started).total_seconds()
+                    except Exception:
+                        pass
+                remain_mins = max(0, duration - elapsed) / 60
+                end_mins = cursor + remain_mins
+                if cursor < BREAK_START and end_mins > BREAK_START:
+                    end_mins += BREAK_END - BREAK_START
+                cursor = end_mins
+    return result
+
+
+def format_public_order(record: dict, tasks: Optional[list] = None, estimated_start: Optional[str] = None) -> dict:
     milestones = record.get("milestones", []) or []
     tasks = tasks or []
     # tasks is sorted oldest -> newest; most recent first for history/timer purposes
@@ -970,6 +1029,7 @@ def format_public_order(record: dict, tasks: Optional[list] = None) -> dict:
         "milestones": [{"title": m.get("title", ""), "status": m.get("status", "pending")} for m in milestones],
         "timer": timer,
         "history": history,
+        "estimated_start": estimated_start if column == "Scheduled" else None,
     }
 
 
@@ -1017,8 +1077,14 @@ async def public_queue():
     except Exception:
         commissions_open = True
 
+    jkt_today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+    estimated_starts = await compute_estimated_starts(jkt_today)
+
     return {
-        "orders": [format_public_order(r, task_map.get(order_key(r))) for r in records],
+        "orders": [
+            format_public_order(r, task_map.get(order_key(r)), estimated_starts.get(order_key(r)))
+            for r in records
+        ],
         "commissions_open": commissions_open,
     }
 
