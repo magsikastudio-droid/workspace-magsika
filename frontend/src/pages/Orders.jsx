@@ -46,6 +46,7 @@ const emptyOrder = () => ({
   fee_freelance: 0,
   artist_contributions: [{ name: "", type: "Tim", percent: 100 }],
   milestones: [],
+  stream_allowed: false,
 });
 
 const emptyMilestone = () => ({ title: "", price: "", deadline: "", status: "pending" });
@@ -387,7 +388,12 @@ export default function OrdersPage() {
                   <tr key={order.id} className={`hover:bg-slate-50 transition border-b border-slate-50 ${isDone ? "opacity-60" : ""}`}>
                     <td className="px-4 py-3">
                       <div className="min-w-0">
-                        <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="max-w-[150px] truncate font-semibold text-slate-900">{order.project}</p>
+                          {order.stream_allowed && (
+                            <span className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-600">🔴 LIVE</span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
                           {order.milestones?.length > 0
@@ -479,7 +485,12 @@ export default function OrdersPage() {
                         <tr key={order.id} className={`hover:bg-slate-50 transition border-b border-slate-50 ${isDone ? "opacity-60" : ""}`}>
                           <td className="px-4 py-3">
                             <div className="min-w-0">
-                              <p className="max-w-[160px] truncate font-semibold text-slate-900">{order.project}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="max-w-[150px] truncate font-semibold text-slate-900">{order.project}</p>
+                                {order.stream_allowed && (
+                                  <span className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-600">🔴 LIVE</span>
+                                )}
+                              </div>
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
                                 {order.milestones?.length > 0
@@ -1324,6 +1335,30 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
                   {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
                 </select>
               </label>
+            </div>
+
+            {/* LIVE STREAM TOGGLE */}
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => setForm((p) => ({ ...p, stream_allowed: !p.stream_allowed }))}
+                className={`w-full flex items-center justify-between rounded-2xl border px-4 py-3 transition ${
+                  form.stream_allowed
+                    ? "border-red-300 bg-red-50"
+                    : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`text-xl leading-none ${form.stream_allowed ? "animate-pulse" : "opacity-40"}`}>🔴</span>
+                  <div className="text-left">
+                    <p className={`text-sm font-semibold ${form.stream_allowed ? "text-red-700" : "text-slate-600"}`}>Live Stream</p>
+                    <p className="text-xs text-slate-400">Tim harus streaming saat mengerjakan order ini</p>
+                  </div>
+                </div>
+                <div className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${form.stream_allowed ? "bg-red-500" : "bg-slate-200"}`}>
+                  <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${form.stream_allowed ? "translate-x-6" : "translate-x-1"}`} />
+                </div>
+              </button>
             </div>
           </div>
 

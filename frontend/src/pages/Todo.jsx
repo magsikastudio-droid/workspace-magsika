@@ -717,12 +717,15 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
 function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, estStart = null, compact = false }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
-  const activeMilestone = useMemo(() => {
+  const linkedOrderInfo = useMemo(() => {
     if (!task.order_id || !orders?.length) return null;
-    const order = orders.find((o) => o.id === task.order_id);
-    if (!order?.milestones?.length) return null;
-    return order.milestones.find((m) => m.status === "active") || null;
+    return orders.find((o) => o.id === task.order_id) || null;
   }, [task.order_id, orders]);
+  const activeMilestone = useMemo(() => {
+    if (!linkedOrderInfo?.milestones?.length) return null;
+    return linkedOrderInfo.milestones.find((m) => m.status === "active") || null;
+  }, [linkedOrderInfo]);
+  const streamAllowed = !!linkedOrderInfo?.stream_allowed;
   const isDone = task.status === "done";
   const isFailed = task.status === "failed";
   const isReview = task.status === "menunggu_review";
@@ -786,6 +789,14 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onAppro
                   {task.title}
                 </p>
               </div>
+              {/* Live stream badge */}
+              {streamAllowed && !isFinished && (
+                <div className="mt-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-0.5 text-[10px] font-bold text-white">
+                    🔴 LIVE STREAM
+                  </span>
+                </div>
+              )}
               {activeMilestone && (
                 <div className="mt-1 flex items-center gap-1.5 w-fit">
                   <span className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 bg-blue-50 rounded-lg px-2 py-0.5">
