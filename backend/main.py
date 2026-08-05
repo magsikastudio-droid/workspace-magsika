@@ -147,6 +147,9 @@ def format_order(record: dict) -> dict:
         "completed_at": record.get("completed_at"),
         "revision_count": record.get("revision_count", 0),
         "milestones": record.get("milestones", []),
+        "stream_allowed": record.get("stream_allowed", False),
+        "status_auto_updated": record.get("status_auto_updated", False),
+        "status_auto_source": record.get("status_auto_source", ""),
     }
 
 
