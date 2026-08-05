@@ -935,21 +935,37 @@ def format_public_order(record: dict, tasks: Optional[list] = None) -> dict:
         for t in recent_first[:20]
     ]
 
-    # Orders still in the "Pending" bucket get split by today's to-do activity so the
-    # public board reflects actual daily work, not just the coarse order-level stage.
-    status = record.get("status", "Pending")
-    if status == "Pending":
-        jkt_today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
-        today_task = next((t for t in recent_first if t.get("date") == jkt_today), None)
-        if today_task:
-            status = "In Progress" if today_task.get("status") == "in progress" else "Scheduled"
+    # The public board only ever shows 4 columns: Pending / Scheduled / In Progress / Done.
+    # "status" below is the column; "label" is the specific stage shown on the card itself
+    # (Modeling, Rigging, Revisi, Need Designer, etc — same wording as the internal Orders page).
+    raw_status = record.get("status", "Pending")
+    label = raw_status
+    if raw_status == "Done":
+        column = "Done"
+    elif raw_status in ("Pending", "Need Designer"):
+        if raw_status == "Need Designer":
+            column = "Pending"
+        else:
+            jkt_today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+            today_task = next((t for t in recent_first if t.get("date") == jkt_today), None)
+            if today_task:
+                if today_task.get("status") == "in progress":
+                    column, label = "In Progress", "In Progress"
+                else:
+                    column, label = "Scheduled", "Scheduled"
+            else:
+                column = "Pending"
+    else:
+        # Modeling, Teksturing, Rigging, Revisi, or any other in-production stage
+        column = "In Progress"
 
     return {
         "code": build_public_code(record),
         "client": record.get("client", ""),
         "project": record.get("project", "Untitled"),
         "work_type": record.get("work_type", ""),
-        "status": status,
+        "status": column,
+        "label": label,
         "deadline": record.get("deadline"),
         "milestones": [{"title": m.get("title", ""), "status": m.get("status", "pending")} for m in milestones],
         "timer": timer,

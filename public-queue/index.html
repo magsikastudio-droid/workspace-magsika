@@ -240,6 +240,7 @@
     color: var(--muted);
   }
   .timer.running { color: #4ade80; }
+  .timer-start { color: var(--muted); font-weight: 400; }
   .timer .tdot {
     width: 6px;
     height: 6px;
@@ -366,8 +367,15 @@
 <div id="modal-overlay"></div>
 
 <script>
-const STATUS_ORDER = ["Need Designer", "Pending", "Scheduled", "In Progress", "Modeling", "Teksturing", "Rigging", "Revisi", "Done"];
+const STATUS_ORDER = ["Pending", "Scheduled", "In Progress", "Done"];
 const STATUS_COLORS = {
+  "Pending": "#8b90a0",
+  "Scheduled": "#5eead4",
+  "In Progress": "#60a5fa",
+  "Done": "#4ade80",
+};
+// Per-card label colors — more granular than the 4 board columns above.
+const LABEL_COLORS = {
   "Need Designer": "#f5a623",
   "Pending": "#8b90a0",
   "Scheduled": "#5eead4",
@@ -422,15 +430,22 @@ function timerElapsedNow(timer) {
   return base;
 }
 
+function formatStartTime(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }) + " WIB";
+}
+
 function renderCard(order) {
   const pct = milestoneProgress(order.milestones);
   const timer = order.timer;
+  const labelColor = LABEL_COLORS[order.label] || "#7aa2ff";
   let timerHtml = "";
   if (timer && (timer.running || (timer.elapsed_seconds || 0) > 0)) {
     const running = !!timer.running;
+    const startLabel = running && timer.started_at ? `Started ${formatStartTime(timer.started_at)} &middot; ` : "";
     timerHtml = `
       <div class="timer ${running ? "running" : ""}" data-running="${running}" data-elapsed="${timer.elapsed_seconds || 0}" data-started="${timer.started_at || ""}" data-date="${timer.date || ""}">
-        ${running ? '<span class="tdot"></span>' : "⏱"} <span class="timer-value">${formatDuration(timerElapsedNow(timer))}</span>
+        ${running ? '<span class="tdot"></span>' : "⏱"} <span class="timer-start">${startLabel}</span><span class="timer-value">${formatDuration(timerElapsedNow(timer))}</span>
       </div>`;
   }
   return `
@@ -439,7 +454,7 @@ function renderCard(order) {
       ${order.client ? `<div class="client">${escapeHtml(order.client)}</div>` : ""}
       <div class="meta">
         ${order.work_type ? `<span class="badge">${escapeHtml(order.work_type)}</span>` : ""}
-        ${order.deadline ? `<span>Due ${escapeHtml(order.deadline)}</span>` : ""}
+        ${order.label ? `<span class="badge" style="background:${labelColor}22; color:${labelColor}">${escapeHtml(order.label)}</span>` : ""}
       </div>
       ${timerHtml}
       ${pct !== null ? `<div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>` : ""}
@@ -532,8 +547,7 @@ function openModal(order) {
       ${order.client ? `<div class="modal-client">${escapeHtml(order.client)}</div>` : ""}
       <div class="modal-meta">
         ${order.work_type ? `<span class="badge">${escapeHtml(order.work_type)}</span>` : ""}
-        <span class="badge">${escapeHtml(order.status)}</span>
-        ${order.deadline ? `<span>Due ${escapeHtml(order.deadline)}</span>` : ""}
+        ${order.label ? `<span class="badge" style="background:${(LABEL_COLORS[order.label] || "#7aa2ff")}22; color:${LABEL_COLORS[order.label] || "#7aa2ff"}">${escapeHtml(order.label)}</span>` : ""}
       </div>
       <div class="modal-last-updated">${lastUpdated ? `Last worked on: <strong>${escapeHtml(lastUpdated)}</strong>` : "No activity recorded yet"}</div>
       <div class="modal-history-title">Progress history</div>
