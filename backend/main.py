@@ -1005,9 +1005,12 @@ def format_public_order(record: dict, tasks: Optional[list] = None, estimated_st
         column = "Done"
     else:
         jkt_today = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
-        today_task = next((t for t in recent_first if t.get("date") == jkt_today), None)
-        if today_task:
-            column = "In Progress" if today_task.get("status") == "in progress" else "Scheduled"
+        today_tasks = [t for t in recent_first if t.get("date") == jkt_today]
+        if today_tasks:
+            is_running_today = any(
+                t.get("timer_started") or t.get("status") == "in progress" for t in today_tasks
+            )
+            column = "In Progress" if is_running_today else "Scheduled"
         else:
             column = "Pending"
         # No more specific stage to show than the column itself yet
