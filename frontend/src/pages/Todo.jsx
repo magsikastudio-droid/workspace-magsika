@@ -640,11 +640,18 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
      Remaining duration of each task (duration - elapsed) drives the
      cursor so the schedule updates live every second via `now`.    */
   const schedule = useMemo(() => {
-    const WORK_START  = 9 * 60 + 0;   // 540 min → 09:00
-    const BREAK_START = 11 * 60 + 30; // 690 min → 11:30
-    const BREAK_END   = 13 * 60 + 0;  // 780 min → 13:00
+    const WORK_START  = 9 * 60;        // 09:00 in minutes from midnight
+    const BREAK_START = 11 * 60 + 30;  // 11:30
+    const BREAK_END   = 13 * 60;       // 13:00
+
+    // Current time-of-day in minutes (fractional seconds included)
+    const d = new Date(now);
+    const nowMins = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+
+    // Cursor starts at current time (or 09:00 if before work hours)
+    // This makes all estimates relative to NOW, not to the fixed 09:00 plan
     const result = {};
-    let cursor = WORK_START;
+    let cursor = Math.max(WORK_START, nowMins);
 
     for (const task of tasks) {
       // Skip completed tasks — they don't occupy future slots
@@ -653,10 +660,10 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
       // If cursor fell into the break window, push to end of break
       if (cursor >= BREAK_START && cursor < BREAK_END) cursor = BREAK_END;
 
-      // Record this task's estimated start label
+      // Record this task's estimated start label (floor to nearest minute)
       if (task.duration_seconds) {
         const h = Math.floor(cursor / 60);
-        const m = cursor % 60;
+        const m = Math.floor(cursor % 60);
         result[task.id] = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
       } else {
         result[task.id] = null; // no duration → can't schedule
@@ -665,7 +672,7 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
       // Advance cursor by the task's REMAINING duration
       if (task.duration_seconds) {
         const elapsed = getElapsed(task, now);
-        const remainMins = Math.ceil(Math.max(0, task.duration_seconds - elapsed) / 60);
+        const remainMins = Math.max(0, task.duration_seconds - elapsed) / 60;
         let endMins = cursor + remainMins;
         // If task spans the lunch break, add break length (90 min)
         if (cursor < BREAK_START && endMins > BREAK_START) {
