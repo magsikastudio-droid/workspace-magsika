@@ -1,5 +1,6 @@
 import React, { useRef, useMemo, useState, useEffect } from "react";
-import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X, Calendar, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X, Calendar, CheckCircle2, AlertCircle, FileSpreadsheet } from "lucide-react";
+import ExportReportModal from "../components/ExportReportModal";
 import { toast } from "sonner";
 import { useOrders } from "../context/OrdersContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -64,6 +65,7 @@ export default function OrdersPage() {
   const [paymentFilter, setPaymentFilter] = useState("Semua");
   const [monthFilter, setMonthFilter] = useState(_currentMonth);
   const [showCreate, setShowCreate] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importRows, setImportRows] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
@@ -301,6 +303,9 @@ export default function OrdersPage() {
           </button>
           <button onClick={handleExportCSV} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
             <Download size={15} /> Export CSV
+          </button>
+          <button onClick={() => setShowExport(true)} className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 shadow-sm">
+            <FileSpreadsheet size={15} /> Export Laporan
           </button>
           <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-700">
             <Plus size={15} /> Tambah Order
@@ -575,6 +580,10 @@ export default function OrdersPage() {
           </table>
         </div>
       </div>
+
+      {showExport && (
+        <ExportReportModal onClose={() => setShowExport(false)} />
+      )}
 
       {showCreate && (
         <OrderFormModal
