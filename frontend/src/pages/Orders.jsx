@@ -1,5 +1,5 @@
 import React, { useRef, useMemo, useState, useEffect } from "react";
-import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X, Calendar, CheckCircle2, AlertCircle, FileSpreadsheet } from "lucide-react";
+import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X, Calendar, CheckCircle2, AlertCircle, FileText } from "lucide-react";
 import ExportReportModal from "../components/ExportReportModal";
 import { toast } from "sonner";
 import { useOrders } from "../context/OrdersContext";
@@ -305,7 +305,7 @@ export default function OrdersPage() {
             <Download size={15} /> Export CSV
           </button>
           <button onClick={() => setShowExport(true)} className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 shadow-sm">
-            <FileSpreadsheet size={15} /> Export Laporan
+            <FileText size={15} /> Export PDF
           </button>
           <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-700">
             <Plus size={15} /> Tambah Order
