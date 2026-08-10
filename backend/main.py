@@ -743,7 +743,11 @@ async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
         username = payload.get("sub")
         if not username:
             raise ValueError
-        user = await db.users.find_one({"username": username})
+        # Fast path: default admin tidak ada di MongoDB
+        if username == "admin":
+            user = {"username": "admin", "name": "Admin", "role": "admin", "avatar": ""}
+        else:
+            user = await db.users.find_one({"username": username})
         if not user:
             raise ValueError
     except Exception:
