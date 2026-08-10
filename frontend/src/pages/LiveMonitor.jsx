@@ -1,7 +1,23 @@
+/**
+ * LiveMonitor — tampil layar tim via JPEG Frame Relay.
+ *
+ * Arsitektur: server forward JPEG binary dari streamer ke semua viewer.
+ * Tidak pakai WebRTC — tidak butuh ICE/STUN/TURN.
+ * CPU viewer & streamer jauh lebih ringan.
+ *
+ * Protocol WebSocket /ws/screen (viewer side):
+ *   → JSON {type:"join_viewer"}
+ *   ← JSON {type:"streamers_list", streamers:[{id,username,task,brb}]}
+ *   ← JSON {type:"streamer_joined", id, username, task}
+ *   ← JSON {type:"streamer_left", id}
+ *   ← JSON {type:"streamer_brb", id, active}
+ *   ← JSON {type:"streamer_updated", id, task}
+ *   ← JSON {type:"frame", id, username, task, brb}  ← diikuti BINARY JPEG
+ *   ← BYTES raw JPEG frame
+ */
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Maximize2, Monitor, Wifi, WifiOff, Radio, Users } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { useStream } from "../context/StreamContext";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const resolved    = BACKEND_URL.startsWith("/")
@@ -10,61 +26,34 @@ const resolved    = BACKEND_URL.startsWith("/")
 const WS_BASE = resolved.replace(/^http/, "ws");
 
 /* ═══════════════════════════════════════════════════════════
-   Stream card — video element dikelola sendiri via useRef
+   StreamCard — tampilkan frame JPEG dari streamer
 ═══════════════════════════════════════════════════════════ */
-function StreamCard({ username, task, avatar, status, stream, brb }) {
-  const videoRef    = useRef(null);
+function StreamCard({ id, username, task, avatar, brb, imgRef }) {
   const containerRef = useRef(null);
 
-  /* Set srcObject setiap kali stream berubah */
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (stream) {
-      v.srcObject = stream;
-      v.play().catch(() => {});
-    } else {
-      v.srcObject = null;
-    }
-  }, [stream]);
-
-  /* Fullscreen */
   const enterFullscreen = (e) => {
     e.stopPropagation();
     const el = containerRef.current;
     if (!el) return;
-    if (el.requestFullscreen)             el.requestFullscreen();
-    else if (el.webkitRequestFullscreen)  el.webkitRequestFullscreen();
-    else if (el.mozRequestFullScreen)     el.mozRequestFullScreen();
+    if      (el.requestFullscreen)            el.requestFullscreen();
+    else if (el.webkitRequestFullscreen)      el.webkitRequestFullscreen();
+    else if (el.mozRequestFullScreen)         el.mozRequestFullScreen();
   };
-
-  const dot = {
-    connecting: "bg-amber-400",
-    connected:  "bg-emerald-400 animate-pulse",
-    failed:     "bg-rose-500",
-  }[status] ?? "bg-slate-400";
-
-  const lbl = {
-    connecting: "Menghubungkan…",
-    connected:  "LIVE",
-    failed:     "Gagal",
-  }[status] ?? status;
 
   return (
     <div
       ref={containerRef}
       className="relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-700/50 shadow-xl aspect-video group"
     >
-      {/* Video — selalu ada di DOM supaya srcObject bisa di-set */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
+      {/* Frame image — src diupdate dari parent via imgRef */}
+      <img
+        ref={imgRef}
+        alt={`Layar ${username}`}
         className="w-full h-full object-contain bg-slate-950"
+        style={{ display: "block" }}
       />
 
-      {/* Tombol fullscreen — muncul saat hover */}
+      {/* Fullscreen */}
       <button
         onClick={enterFullscreen}
         title="Fullscreen"
@@ -73,12 +62,12 @@ function StreamCard({ username, task, avatar, status, stream, brb }) {
         <Maximize2 size={13} />
       </button>
 
-      {/* Overlay bawah */}
+      {/* Bottom bar */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent px-3 py-2.5">
         <div className="flex items-end justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             {avatar
-              ? <img src={avatar} className="w-7 h-7 rounded-full border-2 border-white/30 shrink-0 object-cover" />
+              ? <img src={avatar} className="w-7 h-7 rounded-full border-2 border-white/30 shrink-0 object-cover" alt="" />
               : (
                 <div className="w-7 h-7 rounded-full bg-violet-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
                   {username?.[0]?.toUpperCase() ?? "?"}
@@ -90,46 +79,30 @@ function StreamCard({ username, task, avatar, status, stream, brb }) {
               {task && <p className="text-white/55 text-[10px] leading-tight truncate">{task}</p>}
             </div>
           </div>
+          {/* LIVE badge */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-            <span className="text-white/70 text-[10px] font-semibold">{lbl}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+            <span className="text-white/70 text-[10px] font-semibold">LIVE</span>
           </div>
         </div>
       </div>
 
-      {/* Overlay loading */}
-      {status === "connecting" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/75 pointer-events-none">
-          <div className="text-center">
-            <div className="w-8 h-8 border-2 border-violet-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-white/50 text-xs">Menghubungkan ke {username}…</p>
-          </div>
-        </div>
-      )}
-      {status === "failed" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80 pointer-events-none">
-          <div className="text-center">
-            <WifiOff size={28} className="text-rose-400 mx-auto mb-2" />
-            <p className="text-white/60 text-xs">Koneksi gagal</p>
-            <p className="text-white/35 text-[10px] mt-1">
-              Jaringan berbeda — TURN server mengatasi ini otomatis jika sudah terpasang.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ── BRB overlay — saat talent pause timer ── */}
+      {/* BRB overlay */}
       {brb && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
-          style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)" }}>
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
+          style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)" }}
+        >
           <p className="text-5xl mb-3">☕</p>
           <p className="text-white text-2xl font-black tracking-widest uppercase">Be Right Back!</p>
           <p className="text-white/50 text-xs mt-2 tracking-wide">Timer dijeda oleh {username}</p>
-          {/* Animasi pulsing dot */}
           <div className="flex gap-1.5 mt-4">
-            {[0,1,2].map(i => (
-              <div key={i} className="w-2 h-2 rounded-full bg-amber-400 animate-bounce"
-                style={{ animationDelay: `${i * 0.15}s` }} />
+            {[0, 1, 2].map(i => (
+              <div
+                key={i}
+                className="w-2 h-2 rounded-full bg-amber-400 animate-bounce"
+                style={{ animationDelay: `${i * 0.15}s` }}
+              />
             ))}
           </div>
         </div>
@@ -142,116 +115,97 @@ function StreamCard({ username, task, avatar, status, stream, brb }) {
    Main page
 ═══════════════════════════════════════════════════════════ */
 export default function LiveMonitor() {
-  const { token }     = useAuth();
-  const { iceServers } = useStream(); // pakai TURN dari StreamContext
+  const { token } = useAuth();
 
-  const wsRef  = useRef(null);
-  const pcsRef = useRef({});   // {streamer_id: RTCPeerConnection}
+  const wsRef       = useRef(null);
+  const imgRefsMap  = useRef({});   // {streamer_id: React ref}
+  const prevUrlsRef = useRef({});   // {streamer_id: objectURL} — untuk di-revoke
+  const pendingMeta = useRef(null); // JSON frame metadata menunggu binary frame
 
   const [wsOk,      setWsOk]      = useState(false);
   const [streamers, setStreamers] = useState({});
-  // {id: {username, task, avatar, status}}
-  const [streams,   setStreams]   = useState({});
-  // {id: MediaStream}  ← terpisah supaya update tidak buang PeerConnection
+  // {id: {id, username, task, avatar, brb}}
 
-  /* ── Connect ke satu streamer (buat offer) ── */
-  const connectToStreamer = useCallback((streamerId, ws) => {
-    if (pcsRef.current[streamerId]) return; // sudah ada
+  /* Pastikan imgRef tersedia untuk setiap streamer */
+  const getImgRef = useCallback((id) => {
+    if (!imgRefsMap.current[id]) {
+      imgRefsMap.current[id] = React.createRef();
+    }
+    return imgRefsMap.current[id];
+  }, []);
 
-    const pc = new RTCPeerConnection({ iceServers });
-    pcsRef.current[streamerId] = pc;
+  /* Update <img> src dari binary JPEG frame */
+  const applyFrame = useCallback((streamerId, arrayBuffer) => {
+    const ref = imgRefsMap.current[streamerId];
+    if (!ref?.current) return;
 
-    /* Terima video track dari streamer */
-    pc.ontrack = (ev) => {
-      console.log("[LiveMonitor] ontrack dari", streamerId, ev.streams[0]);
-      setStreams(prev  => ({ ...prev, [streamerId]: ev.streams[0] }));
-      setStreamers(prev =>
-        prev[streamerId]
-          ? { ...prev, [streamerId]: { ...prev[streamerId], status: "connected" } }
-          : prev
-      );
-    };
+    /* Revoke URL lama untuk free memory */
+    const oldUrl = prevUrlsRef.current[streamerId];
+    if (oldUrl) URL.revokeObjectURL(oldUrl);
 
-    /* Kirim ICE candidate ke streamer */
-    pc.onicecandidate = (ev) => {
-      if (ev.candidate && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "ice", to: streamerId, candidate: ev.candidate }));
-      }
-    };
+    const blob   = new Blob([arrayBuffer], { type: "image/jpeg" });
+    const newUrl = URL.createObjectURL(blob);
+    prevUrlsRef.current[streamerId] = newUrl;
+    ref.current.src = newUrl;
+  }, []);
 
-    pc.onconnectionstatechange = () => {
-      console.log("[LiveMonitor] connectionState", streamerId, pc.connectionState);
-      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
-        setStreamers(prev =>
-          prev[streamerId]
-            ? { ...prev, [streamerId]: { ...prev[streamerId], status: "failed" } }
-            : prev
-        );
-      }
-    };
-
-    /* Buat offer (recvonly — kita hanya terima video) */
-    (async () => {
-      try {
-        pc.addTransceiver("video", { direction: "recvonly" });
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        console.log("[LiveMonitor] mengirim offer ke", streamerId);
-        ws.send(JSON.stringify({ type: "offer", to: streamerId, sdp: pc.localDescription }));
-      } catch (err) {
-        console.error("[LiveMonitor] offer error:", err);
-        setStreamers(prev =>
-          prev[streamerId]
-            ? { ...prev, [streamerId]: { ...prev[streamerId], status: "failed" } }
-            : prev
-        );
-      }
-    })();
-  }, [iceServers]);
-
-  /* ── WebSocket signaling ── */
+  /* ── WebSocket ke /ws/screen ── */
   useEffect(() => {
     if (!token) return;
 
-    console.log("[LiveMonitor] connecting to", `${WS_BASE}/ws/rtc`);
-    const ws = new WebSocket(`${WS_BASE}/ws/rtc?token=${token}`);
+    const ws = new WebSocket(`${WS_BASE}/ws/screen?token=${token}`);
+    ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log("[LiveMonitor] WS open, join_viewer");
       ws.send(JSON.stringify({ type: "join_viewer" }));
       setWsOk(true);
     };
 
-    ws.onmessage = async (e) => {
+    ws.onmessage = (e) => {
+      /* ── Binary frame ── */
+      if (e.data instanceof ArrayBuffer) {
+        const meta = pendingMeta.current;
+        pendingMeta.current = null;
+        if (meta?.id) {
+          /* Update brb dari meta terbaru */
+          setStreamers(prev =>
+            prev[meta.id]
+              ? { ...prev, [meta.id]: { ...prev[meta.id], brb: meta.brb, task: meta.task } }
+              : prev
+          );
+          applyFrame(meta.id, e.data);
+        }
+        return;
+      }
+
+      /* ── JSON control message ── */
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
-      console.log("[LiveMonitor] <<", msg.type, msg);
 
       switch (msg.type) {
 
         case "streamers_list": {
           const init = {};
-          msg.streamers.forEach(s => { init[s.id] = { ...s, status: "connecting" }; });
+          msg.streamers.forEach(s => { init[s.id] = { ...s }; });
           setStreamers(init);
-          msg.streamers.forEach(s => connectToStreamer(s.id, ws));
           break;
         }
 
         case "streamer_joined": {
           setStreamers(prev => ({
             ...prev,
-            [msg.id]: { id: msg.id, username: msg.username, task: msg.task, avatar: msg.avatar, status: "connecting" },
+            [msg.id]: { id: msg.id, username: msg.username, task: msg.task ?? "", avatar: msg.avatar ?? "", brb: false },
           }));
-          connectToStreamer(msg.id, ws);
           break;
         }
 
         case "streamer_left": {
-          pcsRef.current[msg.id]?.close();
-          delete pcsRef.current[msg.id];
+          /* Revoke image URL yang tersimpan */
+          const url = prevUrlsRef.current[msg.id];
+          if (url) { URL.revokeObjectURL(url); delete prevUrlsRef.current[msg.id]; }
+          delete imgRefsMap.current[msg.id];
           setStreamers(prev => { const n = { ...prev }; delete n[msg.id]; return n; });
-          setStreams(prev   => { const n = { ...prev }; delete n[msg.id]; return n; });
           break;
         }
 
@@ -269,20 +223,9 @@ export default function LiveMonitor() {
           break;
         }
 
-        case "answer": {
-          const pc = pcsRef.current[msg.from];
-          if (pc) {
-            console.log("[LiveMonitor] setRemoteDescription answer dari", msg.from);
-            await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)).catch(console.error);
-          }
-          break;
-        }
-
-        case "ice": {
-          const pc = pcsRef.current[msg.from];
-          if (pc && msg.candidate) {
-            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
-          }
+        case "frame": {
+          /* Metadata frame — bytes JPEG akan datang sebagai pesan berikutnya */
+          pendingMeta.current = msg;
           break;
         }
 
@@ -290,45 +233,40 @@ export default function LiveMonitor() {
       }
     };
 
-    ws.onclose  = (e) => { console.log("[LiveMonitor] WS closed", e.code); setWsOk(false); };
-    ws.onerror  = (e) => { console.error("[LiveMonitor] WS error", e); setWsOk(false); };
+    ws.onclose  = (e) => { setWsOk(false); };
+    ws.onerror  = ()  => { setWsOk(false); };
 
     return () => {
       ws.close();
-      Object.values(pcsRef.current).forEach(pc => pc.close());
-      pcsRef.current = {};
-      setStreams({});
+      /* Revoke semua objectURL */
+      Object.values(prevUrlsRef.current).forEach(u => URL.revokeObjectURL(u));
+      prevUrlsRef.current = {};
+      imgRefsMap.current  = {};
     };
-  }, [token, connectToStreamer]);
+  }, [token, applyFrame]);
 
-  const entries   = Object.entries(streamers);
-  const hasFailed = entries.some(([, s]) => s.status === "failed");
-  const hasTurn   = iceServers.length > 2; // lebih dari STUN saja
+  const entries = Object.entries(streamers);
 
   /* ── Render ── */
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-600/20 border border-violet-500/30">
             <Monitor size={20} className="text-violet-400" />
           </div>
           <div>
             <h1 className="text-lg font-bold">Live Monitor</h1>
-            <p className="text-xs text-slate-500">Pantau layar tim secara real-time</p>
+            <p className="text-xs text-slate-500">Pantau layar tim — Frame Relay, ringan &amp; cepat</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* TURN indicator */}
-          <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${
-            hasTurn
-              ? "border-violet-500/30 bg-violet-500/10 text-violet-400"
-              : "border-slate-700 bg-slate-800/50 text-slate-600"
-          }`}>
-            {hasTurn ? "🛡 TURN aktif" : "TURN belum ada"}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Mode badge */}
+          <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-violet-500/30 bg-violet-500/10 text-violet-400">
+            ⚡ Frame Relay
           </div>
           <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${
             wsOk
@@ -366,27 +304,27 @@ export default function LiveMonitor() {
           {entries.map(([id, info]) => (
             <StreamCard
               key={id}
+              id={id}
               username={info.username}
               task={info.task}
               avatar={info.avatar}
-              status={info.status}
-              stream={streams[id] ?? null}
               brb={info.brb ?? false}
+              imgRef={getImgRef(id)}
             />
           ))}
         </div>
       )}
 
-      {/* TURN server warning (tanpa TURN) */}
-      {hasFailed && !hasTurn && (
-        <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">
-          <p className="font-semibold mb-0.5">💡 Ada stream yang gagal terhubung</p>
-          <p className="text-amber-500/70">
-            Tim &amp; admin di jaringan berbeda.{" "}
-            <strong>TURN server belum aktif</strong> — deploy ulang untuk menginstall coturn secara otomatis.
-          </p>
+      {/* Info card */}
+      <div className="mt-8 rounded-xl border border-slate-700/50 bg-slate-900/40 px-4 py-3 text-xs text-slate-500 flex items-start gap-2">
+        <span className="text-violet-400 mt-0.5">⚡</span>
+        <div>
+          <span className="text-slate-400 font-semibold">Frame Relay aktif</span>
+          {" "}— streamer encode layar 1× (2fps JPEG), server forward ke semua viewer.
+          Tidak butuh WebRTC, ICE, atau TURN server. CPU streamer
+          {" "}<strong className="text-slate-300">jauh lebih ringan</strong>.
         </div>
-      )}
+      </div>
     </div>
   );
 }
