@@ -856,6 +856,16 @@ async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
                     rtc.clients[cid]["task"] = data.get("task", "")
                     await rtc.broadcast_viewers({"type": "streamer_updated", "id": cid, "task": data.get("task", "")})
 
+            elif t == "brb":
+                # Talent pause/resume timer → broadcast BRB overlay ke semua viewer
+                if cid in rtc.clients and rtc.clients[cid].get("role") == "streamer":
+                    rtc.clients[cid]["brb"] = data.get("active", False)
+                    await rtc.broadcast_viewers({
+                        "type":   "streamer_brb",
+                        "id":     cid,
+                        "active": data.get("active", False),
+                    })
+
             # ── WebRTC relay ──────────────────────────────────────
             elif t in ("offer", "answer", "ice"):
                 target = data.get("to")
