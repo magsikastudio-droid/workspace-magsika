@@ -82,18 +82,18 @@ jobs:
           TURN_SECRET=$(cat "$TURN_SECRET_FILE")
 
           # Tulis konfigurasi coturn
-          cat > /etc/turnserver.conf << CONF
-listening-port=3478
-fingerprint
-use-auth-secret
-static-auth-secret=$TURN_SECRET
-realm=workspace.magsikastudio.com
-log-file=/var/log/coturn/turn.log
-no-loopback-peers
-no-multicast-peers
-min-port=49152
-max-port=50000
-CONF
+          printf '%s\n' \
+            'listening-port=3478' \
+            'fingerprint' \
+            'use-auth-secret' \
+            "static-auth-secret=$TURN_SECRET" \
+            'realm=workspace.magsikastudio.com' \
+            'log-file=/var/log/coturn/turn.log' \
+            'no-loopback-peers' \
+            'no-multicast-peers' \
+            'min-port=49152' \
+            'max-port=50000' \
+            > /etc/turnserver.conf
 
           # Aktifkan coturn service
           if grep -q '#TURNSERVER_ENABLED' /etc/default/coturn 2>/dev/null; then
