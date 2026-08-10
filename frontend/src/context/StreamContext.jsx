@@ -331,6 +331,40 @@ export function StreamProvider({ children }) {
   /* Simpan referensi ke resumeStream supaya bisa dipakai di auto-resume click handler */
   useEffect(() => { resumeStreamRef.current = resumeStream; }, [resumeStream]);
 
+  /* ── Blokir refresh / close tab saat stream aktif ──────────────────────────
+   * beforeunload → browser tampilkan "Tinggalkan halaman ini?" dialog bawaan.
+   * Keyboard: F5 dan Ctrl+R / Cmd+R dicegah selama streaming.
+   * Ini mencegah stream mati karena refresh tidak sengaja.
+   * ─────────────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!streaming) return;
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      // Chrome membutuhkan returnValue diset (meski teks tidak ditampilkan)
+      e.returnValue = "Stream sedang aktif. Yakin mau meninggalkan halaman?";
+      return e.returnValue;
+    };
+
+    const handleKeyDown = (e) => {
+      // F5
+      if (e.key === "F5") { e.preventDefault(); return; }
+      // Ctrl+R atau Cmd+R
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        return;
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("keydown", handleKeyDown, true);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [streaming]);
+
   /* ── dismissResume: user memilih tidak mau lanjut ── */
   const dismissResume = useCallback(() => {
     clearStreamState();
