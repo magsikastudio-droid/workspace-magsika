@@ -126,7 +126,7 @@ export default function Todo() {
 
   const role = user?.role || "talent";
   const isAdminOrPM = role === "admin" || role === "pm";
-  const { streaming, connectStreamWithMedia, resumeStream, pendingResume, sendBRB } = useStream();
+  const { streaming, connectStreamWithMedia, resumeStream, pendingResume, sendBRB, dismissResume } = useStream();
 
   const [date, setDate] = useState(todayStr());
   const [viewMode, setViewMode] = useState("list");
@@ -398,26 +398,27 @@ export default function Todo() {
     <div className="space-y-5">
       {/* ── Resume Stream Banner (setelah refresh) ── */}
       {pendingResume && !streaming && (
-        <div className="flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 shadow-sm">
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-violet-300 bg-violet-50 px-4 py-3 shadow-sm animate-pulse-slow">
           <div className="flex items-center gap-3">
-            <span className="text-xl">📺</span>
+            {/* Pulsing dot merah tanda "menunggu resume" */}
+            <span className="relative flex h-3 w-3 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500" />
+            </span>
             <div>
-              <p className="text-sm font-semibold text-amber-900">Stream terputus karena halaman di-refresh</p>
-              <p className="text-xs text-amber-700">Task: <span className="font-medium">{pendingResume.task}</span> — klik tombol untuk melanjutkan stream.</p>
+              <p className="text-sm font-semibold text-violet-900">
+                Stream dijeda — klik di mana saja untuk melanjutkan
+              </p>
+              <p className="text-xs text-violet-600">
+                Task: <span className="font-medium">{pendingResume.task}</span>
+              </p>
             </div>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <button
-              onClick={() => resumeStream(pendingResume.task)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 transition">
-              🔴 Lanjutkan Stream
-            </button>
-            <button
-              onClick={() => { localStorage.removeItem('magsika_active_stream'); window.location.reload(); }}
-              className="rounded-xl border border-amber-300 px-3 py-2 text-xs text-amber-700 hover:bg-amber-100 transition">
-              Abaikan
-            </button>
-          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); dismissResume(); }}
+            className="shrink-0 rounded-lg px-3 py-1.5 text-xs text-violet-500 hover:bg-violet-100 transition border border-violet-200">
+            ✕ Batalkan
+          </button>
         </div>
       )}
 

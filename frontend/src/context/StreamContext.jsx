@@ -73,17 +73,49 @@ export function StreamProvider({ children }) {
   const [iceServers,    setIceServers]    = useState(STUN);
   const [pendingResume, setPendingResume] = useState(null);
 
-  const wsRef         = useRef(null);
-  const streamRef     = useRef(null);
-  const canvasRef     = useRef(null);   // offscreen canvas untuk encode
-  const videoElRef    = useRef(null);   // offscreen video element
-  const frameTimerRef = useRef(null);   // setInterval untuk capture
+  const wsRef           = useRef(null);
+  const streamRef       = useRef(null);
+  const canvasRef       = useRef(null);   // offscreen canvas untuk encode
+  const videoElRef      = useRef(null);   // offscreen video element
+  const frameTimerRef   = useRef(null);   // setInterval untuk capture
+  const resumeStreamRef = useRef(null);   // ref ke fungsi resumeStream (dipakai auto-resume)
 
   /* ── Cek localStorage saat mount ── */
   useEffect(() => {
     const saved = loadStreamState();
     if (saved) setPendingResume(saved);
   }, []);
+
+  /* ── Auto-resume: klik di mana saja saat ada pendingResume ──
+   * getDisplayMedia() butuh user gesture — click anywhere sudah cukup.
+   * Listener didaftarkan hanya saat ada pendingResume & belum streaming.
+   */
+  const autoResumeHandlerRef = useRef(null);
+
+  useEffect(() => {
+    if (!pendingResume || streaming || loading) {
+      // Bersihkan listener lama jika kondisi sudah tidak relevan
+      if (autoResumeHandlerRef.current) {
+        document.removeEventListener("click", autoResumeHandlerRef.current, true);
+        autoResumeHandlerRef.current = null;
+      }
+      return;
+    }
+
+    const handler = () => {
+      autoResumeHandlerRef.current = null;
+      // resumeStream akan dipanggil, pendingResume akan di-clear di sana
+      resumeStreamRef.current?.();
+    };
+    autoResumeHandlerRef.current = handler;
+    // capture:true supaya bisa intercept sebelum elemen lain (termasuk tombol)
+    document.addEventListener("click", handler, { once: true, capture: true });
+
+    return () => {
+      document.removeEventListener("click", handler, true);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingResume, streaming, loading]);
 
   /* ── Ambil TURN credentials (masih dipakai LiveMonitor untuk fallback) ── */
   useEffect(() => {
@@ -296,6 +328,15 @@ export function StreamProvider({ children }) {
     }
   }, [pendingResume, stopStream, _connectFrameRelay]);
 
+  /* Simpan referensi ke resumeStream supaya bisa dipakai di auto-resume click handler */
+  useEffect(() => { resumeStreamRef.current = resumeStream; }, [resumeStream]);
+
+  /* ── dismissResume: user memilih tidak mau lanjut ── */
+  const dismissResume = useCallback(() => {
+    clearStreamState();
+    setPendingResume(null);
+  }, []);
+
   /* ── Cleanup saat unmount ── */
   useEffect(() => () => {
     _stopFrameTimer();
@@ -311,7 +352,7 @@ export function StreamProvider({ children }) {
       streaming, loading, currentTask, iceServers,
       pendingResume,
       startStream, connectStreamWithMedia, resumeStream, stopStream,
-      sendBRB, updateTask,
+      sendBRB, updateTask, dismissResume,
     }}>
       {children}
     </StreamContext.Provider>
