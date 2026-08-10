@@ -10,18 +10,21 @@ export { TOKEN_KEY };
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || null);
   const [loading, setLoading] = useState(true);
   const retryTimerRef = useRef(null);
   const retryCountRef = useRef(0);
 
-  const saveToken = (token) => {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-      setAuthToken(token);
-      wsConnect(token);
+  const saveToken = (tok) => {
+    if (tok) {
+      localStorage.setItem(TOKEN_KEY, tok);
+      setAuthToken(tok);
+      setToken(tok);
+      wsConnect(tok);
     } else {
       localStorage.removeItem(TOKEN_KEY);
       setAuthToken(null);
+      setToken(null);
       wsDisconnect();
     }
   };
@@ -85,7 +88,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
