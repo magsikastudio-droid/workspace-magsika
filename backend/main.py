@@ -900,20 +900,32 @@ def _mask_email(email: str) -> str:
         return "***"
 
 def _smtp_send(host: str, port: int, user: str, password: str, to: str, msg: MIMEMultipart):
-    if port == 465:
-        # SSL langsung (Hostinger default)
-        import ssl as _ssl
-        ctx = _ssl.create_default_context()
-        with smtplib.SMTP_SSL(host, port, timeout=15, context=ctx) as s:
-            s.login(user, password)
-            s.send_message(msg)
-    else:
-        # STARTTLS (Gmail / port 587)
-        with smtplib.SMTP(host, port, timeout=15) as s:
-            s.ehlo()
-            s.starttls()
-            s.login(user, password)
-            s.send_message(msg)
+    try:
+        if port == 465:
+            import ssl as _ssl
+            ctx = _ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, timeout=15, context=ctx) as s:
+                s.login(user, password)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=15) as s:
+                s.ehlo()
+                s.starttls()
+                s.login(user, password)
+                s.send_message(msg)
+        print(f"[SMTP] Email terkirim ke {to}", flush=True)
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[SMTP] Auth gagal: {e}", flush=True)
+        raise RuntimeError(f"SMTP authentication gagal — cek SMTP_USER/SMTP_PASS. Detail: {e}")
+    except smtplib.SMTPConnectError as e:
+        print(f"[SMTP] Koneksi gagal ke {host}:{port}: {e}", flush=True)
+        raise RuntimeError(f"Tidak bisa terhubung ke SMTP {host}:{port}. Detail: {e}")
+    except smtplib.SMTPException as e:
+        print(f"[SMTP] Error: {e}", flush=True)
+        raise RuntimeError(f"SMTP error: {e}")
+    except Exception as e:
+        print(f"[SMTP] Unexpected error: {e}", flush=True)
+        raise RuntimeError(f"Gagal kirim email: {e}")
 
 async def send_otp_email(to_email: str, otp: str, purpose: str = "login"):
     smtp_host = os.getenv("SMTP_HOST", "smtp.hostinger.com")
@@ -1080,7 +1092,10 @@ async def login(req: LoginRequest):
 
     # Kirim OTP ke email pengguna
     otp = await create_otp_record(email, "login", username=user["username"])
-    await send_otp_email(email, otp, purpose="login")
+    try:
+        await send_otp_email(email, otp, purpose="login")
+    except RuntimeError as smtp_err:
+        raise HTTPException(status_code=503, detail=f"Gagal kirim OTP: {smtp_err}")
     return {
         "step": "otp",
         "email_hint": _mask_email(email),
@@ -2484,6 +2499,28 @@ async def update_daily_report_deadline(data: DeadlineUpdate, current_user: dict 
 
 class TelegramSendBody(BaseModel):
     message: str
+
+@app.post("/admin/test-smtp")
+async def test_smtp(current_user: dict = Depends(get_current_user)):
+    """Test SMTP connection — admin only. Returns OK or error detail."""
+    if current_user.get("role") not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    smtp_host = os.getenv("SMTP_HOST", "smtp.hostinger.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "465"))
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_pass = os.getenv("SMTP_PASS", "")
+    smtp_from = os.getenv("SMTP_FROM", smtp_user)
+    if not smtp_user or not smtp_pass:
+        return {"ok": False, "error": "SMTP_USER atau SMTP_PASS belum di-set di .env"}
+    try:
+        otp = await create_otp_record(current_user["email"], "login", username=current_user["username"])
+        await send_otp_email(current_user["email"], otp, purpose="login")
+        return {"ok": True, "message": f"Email test berhasil dikirim ke {current_user['email']}", "smtp_host": smtp_host, "smtp_port": smtp_port, "smtp_user": smtp_user, "smtp_from": smtp_from}
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e), "smtp_host": smtp_host, "smtp_port": smtp_port, "smtp_user": smtp_user}
+    except Exception as e:
+        return {"ok": False, "error": f"Unexpected: {e}"}
+
 
 @app.post("/telegram/send")
 async def send_telegram_message(body: TelegramSendBody, current_user: dict = Depends(get_current_user)):
