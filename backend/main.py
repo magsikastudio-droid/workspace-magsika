@@ -2,6 +2,7 @@ import os
 import io
 import json
 import base64
+import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -695,6 +696,124 @@ async def public_ws_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         public_manager.disconnect(websocket)
+
+
+# ════════════════════════════════════════════════════════════
+# WebRTC Signaling — screen share monitoring
+# ════════════════════════════════════════════════════════════
+
+class RTCSignalingManager:
+    """Relay WebRTC offer/answer/ICE between streamers (team) and viewers (admin)."""
+
+    def __init__(self):
+        # client_id → {ws, role, username, task, avatar}
+        self.clients: Dict[str, dict] = {}
+
+    def streamers(self) -> Dict[str, dict]:
+        return {k: v for k, v in self.clients.items() if v["role"] == "streamer"}
+
+    def viewers(self) -> Dict[str, dict]:
+        return {k: v for k, v in self.clients.items() if v["role"] == "viewer"}
+
+    async def send(self, client_id: str, msg: dict):
+        c = self.clients.get(client_id)
+        if not c:
+            return
+        try:
+            await c["ws"].send_json(msg)
+        except Exception:
+            self.clients.pop(client_id, None)
+
+    async def broadcast_viewers(self, msg: dict):
+        for cid in list(self.viewers()):
+            await self.send(cid, msg)
+
+
+rtc = RTCSignalingManager()
+
+
+@app.websocket("/ws/rtc")
+async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
+    # Verify token
+    if not token:
+        await websocket.close(code=4001)
+        return
+    try:
+        payload = decode_token(token)
+        username = payload.get("sub")
+        if not username:
+            raise ValueError
+        user = await db.users.find_one({"username": username})
+        if not user:
+            raise ValueError
+    except Exception:
+        await websocket.close(code=4001)
+        return
+
+    await websocket.accept()
+    cid  = str(uuid.uuid4())[:8]
+    role = None
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            t    = data.get("type")
+
+            if t == "join_streamer":
+                role = "streamer"
+                rtc.clients[cid] = {
+                    "ws":       websocket,
+                    "role":     "streamer",
+                    "username": data.get("username") or user.get("name") or username,
+                    "task":     data.get("task", ""),
+                    "avatar":   user.get("avatar", ""),
+                }
+                await rtc.broadcast_viewers({
+                    "type":     "streamer_joined",
+                    "id":       cid,
+                    "username": rtc.clients[cid]["username"],
+                    "task":     rtc.clients[cid]["task"],
+                    "avatar":   rtc.clients[cid]["avatar"],
+                })
+
+            elif t == "join_viewer":
+                role = "viewer"
+                rtc.clients[cid] = {
+                    "ws":       websocket,
+                    "role":     "viewer",
+                    "username": user.get("name") or username,
+                }
+                await websocket.send_json({
+                    "type": "streamers_list",
+                    "streamers": [
+                        {"id": k, "username": v["username"], "task": v["task"], "avatar": v.get("avatar", "")}
+                        for k, v in rtc.streamers().items()
+                    ],
+                })
+
+            elif t == "update_task":
+                if cid in rtc.clients:
+                    rtc.clients[cid]["task"] = data.get("task", "")
+                    await rtc.broadcast_viewers({"type": "streamer_updated", "id": cid, "task": data.get("task", "")})
+
+            # ── WebRTC relay ──────────────────────────────────────
+            elif t in ("offer", "answer", "ice"):
+                target = data.get("to")
+                relay  = {"type": t, "from": cid}
+                if t == "ice":
+                    relay["candidate"] = data.get("candidate")
+                else:
+                    relay["sdp"] = data.get("sdp")
+                await rtc.send(target, relay)
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"RTC WS [{cid}] error: {e}")
+    finally:
+        rtc.clients.pop(cid, None)
+        if role == "streamer":
+            await rtc.broadcast_viewers({"type": "streamer_left", "id": cid})
 
 
 def verify_default_admin(username: str, password: str) -> Optional[dict]:
