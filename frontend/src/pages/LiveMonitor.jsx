@@ -95,7 +95,6 @@ function StreamCard({ id, username, task, avatar, brb, imgRef }) {
         >
           <p className="text-5xl mb-3">☕</p>
           <p className="text-white text-2xl font-black tracking-widest uppercase">Be Right Back!</p>
-          <p className="text-white/50 text-xs mt-2 tracking-wide">Timer dijeda oleh {username}</p>
           <div className="flex gap-1.5 mt-4">
             {[0, 1, 2].map(i => (
               <div
