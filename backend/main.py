@@ -3,6 +3,11 @@ import io
 import json
 import base64
 import uuid
+import random
+import hashlib
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -640,6 +645,12 @@ async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
 
 @app.on_event("startup")
 async def on_startup():
+    # TTL index agar OTP otomatis terhapus dari MongoDB setelah expire
+    try:
+        await db.otps.create_index("expires_at", expireAfterSeconds=0)
+    except Exception:
+        pass
+
     if scheduler:
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
@@ -835,6 +846,104 @@ async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
             })
 
 
+# ═══════════════════════════════════════════════════════════════
+#  OTP — email verification helpers
+# ═══════════════════════════════════════════════════════════════
+
+def _gen_otp() -> str:
+    return str(random.randint(100000, 999999))
+
+def _hash_otp(otp: str) -> str:
+    return hashlib.sha256(otp.encode()).hexdigest()
+
+def _mask_email(email: str) -> str:
+    try:
+        local, domain = email.split("@", 1)
+        masked = local[:2] + "***" if len(local) > 2 else "***"
+        return f"{masked}@{domain}"
+    except Exception:
+        return "***"
+
+def _smtp_send(gmail_user: str, gmail_pass: str, to: str, msg: MIMEMultipart):
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as s:
+        s.ehlo()
+        s.starttls()
+        s.login(gmail_user, gmail_pass)
+        s.send_message(msg)
+
+async def send_otp_email(to_email: str, otp: str, purpose: str = "login"):
+    gmail_user = os.getenv("GMAIL_USER", "")
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD", "")
+    if not gmail_user or not gmail_pass:
+        raise HTTPException(status_code=503, detail="Email service belum dikonfigurasi — tambahkan GMAIL_USER dan GMAIL_APP_PASSWORD di server")
+
+    action = "masuk ke" if purpose == "login" else "mendaftar di"
+    msg = MIMEMultipart("alternative")
+    msg["From"] = f"Magsika Workspace <{gmail_user}>"
+    msg["To"] = to_email
+    msg["Subject"] = f"Kode OTP Workspace Magsika — {otp}"
+
+    html_body = f"""
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#0a0a0f;font-family:sans-serif">
+<div style="max-width:480px;margin:40px auto;padding:36px;background:#111827;border-radius:20px;border:1px solid rgba(255,255,255,0.08)">
+  <div style="margin-bottom:28px">
+    <span style="font-size:28px">🔐</span>
+    <h2 style="color:#f1f5f9;margin:8px 0 4px;font-size:20px">Kode Verifikasi</h2>
+    <p style="color:#64748b;margin:0;font-size:14px">Untuk {action} <strong style="color:#a5b4fc">Magsika Workspace</strong></p>
+  </div>
+  <div style="background:#1e1b4b;border:1px solid #4f46e5;border-radius:14px;padding:28px;text-align:center;margin-bottom:24px">
+    <p style="color:#94a3b8;font-size:12px;margin:0 0 12px;letter-spacing:0.05em;text-transform:uppercase">Kode OTP kamu</p>
+    <span style="font-size:44px;font-weight:800;letter-spacing:14px;color:#a5b4fc;font-family:monospace">{otp}</span>
+  </div>
+  <p style="color:#475569;font-size:12px;line-height:1.6;margin:0">
+    ⏱ Kode berlaku <strong>5 menit</strong>.<br>
+    🔒 Jangan bagikan kode ini ke siapapun, termasuk admin.
+  </p>
+</div>
+</body>
+</html>"""
+    msg.attach(MIMEText(html_body, "html"))
+
+    import asyncio as _aio
+    loop = _aio.get_event_loop()
+    await loop.run_in_executor(None, _smtp_send, gmail_user, gmail_pass, to_email, msg)
+
+
+async def create_otp_record(email: str, purpose: str, username: str = "") -> str:
+    """Generate OTP, store hashed in DB, return plain OTP."""
+    otp = _gen_otp()
+    # Hapus OTP lama untuk email+purpose yang sama
+    await db.otps.delete_many({"email": email, "purpose": purpose})
+    await db.otps.insert_one({
+        "email": email,
+        "username": username,
+        "purpose": purpose,
+        "otp_hash": _hash_otp(otp),
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+        "used": False,
+        "created_at": datetime.now(timezone.utc),
+    })
+    return otp
+
+
+async def verify_otp_record(email: str, otp: str, purpose: str) -> bool:
+    """Verify OTP. Marks as used if valid."""
+    record = await db.otps.find_one({
+        "email": email,
+        "purpose": purpose,
+        "otp_hash": _hash_otp(otp),
+        "used": False,
+    })
+    if not record:
+        return False
+    if datetime.now(timezone.utc) > record["expires_at"].replace(tzinfo=timezone.utc) if record["expires_at"].tzinfo is None else datetime.now(timezone.utc) > record["expires_at"]:
+        return False
+    await db.otps.update_one({"_id": record["_id"]}, {"$set": {"used": True}})
+    return True
+
+
 def verify_default_admin(username: str, password: str) -> Optional[dict]:
     if username == "admin" and password == "password":
         return {
@@ -885,14 +994,59 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 @app.post("/auth/login")
 async def login(req: LoginRequest):
-    from datetime import timedelta
     user = await authenticate_user(req.username, req.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Username atau password salah")
     if user.get("status") == "pending":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Akun menunggu persetujuan admin")
+
+    email = user.get("email", "")
+
+    # Akun default admin (email lokal) — bypass OTP
+    if email.endswith("@magsika.local"):
+        token = create_access_token({"sub": user["username"]}, expires_delta=timedelta(days=365))
+        return {"access_token": token, "token_type": "bearer", "user": {"username": user["username"], "full_name": user["full_name"], "email": email, "role": user.get("role", "talent"), "status": user.get("status", "active")}}
+
+    # Kirim OTP ke email pengguna
+    otp = await create_otp_record(email, "login", username=user["username"])
+    await send_otp_email(email, otp, purpose="login")
+    return {
+        "step": "otp",
+        "email_hint": _mask_email(email),
+        "message": f"Kode OTP telah dikirim ke {_mask_email(email)}",
+    }
+
+
+class VerifyLoginRequest(BaseModel):
+    username: str
+    otp: str
+
+
+@app.post("/auth/verify-login")
+async def verify_login(req: VerifyLoginRequest):
+    """Step 2 login: verifikasi OTP → return token."""
+    # Cari user untuk mendapatkan email-nya
+    user = await db.users.find_one({"username": req.username})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User tidak ditemukan")
+
+    email = user.get("email", "")
+    valid = await verify_otp_record(email, req.otp, "login")
+    if not valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Kode OTP salah atau sudah kedaluwarsa")
+
     token = create_access_token({"sub": user["username"]}, expires_delta=timedelta(days=365))
-    return {"access_token": token, "token_type": "bearer", "user": {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": user.get("role", "talent"), "status": user.get("status", "active")}}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "username": user["username"],
+            "full_name": user["full_name"],
+            "email": email,
+            "role": user.get("role", "talent"),
+            "status": user.get("status", "active"),
+        },
+    }
 
 
 @app.get("/auth/me")
@@ -1802,6 +1956,12 @@ class RegisterRequest(BaseModel):
     full_name: str
     email: EmailStr
     password: str
+    otp: Optional[str] = None   # wajib saat verifikasi final
+
+
+class SendRegisterOTPRequest(BaseModel):
+    email: EmailStr
+    username: str   # cek duplikat sebelum kirim OTP
 
 
 class InviteUserRequest(BaseModel):
@@ -1843,23 +2003,51 @@ class EmailWhitelistUpdate(BaseModel):
     emails: List[str]
 
 
+@app.post("/auth/send-register-otp")
+async def send_register_otp(req: SendRegisterOTPRequest):
+    """Step 1 register: kirim OTP ke email untuk verifikasi kepemilikan."""
+    existing = await db.users.find_one({"$or": [{"username": req.username}, {"email": req.email}]})
+    if existing:
+        raise HTTPException(status_code=400, detail="Username atau email sudah digunakan")
+
+    whitelist_doc = await db.settings.find_one({"key": "email_whitelist"})
+    whitelist = whitelist_doc.get("emails", []) if whitelist_doc else []
+    if whitelist and req.email not in whitelist:
+        raise HTTPException(status_code=403, detail="Email tidak ada dalam whitelist")
+
+    otp = await create_otp_record(str(req.email), "register")
+    await send_otp_email(str(req.email), otp, purpose="register")
+    return {"message": f"Kode OTP dikirim ke {_mask_email(str(req.email))}"}
+
+
 @app.post("/auth/register")
 async def register(req: RegisterRequest):
+    """Step 2 register: verifikasi OTP lalu buat akun."""
+    if not req.otp:
+        raise HTTPException(status_code=400, detail="Kode OTP wajib diisi")
+
     try:
         whitelist_doc = await db.settings.find_one({"key": "email_whitelist"})
         whitelist = whitelist_doc.get("emails", []) if whitelist_doc else []
         if whitelist and req.email not in whitelist:
             raise HTTPException(status_code=403, detail="Email tidak ada dalam whitelist")
+
         existing = await db.users.find_one({"$or": [{"username": req.username}, {"email": req.email}]})
         if existing:
             raise HTTPException(status_code=400, detail="Username atau email sudah digunakan")
+
+        valid = await verify_otp_record(str(req.email), req.otp, "register")
+        if not valid:
+            raise HTTPException(status_code=400, detail="Kode OTP salah atau sudah kedaluwarsa")
+
         user_doc = {
             "username": req.username,
             "full_name": req.full_name,
-            "email": req.email,
+            "email": str(req.email),
             "hashed_password": hash_password(req.password),
             "role": "talent",
             "status": "pending",
+            "email_verified": True,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.users.insert_one(user_doc)

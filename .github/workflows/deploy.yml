@@ -53,7 +53,16 @@ jobs:
 
       - name: Write env file on VPS
         run: |
-          ssh vps "grep -v '^ANTHROPIC_API_KEY=' /root/admin-dashboard/backend/.env > /tmp/.env_tmp 2>/dev/null || true && mv /tmp/.env_tmp /root/admin-dashboard/backend/.env && echo 'ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}' >> /root/admin-dashboard/backend/.env"
+          ssh vps bash << 'ENVSSH'
+          ENV=/root/admin-dashboard/backend/.env
+          touch "$ENV"
+          for KEY in ANTHROPIC_API_KEY GMAIL_USER GMAIL_APP_PASSWORD; do
+            sed -i "/^${KEY}=/d" "$ENV"
+          done
+          ENVSSH
+          ssh vps "echo 'ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}' >> /root/admin-dashboard/backend/.env"
+          ssh vps "echo 'GMAIL_USER=${{ secrets.GMAIL_USER }}' >> /root/admin-dashboard/backend/.env"
+          ssh vps "echo 'GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}' >> /root/admin-dashboard/backend/.env"
 
       - name: Install Python dependencies on VPS
         run: |
