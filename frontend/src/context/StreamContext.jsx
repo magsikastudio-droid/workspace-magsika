@@ -48,8 +48,8 @@ const FRAME_Q   = 0.60;    // JPEG quality 60% — balance kualitas vs bandwidth
 
 const LS_KEY = "magsika_active_stream";
 
-function saveStreamState(task) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify({ task, ts: Date.now() })); } catch {}
+function saveStreamState(task, orderId) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ task, orderId, ts: Date.now() })); } catch {}
 }
 function clearStreamState() {
   try { localStorage.removeItem(LS_KEY); } catch {}
@@ -216,7 +216,9 @@ export function StreamProvider({ children }) {
   }, []);
 
   /* ── Internal: koneksi ke /ws/screen (frame relay) ── */
-  const _connectFrameRelay = useCallback((mediaStream, taskTitle) => {
+  const currentOrderIdRef = useRef("");
+
+  const _connectFrameRelay = useCallback((mediaStream, taskTitle, orderId = "") => {
     if (!token) { toast.error("Belum login — tidak bisa stream."); return; }
 
     const ws = new WebSocket(`${WS_BASE}/ws/screen?token=${token}`);
@@ -229,13 +231,15 @@ export function StreamProvider({ children }) {
         type:     "join_streamer",
         username: user?.name || user?.full_name || user?.username || "Tim",
         task:     taskTitle,
+        order_id: orderId || "",
       }));
+      currentOrderIdRef.current = orderId || "";
       _startFrameCapture(mediaStream, ws);
       setStreaming(true);
       setCurrentTask(taskTitle);
       setLoading(false);
       setPendingResume(null);
-      saveStreamState(taskTitle);
+      saveStreamState(taskTitle, orderId);
       toast.success("🔴 Stream dimulai (Frame Relay, ringan).");
     };
 
@@ -251,7 +255,7 @@ export function StreamProvider({ children }) {
 
     ws.onclose = (ev) => {
       console.log("[Stream] WS closed", ev.code);
-      if (streaming || currentTask) saveStreamState(currentTask || taskTitle);
+      if (streaming || currentTask) saveStreamState(currentTask || taskTitle, currentOrderIdRef.current);
       _stopFrameTimer();
       setStreaming(false);
       setLoading(false);
@@ -267,7 +271,7 @@ export function StreamProvider({ children }) {
   }, [token, user, _startFrameCapture, _stopFrameTimer, stopStream, streaming, currentTask]);
 
   /* ── startStream: tampilkan picker lalu connect ── */
-  const startStream = useCallback(async (taskTitle = "") => {
+  const startStream = useCallback(async (taskTitle = "", orderId = "") => {
     if (streaming || loading) return;
     setLoading(true);
     try {
@@ -280,7 +284,7 @@ export function StreamProvider({ children }) {
         toast.info("Stream dihentikan.");
         stopStream();
       };
-      _connectFrameRelay(mediaStream, taskTitle);
+      _connectFrameRelay(mediaStream, taskTitle, orderId);
     } catch (err) {
       setLoading(false);
       if (err.name === "NotAllowedError") return;
@@ -292,7 +296,7 @@ export function StreamProvider({ children }) {
   }, [streaming, loading, stopStream, _connectFrameRelay]);
 
   /* ── connectStreamWithMedia: gunakan stream yang sudah di-capture ── */
-  const connectStreamWithMedia = useCallback((mediaStream, taskTitle = "") => {
+  const connectStreamWithMedia = useCallback((mediaStream, taskTitle = "", orderId = "") => {
     if (streaming || loading) return;
     if (!mediaStream) return;
     streamRef.current = mediaStream;
@@ -301,12 +305,13 @@ export function StreamProvider({ children }) {
       toast.info("Stream dihentikan.");
       stopStream();
     };
-    _connectFrameRelay(mediaStream, taskTitle);
+    _connectFrameRelay(mediaStream, taskTitle, orderId);
   }, [streaming, loading, stopStream, _connectFrameRelay]);
 
   /* ── resumeStream: re-capture setelah refresh ── */
-  const resumeStream = useCallback(async (taskTitle = "") => {
+  const resumeStream = useCallback(async (taskTitle = "", orderId = "") => {
     const task = taskTitle || pendingResume?.task || "";
+    const oid  = orderId || pendingResume?.orderId || "";
     clearStreamState();
     setPendingResume(null);
     setLoading(true);
@@ -320,7 +325,7 @@ export function StreamProvider({ children }) {
         toast.info("Stream dihentikan.");
         stopStream();
       };
-      _connectFrameRelay(mediaStream, task);
+      _connectFrameRelay(mediaStream, task, oid);
     } catch (err) {
       setLoading(false);
       clearStreamState();

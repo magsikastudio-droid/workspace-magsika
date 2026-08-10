@@ -302,7 +302,7 @@ export default function Todo() {
       const payload = { timer_started: new Date().toISOString() };
       if (task.status === "pending") payload.status = "in progress";
       await updateTask(task.id, payload);
-      connectStreamWithMedia(capturedMedia, task.title);
+      connectStreamWithMedia(capturedMedia, task.title, task.order_id);
     }
   }, [updateTask, streaming, connectStreamWithMedia, sendBRB]);
 

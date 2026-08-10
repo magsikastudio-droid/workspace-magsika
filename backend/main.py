@@ -784,30 +784,47 @@ class FrameRelayManager:
     """1 streamer → server → N viewers. Streamer encode 1x, server forward."""
 
     def __init__(self):
-        # streamer_id → {ws, username, task, avatar, brb}
+        # streamer_id → {ws, username, task, avatar, brb, order_id}
         self.streamers: Dict[str, dict] = {}
-        # viewer_id → ws
+        # viewer_id → ws (internal, authenticated — sees all streamers)
         self.viewers:   Dict[str, WebSocket] = {}
+        # public_viewer_id → {ws, order_id} — scoped to exactly one order, no talent identity
+        self.public_viewers: Dict[str, dict] = {}
 
     async def broadcast_frame(self, streamer_id: str, frame_bytes: bytes):
         """Forward raw JPEG bytes ke semua viewer dengan header JSON kecil."""
-        if not self.viewers:
-            return
         info = self.streamers.get(streamer_id, {})
-        # Kirim metadata dulu sebagai JSON, lalu frame sebagai binary
-        meta = {"type": "frame", "id": streamer_id,
-                "username": info.get("username", ""),
-                "task":     info.get("task", ""),
-                "brb":      info.get("brb", False)}
-        dead = []
-        for vid, vws in list(self.viewers.items()):
-            try:
-                await vws.send_json(meta)
-                await vws.send_bytes(frame_bytes)
-            except Exception:
-                dead.append(vid)
-        for vid in dead:
-            self.viewers.pop(vid, None)
+
+        if self.viewers:
+            meta = {"type": "frame", "id": streamer_id,
+                    "username": info.get("username", ""),
+                    "task":     info.get("task", ""),
+                    "brb":      info.get("brb", False)}
+            dead = []
+            for vid, vws in list(self.viewers.items()):
+                try:
+                    await vws.send_json(meta)
+                    await vws.send_bytes(frame_bytes)
+                except Exception:
+                    dead.append(vid)
+            for vid in dead:
+                self.viewers.pop(vid, None)
+
+        streamer_order_id = info.get("order_id", "")
+        if streamer_order_id and self.public_viewers:
+            # No username/task leaked to public viewers — just the pixels.
+            pub_meta = {"type": "frame", "brb": info.get("brb", False)}
+            dead_pub = []
+            for vid, pv in list(self.public_viewers.items()):
+                if pv.get("order_id") != streamer_order_id:
+                    continue
+                try:
+                    await pv["ws"].send_json(pub_meta)
+                    await pv["ws"].send_bytes(frame_bytes)
+                except Exception:
+                    dead_pub.append(vid)
+            for vid in dead_pub:
+                self.public_viewers.pop(vid, None)
 
     async def broadcast_meta(self, msg: dict):
         dead = []
@@ -822,6 +839,9 @@ class FrameRelayManager:
     def streamer_list(self):
         return [{"id": k, "username": v["username"], "task": v["task"], "brb": v.get("brb", False)}
                 for k, v in self.streamers.items()]
+
+    def has_stream_for_order(self, order_id: str) -> bool:
+        return bool(order_id) and any(s.get("order_id") == order_id for s in self.streamers.values())
 
 
 frame_relay = FrameRelayManager()
@@ -892,6 +912,7 @@ async def screen_relay(websocket: WebSocket, token: str = Query(None)):
                     "task":     data.get("task", ""),
                     "avatar":   user.get("avatar", ""),
                     "brb":      False,
+                    "order_id": data.get("order_id", ""),
                 }
                 await frame_relay.broadcast_meta({
                     "type": "streamer_joined", "id": cid,
@@ -903,6 +924,8 @@ async def screen_relay(websocket: WebSocket, token: str = Query(None)):
                     "count": len(frame_relay.streamers),
                     "names": [v["username"] for v in frame_relay.streamers.values()],
                 })
+                if data.get("order_id"):
+                    await public_manager.broadcast({"type": "refresh"})
 
             elif t == "join_viewer":
                 role = "viewer"
@@ -932,6 +955,7 @@ async def screen_relay(websocket: WebSocket, token: str = Query(None)):
         print(f"[screen_relay] {cid} error: {e}", flush=True)
     finally:
         if role == "streamer":
+            stopped_order_id = frame_relay.streamers.get(cid, {}).get("order_id", "")
             frame_relay.streamers.pop(cid, None)
             await frame_relay.broadcast_meta({"type": "streamer_left", "id": cid})
             await manager.broadcast({
@@ -939,9 +963,80 @@ async def screen_relay(websocket: WebSocket, token: str = Query(None)):
                 "count": len(frame_relay.streamers),
                 "names": [v["username"] for v in frame_relay.streamers.values()],
             })
+            if stopped_order_id:
+                for pv in list(frame_relay.public_viewers.values()):
+                    if pv.get("order_id") == stopped_order_id:
+                        try:
+                            await pv["ws"].send_json({"type": "live_status", "live": False})
+                        except Exception:
+                            pass
+                await public_manager.broadcast({"type": "refresh"})
         elif role == "viewer":
             frame_relay.viewers.pop(cid, None)
 
+
+class PublicStreamVerify(BaseModel):
+    public_code: str
+    secret: str
+
+
+@app.post("/public/stream/verify")
+async def verify_public_stream(data: PublicStreamVerify):
+    """Client-facing gate: matches their own Fiverr/Etsy order code (never shown on the
+    public page) against the order's stored order_id. On success, issues a short-lived
+    ticket scoped to that one order for the public frame-relay viewer."""
+    secret = (data.secret or "").strip()
+    if not secret:
+        raise HTTPException(status_code=400, detail="Kode tidak boleh kosong")
+    try:
+        records = await db.orders.find({"status": {"$ne": "Cancel"}}).to_list(300)
+    except Exception:
+        records = []
+    matched = next((r for r in records if build_public_code(r) == data.public_code), None)
+    if not matched:
+        raise HTTPException(status_code=404, detail="Order tidak ditemukan")
+    stored_id = (matched.get("order_id") or "").strip()
+    if not stored_id or stored_id.lower() != secret.lower():
+        raise HTTPException(status_code=403, detail="Kode tidak cocok")
+    order_key_val = str(matched.get("_id")) if matched.get("_id") else matched.get("id", "")
+    if not frame_relay.has_stream_for_order(order_key_val):
+        raise HTTPException(status_code=404, detail="Order ini sedang tidak live")
+    ticket = create_access_token(
+        {"purpose": "public_stream", "order_id": order_key_val},
+        expires_delta=timedelta(minutes=30),
+    )
+    return {"ticket": ticket}
+
+
+@app.websocket("/public/ws/screen")
+async def public_screen_viewer(websocket: WebSocket, ticket: str = Query(None)):
+    """No login — access is gated entirely by the short-lived ticket from
+    /public/stream/verify. Only ever relays frames for the one order it's scoped to."""
+    if not ticket:
+        await websocket.close(code=4001)
+        return
+    try:
+        payload = decode_token(ticket)
+        if payload.get("purpose") != "public_stream" or not payload.get("order_id"):
+            raise ValueError("invalid ticket")
+        order_id = payload["order_id"]
+    except Exception:
+        await websocket.close(code=4001)
+        return
+
+    await websocket.accept()
+    vid = str(uuid.uuid4())[:8]
+    frame_relay.public_viewers[vid] = {"ws": websocket, "order_id": order_id}
+    try:
+        await websocket.send_json({"type": "live_status", "live": frame_relay.has_stream_for_order(order_id)})
+        while True:
+            await websocket.receive()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        frame_relay.public_viewers.pop(vid, None)
 
 
 @app.websocket("/ws/rtc")
@@ -1633,7 +1728,7 @@ async def compute_estimated_starts(jkt_today: str) -> Dict[str, str]:
     return result
 
 
-def format_public_order(record: dict, tasks: Optional[list] = None, estimated_start: Optional[str] = None) -> dict:
+def format_public_order(record: dict, tasks: Optional[list] = None, estimated_start: Optional[str] = None, is_live: bool = False) -> dict:
     milestones = record.get("milestones", []) or []
     tasks = tasks or []
     # tasks is sorted oldest -> newest; most recent first for history/timer purposes
@@ -1698,6 +1793,7 @@ def format_public_order(record: dict, tasks: Optional[list] = None, estimated_st
         "timer": timer,
         "history": history,
         "estimated_start": estimated_start if column == "Scheduled" else None,
+        "is_live": is_live,
     }
 
 
@@ -1750,7 +1846,10 @@ async def public_queue():
 
     return {
         "orders": [
-            format_public_order(r, task_map.get(order_key(r)), estimated_starts.get(order_key(r)))
+            format_public_order(
+                r, task_map.get(order_key(r)), estimated_starts.get(order_key(r)),
+                frame_relay.has_stream_for_order(order_key(r)),
+            )
             for r in records
         ],
         "commissions_open": commissions_open,
