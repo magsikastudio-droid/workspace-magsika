@@ -1,84 +1,135 @@
 #!/usr/bin/env python3
 """
-Tambahkan WebSocket support ke nginx config workspace.magsikastudio.com.
-Dipanggil otomatis dari deploy.yml setiap deploy.
+Fix nginx WebSocket support untuk workspace.magsikastudio.com.
+Pakai 'nginx -T' untuk dump seluruh config aktif → cari file yang benar.
 """
 import os, re, subprocess, sys
 
-# ── Tampilkan status backend ──────────────────────────────
-print("\n=== Backend service status ===")
-r = subprocess.run(["systemctl", "is-active", "admin-dashboard"], capture_output=True, text=True)
-print("State:", r.stdout.strip())
+# ── Dump SELURUH nginx config aktif ──────────────────────
+print("\n=== nginx -T (full config dump) ===")
+result = subprocess.run(["nginx", "-T"], capture_output=True, text=True)
+full_dump = result.stdout + result.stderr
+print(full_dump[:8000])   # Tampilkan 8000 karakter pertama
 
-print("\n=== Backend recent logs (last 15 lines) ===")
-r = subprocess.run(
-    ["journalctl", "-u", "admin-dashboard", "--no-pager", "-n", "15"],
-    capture_output=True, text=True,
-)
-print(r.stdout)
+# ── Parse: cari file yang berisi workspace.magsikastudio.com ─
+# nginx -T menampilkan: # configuration file /path/to/file:
+# lalu isi file tersebut di bawahnya
+target_file = None
+current_file = None
 
-# ── List semua nginx config ───────────────────────────────
-enabled_dir = "/etc/nginx/sites-enabled"
-try:
-    all_configs = [f for f in os.listdir(enabled_dir) if not f.startswith(".")]
-except FileNotFoundError:
-    print("ERROR: /etc/nginx/sites-enabled tidak ditemukan"); sys.exit(1)
+for line in full_dump.splitlines():
+    m = re.match(r'#\s*configuration file\s+(.+):', line)
+    if m:
+        current_file = m.group(1).strip()
+    if "workspace.magsikastudio.com" in line and current_file:
+        target_file = current_file
+        print(f"\n✅ Config workspace ditemukan di: {target_file}")
+        break
 
-print(f"\n=== Semua nginx configs di {enabled_dir} ===")
-for c in sorted(all_configs):
-    print(" -", c)
-
-# ── Cari config yang punya workspace.magsikastudio.com ───
-target_path = None
-for conf_name in sorted(all_configs):
-    conf_path = f"{enabled_dir}/{conf_name}"
-    try:
-        with open(conf_path) as f:
-            content = f.read()
-        if "workspace.magsikastudio.com" in content:
-            target_path = conf_path
-            print(f"\n✅ Ditemukan workspace config: {conf_path}")
-            break
-    except Exception:
-        pass
-
-# Fallback: cari config 'admin-dashboard' jika tidak ketemu dari server_name
-if not target_path:
-    for candidate in ["admin-dashboard", "workspace", "workspace.magsikastudio.com"]:
-        p = f"{enabled_dir}/{candidate}"
-        if os.path.exists(p):
-            target_path = p
-            print(f"\n⚠️  Tidak ada server_name match — pakai fallback: {target_path}")
+if not target_file:
+    print("\n⚠️  Tidak ditemukan workspace.magsikastudio.com dalam nginx -T")
+    print("Mencoba fallback ke file admin-dashboard / workspace...")
+    for candidate in [
+        "/etc/nginx/sites-enabled/admin-dashboard",
+        "/etc/nginx/sites-available/admin-dashboard",
+        "/etc/nginx/sites-enabled/workspace",
+        "/etc/nginx/conf.d/workspace.conf",
+    ]:
+        if os.path.exists(candidate):
+            target_file = candidate
+            print(f"Fallback: {target_file}")
             break
 
-if not target_path:
-    print("\nERROR: Tidak bisa menemukan nginx config untuk workspace.magsikastudio.com!")
-    print("Config yang tersedia:", all_configs)
-    sys.exit(1)
+    if not target_file:
+        print("ERROR: Tidak bisa menemukan nginx config workspace!")
+        print("Tulis config baru dari awal...")
 
-with open(target_path) as f:
+        # Cari SSL cert path
+        ssl_path = None
+        for p in [
+            "/etc/nginx/ssl/workspace.magsikastudio.com",
+            "/etc/letsencrypt/live/workspace.magsikastudio.com",
+            "/etc/ssl/workspace.magsikastudio.com",
+        ]:
+            if os.path.exists(p):
+                ssl_path = p
+                break
+
+        if not ssl_path:
+            print("ERROR: SSL cert untuk workspace.magsikastudio.com tidak ditemukan!")
+            print("Cari manual di VPS: find /etc -name '*.pem' 2>/dev/null")
+            sys.exit(1)
+
+        print(f"SSL cert path: {ssl_path}")
+
+        # Tulis config baru
+        new_conf = f"""server {{
+    listen 80;
+    server_name workspace.magsikastudio.com;
+    return 301 https://$host$request_uri;
+}}
+
+server {{
+    listen 443 ssl;
+    server_name workspace.magsikastudio.com;
+
+    ssl_certificate {ssl_path}/fullchain.pem;
+    ssl_certificate_key {ssl_path}/privkey.pem;
+
+    root /root/admin-dashboard/frontend/dist;
+    index index.html;
+
+    # WebSocket proxy (notifikasi + live stream)
+    location ~ ^/api/(ws.*)$ {{
+        proxy_pass http://127.0.0.1:8001/$1$is_args$args;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 3600;
+        proxy_send_timeout 3600;
+    }}
+
+    location /api/ {{
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }}
+
+    location / {{
+        try_files $uri $uri/ /index.html;
+    }}
+}}
+"""
+        target_file = "/etc/nginx/sites-available/workspace-magsika"
+        with open(target_file, "w") as f:
+            f.write(new_conf)
+
+        link = "/etc/nginx/sites-enabled/workspace-magsika"
+        if not os.path.exists(link):
+            os.symlink(target_file, link)
+
+        print(f"Config baru ditulis ke: {target_file}")
+
+# ── Baca file target ──────────────────────────────────────
+with open(target_file) as f:
     original = f.read()
 
-print(f"\n=== Isi nginx config ({target_path}) ===")
+print(f"\n=== Isi {target_file} ===")
 print(original)
 print("=" * 60)
 
-# ── Cek apakah sudah ada WebSocket support di config ini ─
+# ── Cek apakah WebSocket sudah ada ───────────────────────
 if "proxy_http_version" in original:
-    print("\n✅ WebSocket support sudah ada di config ini.")
+    print("\n✅ WebSocket support sudah ada di config ini. Selesai.")
+    sys.exit(0)
 
-    # Tapi cek apakah /api/ws sudah punya location block sendiri
-    if "/ws/rtc" not in original and "location ~ ^/api/(ws" not in original:
-        print("⚠️  Tapi belum ada location khusus untuk /ws/rtc — menambahkan...")
-        # Lanjut ke proses penambahan di bawah
-    else:
-        print("Location /ws/rtc sudah ada. Selesai.")
-        sys.exit(0)
+print("\n⚠️  WebSocket headers belum ada — menambahkan...")
 
-# ── Buat WebSocket location block ────────────────────────
-ws_block = """
-    # WebSocket proxy — ditambah otomatis oleh deploy script
-    # Menangani /api/ws (notifikasi) dan /api/ws/rtc (stream)
+# ── Tambahkan WebSocket location block ───────────────────
+ws_block = """\n    # WebSocket proxy (notifikasi + live stream)
     location ~ ^/api/(ws.*)$ {
         proxy_pass http://127.0.0.1:8001/$1$is_args$args;
         proxy_http_version 1.1;
@@ -88,10 +139,9 @@ ws_block = """
         proxy_set_header X-Real-IP $remote_addr;
         proxy_read_timeout 3600;
         proxy_send_timeout 3600;
-    }
-"""
+    }\n"""
 
-# ── Coba insert sebelum location /api/ ───────────────────
+# Insert sebelum 'location /api/'
 new_conf = re.sub(
     r'(\n[ \t]+location\s+/api[/ ])',
     ws_block + r'\n\1',
@@ -100,8 +150,8 @@ new_conf = re.sub(
 )
 
 if new_conf == original:
-    # Fallback: tambahkan WebSocket headers ke dalam location /api/ yang ada
-    print("Tidak bisa insert block terpisah — menambahkan headers ke dalam /api/ block...")
+    # Fallback: inject headers langsung ke dalam proxy_pass block
+    print("Tidak bisa insert block terpisah, inject headers ke proxy_pass block...")
     new_conf = re.sub(
         r'(proxy_pass\s+http://127\.0\.0\.1:\d+[^;]*;)',
         r'\1\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_read_timeout 3600;',
@@ -110,28 +160,31 @@ if new_conf == original:
     )
 
 if new_conf == original:
-    print("ERROR: Tidak bisa menemukan lokasi yang tepat untuk menambahkan WebSocket support!")
-    print("Tambahkan manual ke nginx config:")
-    print('  proxy_http_version 1.1;')
-    print('  proxy_set_header Upgrade $http_upgrade;')
-    print('  proxy_set_header Connection "upgrade";')
+    print("ERROR: Tidak bisa patch config! Lihat isi file di atas dan update manual.")
     sys.exit(1)
 
 # ── Tulis, test, reload ───────────────────────────────────
-with open(target_path, "w") as f:
+backup = target_file + ".bak"
+with open(backup, "w") as f:
+    f.write(original)
+print(f"Backup disimpan: {backup}")
+
+with open(target_file, "w") as f:
     f.write(new_conf)
 
-result = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
-print("\nNginx test:", result.stdout.strip(), result.stderr.strip())
+print("\nConfig baru:")
+print(new_conf)
 
-if result.returncode != 0:
-    print("ERROR: Nginx test gagal! Mengembalikan config lama...")
-    with open(target_path, "w") as f:
+r = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
+print("nginx -t:", r.stdout.strip(), r.stderr.strip())
+
+if r.returncode != 0:
+    print("ERROR: Nginx test gagal! Mengembalikan backup...")
+    with open(target_file, "w") as f:
         f.write(original)
     sys.exit(1)
 
 subprocess.run(["systemctl", "reload", "nginx"])
-print("\n✅ Nginx berhasil di-update dengan WebSocket support!")
-print("WebSocket path yang sekarang didukung:")
-print("  - wss://workspace.magsikastudio.com/api/ws      (notifikasi)")
-print("  - wss://workspace.magsikastudio.com/api/ws/rtc  (live stream)")
+print("\n✅ BERHASIL! Nginx di-reload dengan WebSocket support.")
+print("Test: wss://workspace.magsikastudio.com/api/ws")
+print("Test: wss://workspace.magsikastudio.com/api/ws/rtc")
