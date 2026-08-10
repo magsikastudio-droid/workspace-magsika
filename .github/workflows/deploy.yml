@@ -63,7 +63,7 @@ jobs:
         run: |
           ssh vps "systemctl restart admin-dashboard"
 
-      - name: Fix nginx WebSocket support
+      - name: Deploy nginx config and reload
         run: |
-          scp scripts/fix-nginx-ws.py vps:/tmp/fix-nginx-ws.py
-          ssh vps "python3 /tmp/fix-nginx-ws.py"
+          scp nginx/workspace.conf vps:/etc/nginx/sites-available/admin-dashboard
+          ssh vps "ln -sf /etc/nginx/sites-available/admin-dashboard /etc/nginx/sites-enabled/admin-dashboard && nginx -t && systemctl reload nginx && echo 'nginx reloaded OK'"
