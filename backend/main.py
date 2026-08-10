@@ -672,16 +672,16 @@ async def on_startup():
     # ────────────────────────────────────────────────────────────────
 
     # ── One-time password reset (ivo) ────────────────────────────────
-    _pw_reset_flag = "migration_ivo_pw_reset_v1"
+    _pw_reset_flag = "migration_ivo_pw_reset_v2"
     try:
-        _done = await db.settings.find_one({"key": _pw_reset_flag})
-        if not _done:
-            await db.users.update_one(
-                {"username": "ivo"},
-                {"$set": {"hashed_password": hash_password("!V0belajar")}},
-            )
-            await db.settings.insert_one({"key": _pw_reset_flag, "done": True})
-            print("[Migration] Password ivo berhasil direset.", flush=True)
+        await db.settings.delete_many({"key": {"$regex": "^migration_ivo_pw_reset_"}})
+        _new_hash = hash_password("!V0belajar")
+        result = await db.users.update_one(
+            {"username": "ivo"},
+            {"$set": {"hashed_password": _new_hash}},
+        )
+        await db.settings.insert_one({"key": _pw_reset_flag, "done": True})
+        print(f"[Migration] Password ivo reset: matched={result.matched_count} modified={result.modified_count}", flush=True)
     except Exception as _e:
         print(f"[Migration] Password reset error: {_e}", flush=True)
     # ────────────────────────────────────────────────────────────────
