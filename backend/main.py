@@ -892,14 +892,15 @@ def _smtp_send(gmail_user: str, gmail_pass: str, to: str, msg: MIMEMultipart):
         s.send_message(msg)
 
 async def send_otp_email(to_email: str, otp: str, purpose: str = "login"):
-    gmail_user = os.getenv("GMAIL_USER", "")
+    gmail_user = os.getenv("GMAIL_USER", "")          # akun SMTP auth: contact@magsikastudio.com
     gmail_pass = os.getenv("GMAIL_APP_PASSWORD", "")
+    gmail_from = os.getenv("GMAIL_FROM", gmail_user)  # display sender: noreply@magsikastudio.com
     if not gmail_user or not gmail_pass:
         raise HTTPException(status_code=503, detail="Email service belum dikonfigurasi — tambahkan GMAIL_USER dan GMAIL_APP_PASSWORD di server")
 
     action = "masuk ke" if purpose == "login" else "mendaftar di"
     msg = MIMEMultipart("alternative")
-    msg["From"] = f"Magsika Workspace <{gmail_user}>"
+    msg["From"] = f"Magsika Workspace <{gmail_from}>"
     msg["To"] = to_email
     msg["Subject"] = f"Kode OTP Workspace Magsika — {otp}"
 
