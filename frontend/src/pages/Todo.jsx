@@ -268,38 +268,38 @@ export default function Todo() {
       if (task.status === "in progress") payload.status = "pending";
       await updateTask(task.id, payload);
     } else {
-      /* START: semua role auto-stream saat mulai timer */
-      const shouldStream = !streaming;
-      console.log("[Timer] shouldStream:", shouldStream, "streaming:", streaming);
-
-      /* Capture layar TERLEBIH DAHULU — harus dalam user gesture yang sama dengan klik */
-      let capturedMedia = null;
-      if (shouldStream) {
-        toast.info("📺 Pilih jendela yang ingin di-share…", { duration: 4000 });
-        try {
-          capturedMedia = await navigator.mediaDevices.getDisplayMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 15, max: 30 } },
-            audio: false,
-          });
-          console.log("[Timer] capturedMedia OK:", capturedMedia);
-        } catch (err) {
-          console.error("[Timer] getDisplayMedia error:", err.name, err.message);
-          if (err.name !== "NotAllowedError") {
-            toast.error("Gagal memilih jendela untuk stream: " + err.message);
-          }
-          /* Tetap lanjutkan start timer meski stream gagal / dibatalkan */
-        }
+      /* START: live screen WAJIB — timer tidak jalan tanpa share layar */
+      if (streaming) {
+        /* Sudah streaming dari task lain, langsung start timer saja */
+        const payload = { timer_started: new Date().toISOString() };
+        if (task.status === "pending") payload.status = "in progress";
+        await updateTask(task.id, payload);
+        return;
       }
 
-      /* Update task ke backend */
+      /* Tampilkan picker — harus dalam user gesture yang sama dengan klik */
+      toast.info("📺 Pilih jendela yang ingin di-share untuk memulai timer…", { duration: 5000 });
+      let capturedMedia = null;
+      try {
+        capturedMedia = await navigator.mediaDevices.getDisplayMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 15, max: 30 } },
+          audio: false,
+        });
+      } catch (err) {
+        /* User batalkan picker atau browser error → timer TIDAK jalan */
+        if (err.name === "NotAllowedError") {
+          toast.error("⛔ Kamu harus share layar untuk memulai timer.");
+        } else {
+          toast.error("Gagal share layar: " + err.message);
+        }
+        return; // berhenti, tidak start timer
+      }
+
+      /* Stream berhasil di-capture → start timer + hubungkan */
       const payload = { timer_started: new Date().toISOString() };
       if (task.status === "pending") payload.status = "in progress";
       await updateTask(task.id, payload);
-
-      /* Hubungkan stream dengan layar yang sudah dipilih */
-      if (capturedMedia) {
-        connectStreamWithMedia(capturedMedia, task.title);
-      }
+      connectStreamWithMedia(capturedMedia, task.title);
     }
   }, [updateTask, streaming, connectStreamWithMedia]);
 
