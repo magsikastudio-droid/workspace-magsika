@@ -12,7 +12,7 @@ const WS_BASE = resolved.replace(/^http/, "ws");
 /* ═══════════════════════════════════════════════════════════
    Stream card — video element dikelola sendiri via useRef
 ═══════════════════════════════════════════════════════════ */
-function StreamCard({ username, task, avatar, status, stream }) {
+function StreamCard({ username, task, avatar, status, stream, brb }) {
   const videoRef    = useRef(null);
   const containerRef = useRef(null);
 
@@ -114,6 +114,23 @@ function StreamCard({ username, task, avatar, status, stream }) {
             <p className="text-white/35 text-[10px] mt-1">
               Jaringan berbeda — TURN server mengatasi ini otomatis jika sudah terpasang.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── BRB overlay — saat talent pause timer ── */}
+      {brb && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
+          style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)" }}>
+          <p className="text-5xl mb-3">☕</p>
+          <p className="text-white text-2xl font-black tracking-widest uppercase">Be Right Back!</p>
+          <p className="text-white/50 text-xs mt-2 tracking-wide">Timer dijeda oleh {username}</p>
+          {/* Animasi pulsing dot */}
+          <div className="flex gap-1.5 mt-4">
+            {[0,1,2].map(i => (
+              <div key={i} className="w-2 h-2 rounded-full bg-amber-400 animate-bounce"
+                style={{ animationDelay: `${i * 0.15}s` }} />
+            ))}
           </div>
         </div>
       )}
@@ -245,6 +262,13 @@ export default function LiveMonitor() {
           break;
         }
 
+        case "streamer_brb": {
+          setStreamers(prev =>
+            prev[msg.id] ? { ...prev, [msg.id]: { ...prev[msg.id], brb: msg.active } } : prev
+          );
+          break;
+        }
+
         case "answer": {
           const pc = pcsRef.current[msg.from];
           if (pc) {
@@ -347,6 +371,7 @@ export default function LiveMonitor() {
               avatar={info.avatar}
               status={info.status}
               stream={streams[id] ?? null}
+              brb={info.brb ?? false}
             />
           ))}
         </div>

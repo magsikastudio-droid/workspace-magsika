@@ -126,7 +126,7 @@ export default function Todo() {
 
   const role = user?.role || "talent";
   const isAdminOrPM = role === "admin" || role === "pm";
-  const { streaming, connectStreamWithMedia } = useStream();
+  const { streaming, connectStreamWithMedia, resumeStream, pendingResume, sendBRB } = useStream();
 
   const [date, setDate] = useState(todayStr());
   const [viewMode, setViewMode] = useState("list");
@@ -262,15 +262,20 @@ export default function Todo() {
   /* ── tombol Mulai: start timer + auto-stream jika order punya stream_allowed ── */
   const handleTimer = useCallback(async (task) => {
     if (task.timer_started) {
-      /* PAUSE: hentikan timer */
+      /* PAUSE: hentikan timer + kirim BRB overlay ke monitor */
       const elapsed = getElapsed(task, Date.now());
       const payload = { time_elapsed: elapsed, timer_started: null };
       if (task.status === "in progress") payload.status = "pending";
       await updateTask(task.id, payload);
+      sendBRB(true); // tampilkan "Be Right Back!" di live monitor
     } else {
-      /* START: live screen WAJIB — timer tidak jalan tanpa share layar */
+      /* START / RESUME: live screen WAJIB */
+
+      // Jika sedang BRB (pause sebelumnya), cabut BRB overlay dulu
+      sendBRB(false);
+
       if (streaming) {
-        /* Sudah streaming dari task lain, langsung start timer saja */
+        /* Sudah streaming, langsung start timer saja */
         const payload = { timer_started: new Date().toISOString() };
         if (task.status === "pending") payload.status = "in progress";
         await updateTask(task.id, payload);
@@ -286,22 +291,20 @@ export default function Todo() {
           audio: false,
         });
       } catch (err) {
-        /* User batalkan picker atau browser error → timer TIDAK jalan */
         if (err.name === "NotAllowedError") {
           toast.error("⛔ Kamu harus share layar untuk memulai timer.");
         } else {
           toast.error("Gagal share layar: " + err.message);
         }
-        return; // berhenti, tidak start timer
+        return;
       }
 
-      /* Stream berhasil di-capture → start timer + hubungkan */
       const payload = { timer_started: new Date().toISOString() };
       if (task.status === "pending") payload.status = "in progress";
       await updateTask(task.id, payload);
       connectStreamWithMedia(capturedMedia, task.title);
     }
-  }, [updateTask, streaming, connectStreamWithMedia]);
+  }, [updateTask, streaming, connectStreamWithMedia, sendBRB]);
 
   /* ── tombol Done: admin/PM → konfirmasi Telegram, talent → menunggu review ── */
   const handleMarkDone = useCallback((task) => {
@@ -393,6 +396,31 @@ export default function Todo() {
   /* ── render ─────────────── */
   return (
     <div className="space-y-5">
+      {/* ── Resume Stream Banner (setelah refresh) ── */}
+      {pendingResume && !streaming && (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">📺</span>
+            <div>
+              <p className="text-sm font-semibold text-amber-900">Stream terputus karena halaman di-refresh</p>
+              <p className="text-xs text-amber-700">Task: <span className="font-medium">{pendingResume.task}</span> — klik tombol untuk melanjutkan stream.</p>
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => resumeStream(pendingResume.task)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 transition">
+              🔴 Lanjutkan Stream
+            </button>
+            <button
+              onClick={() => { localStorage.removeItem('magsika_active_stream'); window.location.reload(); }}
+              className="rounded-xl border border-amber-300 px-3 py-2 text-xs text-amber-700 hover:bg-amber-100 transition">
+              Abaikan
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
