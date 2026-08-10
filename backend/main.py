@@ -811,9 +811,11 @@ class FrameRelayManager:
                 self.viewers.pop(vid, None)
 
         streamer_order_id = info.get("order_id", "")
-        if streamer_order_id and self.public_viewers:
+        # Public viewers never receive frame bytes while the talent is on BRB —
+        # not just hidden behind an overlay, actually not sent, for real privacy.
+        if streamer_order_id and self.public_viewers and not info.get("brb"):
             # No username/task leaked to public viewers — just the pixels.
-            pub_meta = {"type": "frame", "brb": info.get("brb", False)}
+            pub_meta = {"type": "frame"}
             dead_pub = []
             for vid, pv in list(self.public_viewers.items()):
                 if pv.get("order_id") != streamer_order_id:
@@ -944,10 +946,19 @@ async def screen_relay(websocket: WebSocket, token: str = Query(None)):
 
             elif t == "brb" and role == "streamer":
                 if cid in frame_relay.streamers:
-                    frame_relay.streamers[cid]["brb"] = data.get("active", False)
+                    active = data.get("active", False)
+                    frame_relay.streamers[cid]["brb"] = active
                     await frame_relay.broadcast_meta({
-                        "type": "streamer_brb", "id": cid, "active": data.get("active", False),
+                        "type": "streamer_brb", "id": cid, "active": active,
                     })
+                    stream_order_id = frame_relay.streamers[cid].get("order_id", "")
+                    if stream_order_id:
+                        for pv in list(frame_relay.public_viewers.values()):
+                            if pv.get("order_id") == stream_order_id:
+                                try:
+                                    await pv["ws"].send_json({"type": "brb_status", "active": active})
+                                except Exception:
+                                    pass
 
     except WebSocketDisconnect:
         pass
