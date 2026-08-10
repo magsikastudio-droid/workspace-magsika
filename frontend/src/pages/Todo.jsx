@@ -268,9 +268,8 @@ export default function Todo() {
       if (task.status === "in progress") payload.status = "pending";
       await updateTask(task.id, payload);
     } else {
-      /* START: cek apakah order butuh auto-stream */
-      const order = orders.find(o => o.id === task.order_id);
-      const shouldStream = !!order?.stream_allowed && !isAdminOrPM && !streaming;
+      /* START: non-admin/PM selalu auto-stream saat mulai timer */
+      const shouldStream = !isAdminOrPM && !streaming;
 
       /* Capture layar TERLEBIH DAHULU — harus dalam user gesture yang sama dengan klik */
       let capturedMedia = null;
@@ -298,7 +297,7 @@ export default function Todo() {
         connectStreamWithMedia(capturedMedia, task.title);
       }
     }
-  }, [updateTask, orders, isAdminOrPM, streaming, connectStreamWithMedia]);
+  }, [updateTask, isAdminOrPM, streaming, connectStreamWithMedia]);
 
   /* ── tombol Done: admin/PM → konfirmasi Telegram, talent → menunggu review ── */
   const handleMarkDone = useCallback((task) => {
