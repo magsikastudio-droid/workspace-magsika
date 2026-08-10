@@ -651,6 +651,26 @@ async def on_startup():
     except Exception:
         pass
 
+    # ── Migrasi email asli untuk user yang sudah ada ─────────────────
+    _real_emails = {
+        "ivo":    "iriantamoeta@gmail.com",
+        "novita": "novitar2115@gmail.com",
+        "kevin":  "lorenlovren0708@gmail.com",
+        "andre":  "andreafandi29@gmail.com",
+        "maul":   "maulanarokhel@gmail.com",
+    }
+    try:
+        for _uname, _email in _real_emails.items():
+            _result = await db.users.update_one(
+                {"username": _uname},
+                {"$set": {"email": _email, "email_verified": True}},
+            )
+            if _result.modified_count:
+                print(f"[Migration] Email updated: {_uname} → {_email}", flush=True)
+    except Exception as _e:
+        print(f"[Migration] Email update error: {_e}", flush=True)
+    # ────────────────────────────────────────────────────────────────
+
     if scheduler:
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
