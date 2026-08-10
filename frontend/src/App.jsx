@@ -8,6 +8,7 @@ import { OrdersProvider } from "./context/OrdersContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
 import { TasksProvider } from "./context/TasksContext";
 import { ChatProvider } from "./context/ChatContext";
+import { StreamProvider } from "./context/StreamContext";
 import AlarmOverlay from "./components/AlarmOverlay";
 import AlarmController from "./components/AlarmController";
 import Layout from "./components/Layout";
@@ -90,6 +91,7 @@ function App() {
                     <OrdersProvider>
                       <TasksProvider>
                         <ChatProvider>
+                          <StreamProvider>
                           <Layout>
                             <Routes>
                               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -117,6 +119,7 @@ function App() {
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Layout>
+                          </StreamProvider>
                         </ChatProvider>
                       </TasksProvider>
                     </OrdersProvider>

@@ -6,6 +6,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
 import { useOrders } from "../context/OrdersContext";
+import { useStream } from "../context/StreamContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 
@@ -125,6 +126,7 @@ export default function Todo() {
 
   const role = user?.role || "talent";
   const isAdminOrPM = role === "admin" || role === "pm";
+  const { streaming, connectStreamWithMedia } = useStream();
 
   const [date, setDate] = useState(todayStr());
   const [viewMode, setViewMode] = useState("list");
@@ -257,19 +259,46 @@ export default function Todo() {
     await updateTask(task.id, payload);
   }, [updateTask]);
 
-  /* ── tombol Mulai: start timer + auto in-progress jika masih pending ── */
+  /* ── tombol Mulai: start timer + auto-stream jika order punya stream_allowed ── */
   const handleTimer = useCallback(async (task) => {
     if (task.timer_started) {
+      /* PAUSE: hentikan timer */
       const elapsed = getElapsed(task, Date.now());
       const payload = { time_elapsed: elapsed, timer_started: null };
       if (task.status === "in progress") payload.status = "pending";
       await updateTask(task.id, payload);
     } else {
+      /* START: cek apakah order butuh auto-stream */
+      const order = orders.find(o => o.id === task.order_id);
+      const shouldStream = !!order?.stream_allowed && !isAdminOrPM && !streaming;
+
+      /* Capture layar TERLEBIH DAHULU — harus dalam user gesture yang sama dengan klik */
+      let capturedMedia = null;
+      if (shouldStream) {
+        try {
+          capturedMedia = await navigator.mediaDevices.getDisplayMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 15, max: 30 } },
+            audio: false,
+          });
+        } catch (err) {
+          if (err.name !== "NotAllowedError") {
+            toast.error("Gagal memilih jendela untuk stream: " + err.message);
+          }
+          /* Tetap lanjutkan start timer meski stream gagal / dibatalkan */
+        }
+      }
+
+      /* Update task ke backend */
       const payload = { timer_started: new Date().toISOString() };
       if (task.status === "pending") payload.status = "in progress";
       await updateTask(task.id, payload);
+
+      /* Hubungkan stream dengan layar yang sudah dipilih */
+      if (capturedMedia) {
+        connectStreamWithMedia(capturedMedia, task.title);
+      }
     }
-  }, [updateTask]);
+  }, [updateTask, orders, isAdminOrPM, streaming, connectStreamWithMedia]);
 
   /* ── tombol Done: admin/PM → konfirmasi Telegram, talent → menunggu review ── */
   const handleMarkDone = useCallback((task) => {

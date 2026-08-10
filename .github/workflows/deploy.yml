@@ -59,6 +59,64 @@ jobs:
         run: |
           ssh vps "/root/admin-dashboard/backend/.venv/bin/pip install -r /root/admin-dashboard/backend/requirements.txt -q"
 
+      - name: Setup TURN server (coturn) on VPS
+        run: |
+          ssh vps bash << 'ENDSSH'
+          set -e
+
+          # Install coturn jika belum ada
+          if ! command -v turnserver &>/dev/null; then
+            echo "[TURN] Installing coturn..."
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y coturn
+          else
+            echo "[TURN] coturn already installed"
+          fi
+
+          # Generate TURN secret sekali — simpan permanen di file terpisah
+          TURN_SECRET_FILE=/root/admin-dashboard/.turn_secret
+          if [ ! -f "$TURN_SECRET_FILE" ]; then
+            openssl rand -hex 32 > "$TURN_SECRET_FILE"
+            echo "[TURN] Generated new TURN secret"
+          fi
+          TURN_SECRET=$(cat "$TURN_SECRET_FILE")
+
+          # Tulis konfigurasi coturn
+          cat > /etc/turnserver.conf << CONF
+listening-port=3478
+fingerprint
+use-auth-secret
+static-auth-secret=$TURN_SECRET
+realm=workspace.magsikastudio.com
+log-file=/var/log/coturn/turn.log
+no-loopback-peers
+no-multicast-peers
+min-port=49152
+max-port=50000
+CONF
+
+          # Aktifkan coturn service
+          if grep -q '#TURNSERVER_ENABLED' /etc/default/coturn 2>/dev/null; then
+            sed -i 's/#TURNSERVER_ENABLED=1/TURNSERVER_ENABLED=1/' /etc/default/coturn
+          else
+            grep -q 'TURNSERVER_ENABLED=1' /etc/default/coturn 2>/dev/null || \
+              echo 'TURNSERVER_ENABLED=1' >> /etc/default/coturn
+          fi
+
+          # Simpan secret ke .env backend (untuk endpoint /turn-credentials)
+          ENV_FILE=/root/admin-dashboard/backend/.env
+          grep -v '^TURN_SECRET=' "$ENV_FILE" > /tmp/.env_tmp 2>/dev/null || true
+          echo "TURN_SECRET=$TURN_SECRET" >> /tmp/.env_tmp
+          mv /tmp/.env_tmp "$ENV_FILE"
+
+          # Start/restart coturn
+          mkdir -p /var/log/coturn
+          systemctl enable coturn
+          systemctl restart coturn
+          sleep 2
+          systemctl is-active coturn && echo "[TURN] coturn running OK" || echo "[TURN] WARNING: coturn not running"
+          ENDSSH
+
       - name: Restart service
         run: |
           ssh vps "systemctl restart admin-dashboard"
@@ -68,12 +126,17 @@ jobs:
           scp nginx/workspace.conf vps:/etc/nginx/sites-available/admin-dashboard
           ssh vps "ln -sf /etc/nginx/sites-available/admin-dashboard /etc/nginx/sites-enabled/admin-dashboard && nginx -t && systemctl reload nginx && echo 'nginx reloaded OK'"
 
-      - name: Verify nginx and test WebSocket
+      - name: Verify deployment
         run: |
           sleep 3
           ssh vps bash << 'ENDSSH'
-          echo "=== Config yang aktif ==="
-          cat /etc/nginx/sites-enabled/admin-dashboard
+          echo "=== TURN server status ==="
+          systemctl is-active coturn && echo "coturn: RUNNING" || echo "coturn: NOT RUNNING"
+          ss -tlnpu 2>/dev/null | grep 3478 || echo "(port 3478 tidak terdeteksi via ss)"
+
+          echo ""
+          echo "=== Backend log terbaru ==="
+          journalctl -u admin-dashboard --no-pager -n 8
 
           echo ""
           echo "=== Test WebSocket upgrade via curl ==="
@@ -83,8 +146,5 @@ jobs:
             -H "Sec-WebSocket-Version: 13" \
             -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
             https://workspace.magsikastudio.com/api/ws/rtc \
-            2>&1 | head -20
-          echo ""
-          echo "=== Backend log terbaru ==="
-          journalctl -u admin-dashboard --no-pager -n 10
+            2>&1 | head -15
           ENDSSH

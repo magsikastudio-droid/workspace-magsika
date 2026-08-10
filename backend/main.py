@@ -900,6 +900,26 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
 
 
+@app.get("/turn-credentials")
+async def get_turn_credentials(current_user: dict = Depends(get_current_user)):
+    """Generate time-limited HMAC credentials untuk TURN server (coturn use-auth-secret)."""
+    import hmac as hmac_lib, hashlib, time, base64, os
+    secret = os.getenv("TURN_SECRET", "")
+    if not secret:
+        raise HTTPException(status_code=503, detail="TURN server belum dikonfigurasi")
+    # Username berformat "<unix-timestamp>:<label>" — coturn akan reject setelah timestamp
+    timestamp = int(time.time()) + 86400  # valid 24 jam
+    username = f"{timestamp}:magsika"
+    credential = base64.b64encode(
+        hmac_lib.new(secret.encode(), username.encode(), hashlib.sha1).digest()
+    ).decode()
+    return {
+        "urls": ["turn:workspace.magsikastudio.com:3478"],
+        "username": username,
+        "credential": credential,
+    }
+
+
 @app.get("/orders")
 async def list_orders(current_user: dict = Depends(get_current_user)):
     try:
