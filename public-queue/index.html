@@ -44,7 +44,7 @@
     text-transform: uppercase;
   }
   header {
-    padding: 40px 24px 28px;
+    padding: 40px 0 28px;
     text-align: center;
   }
   .eyebrow {
@@ -63,56 +63,6 @@
     color: var(--text);
   }
   header h1 em { font-style: normal; color: var(--accent); }
-  .commissions-badge {
-    margin-top: 12px;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    font-family: var(--font-display);
-    font-size: 12.5px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    padding: 6px 14px;
-    border-radius: 999px;
-  }
-  .commissions-badge .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-  }
-  .commissions-badge.open {
-    color: #4ade80;
-    background: rgba(74,222,128,0.12);
-    border: 1px solid rgba(74,222,128,0.35);
-  }
-  .commissions-badge.open .dot { background: #4ade80; animation: pulse 2s infinite; }
-  .commissions-badge.closed {
-    color: #ff8a8a;
-    background: rgba(255,107,107,0.12);
-    border: 1px solid rgba(255,107,107,0.35);
-  }
-  .commissions-badge.closed .dot { background: #ff6b6b; }
-  .discord-link {
-    margin-top: 12px;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--text);
-    text-decoration: none;
-    background: rgba(88,101,242,0.15);
-    border: 1px solid rgba(88,101,242,0.4);
-    padding: 6px 14px;
-    border-radius: 999px;
-    transition: background 0.15s ease, border-color 0.15s ease;
-  }
-  .discord-link:hover {
-    background: rgba(88,101,242,0.28);
-    border-color: rgba(88,101,242,0.7);
-  }
-  .discord-link svg { width: 15px; height: 15px; fill: #8fa0ff; }
   @keyframes pulse {
     0%   { box-shadow: 0 0 0 0 rgba(74,222,128,0.55); }
     70%  { box-shadow: 0 0 0 7px rgba(74,222,128,0); }
@@ -477,21 +427,122 @@
     text-align: center;
     padding: 10px;
   }
+
+  /* ===== Brand texture: scattered flecks + oversized ghost text, same
+     devices used across staging.magsikastudio.com ===== */
+  .fleck {
+    position: fixed;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text) 35%, transparent);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .fleck.violet { background: color-mix(in srgb, var(--accent) 70%, transparent); }
+
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 28px; position: relative; z-index: 1; }
+
+  .section--ghost { position: relative; overflow: hidden; }
+  .ghost-text {
+    position: absolute;
+    top: -34px;
+    left: 20px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(120px, 18vw, 300px);
+    line-height: 1;
+    color: transparent;
+    -webkit-text-stroke: 1px color-mix(in srgb, var(--border) 55%, transparent);
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+  }
+
+  .label {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+
+  /* ===== Footer — same structure/copy as staging.magsikastudio.com ===== */
+  .site-footer {
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 56px 0 0;
+    margin-top: 48px;
+    position: relative;
+    z-index: 1;
+  }
+  .site-footer__grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 32px; padding-bottom: 40px; }
+  .site-footer__logo { filter: brightness(0) invert(1); margin-bottom: 16px; }
+  .site-footer__brand p { max-width: 34ch; font-size: 14px; color: var(--muted); margin: 0; }
+  .site-footer__col .label { margin-bottom: 14px; }
+  .site-footer__list, .site-footer__contact { list-style: none; margin: 0; padding: 0; }
+  .site-footer__list { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+  .site-footer__list a, .site-footer__contact a { color: var(--muted); }
+  .site-footer__list a:hover, .site-footer__contact a:hover { color: var(--accent); }
+  .site-footer__contact { display: flex; flex-direction: column; gap: 12px; }
+  .site-footer__contact li { display: flex; align-items: center; gap: 10px; }
+  .site-footer__contact a { font-size: 14px; }
+  .site-footer__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .site-footer__icon svg { width: 15px; height: 15px; }
+  .site-footer__contact li:hover .site-footer__icon { border-color: var(--accent); color: var(--accent); }
+  .site-footer__bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--faint);
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .site-footer__legal { display: flex; gap: 18px; }
+  .site-footer__legal a { color: var(--faint); transition: color 0.15s ease; }
+  .site-footer__legal a:hover { color: var(--accent); }
+  @media (max-width: 720px) {
+    .site-footer__grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <p class="eyebrow">Live Commission Tracker</p>
-  <h1>Magsika <em>Queue</em></h1>
-  <div id="commissions-badge" class="commissions-badge open"><span class="dot"></span><span class="commissions-label">Commissions Open</span></div>
-  <a class="discord-link" href="https://discord.gg/zTYNtgSvW" target="_blank" rel="noopener noreferrer">
-    <svg viewBox="0 0 24 24"><path d="M20.317 4.369A19.791 19.791 0 0 0 16.558 3c-.211.375-.444.87-.608 1.262a18.27 18.27 0 0 0-5.9 0A12.64 12.64 0 0 0 9.442 3a19.736 19.736 0 0 0-3.762 1.37C2.68 8.58 1.907 12.678 2.294 16.72a19.9 19.9 0 0 0 5.993 3.03c.483-.658.914-1.357 1.284-2.09a12.9 12.9 0 0 1-2.022-.97c.17-.124.336-.253.497-.386 3.9 1.81 8.13 1.81 11.984 0 .162.133.328.262.497.386-.646.383-1.323.71-2.024.971.37.732.8 1.431 1.283 2.089a19.83 19.83 0 0 0 6.002-3.03c.462-4.687-.766-8.746-3.471-12.351ZM8.68 14.246c-1.156 0-2.102-1.06-2.102-2.36 0-1.303.926-2.362 2.102-2.362 1.187 0 2.123 1.069 2.103 2.362 0 1.3-.926 2.36-2.103 2.36Zm6.647 0c-1.157 0-2.102-1.06-2.102-2.36 0-1.303.925-2.362 2.102-2.362 1.187 0 2.123 1.069 2.102 2.362 0 1.3-.915 2.36-2.102 2.36Z"/></svg>
-    Join our Discord
-  </a>
-  <div class="search-wrap">
-    <div class="search-box">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" id="search" placeholder="Search your name or project..." autocomplete="off" />
+<div class="fleck" style="top:8%;left:6%;"></div>
+<div class="fleck" style="top:14%;left:92%;width:5px;height:5px;"></div>
+<div class="fleck" style="top:22%;left:48%;"></div>
+<div class="fleck" style="top:6%;left:76%;"></div>
+<div class="fleck" style="top:34%;left:14%;width:3px;height:3px;"></div>
+<div class="fleck" style="top:40%;left:88%;"></div>
+<div class="fleck violet" style="top:18%;left:30%;"></div>
+<div class="fleck violet" style="top:28%;left:64%;width:5px;height:5px;"></div>
+
+<header class="section--ghost">
+  <span class="ghost-text">QUEUE</span>
+  <div class="wrap">
+    <p class="eyebrow">Live Commission Tracker</p>
+    <h1>Magsika <em>Queue</em></h1>
+    <div class="search-wrap">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search" placeholder="Search your name or project..." autocomplete="off" />
+      </div>
     </div>
   </div>
 </header>
@@ -499,6 +550,54 @@
 <div id="status-line"></div>
 <div id="modal-overlay"></div>
 <div id="live-overlay"></div>
+
+<footer class="site-footer" id="contact">
+  <div class="wrap site-footer__grid">
+    <div class="site-footer__brand">
+      <img src="/logo-wordmark.png" alt="Magsika Studio" width="180" height="33" class="site-footer__logo">
+      <p>A stylized 3D studio for off-the-shelf digital products &amp; custom commissions — VTuber, VRChat, Roblox UGC, and more.</p>
+    </div>
+
+    <div class="site-footer__col">
+      <span class="label">Explore</span>
+      <nav aria-label="Footer menu">
+        <ul class="site-footer__list">
+          <li><a href="https://magsikastudio.com/">Home</a></li>
+          <li><a href="https://magsikastudio.com/portfolio">Portfolio</a></li>
+          <li><a href="https://magsikastudio.com/store">Store</a></li>
+          <li><a href="https://magsikastudio.com/services">Studio Services</a></li>
+          <li><a href="https://magsikastudio.com/careers">Careers</a></li>
+        </ul>
+      </nav>
+    </div>
+
+    <div class="site-footer__col">
+      <span class="label">Contact</span>
+      <ul class="site-footer__contact">
+        <li>
+          <span class="site-footer__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6.5 12 13l9-6.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg></span>
+          <a href="mailto:contact@magsikastudio.com">contact@magsikastudio.com</a>
+        </li>
+        <li>
+          <span class="site-footer__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.9-4.45 9.9-9.91C21.96 6.45 17.5 2 12.04 2Zm5.8 14.06c-.24.68-1.4 1.3-1.94 1.38-.5.08-1.12.11-1.81-.11-.42-.13-.95-.31-1.64-.6-2.89-1.25-4.78-4.16-4.93-4.35-.14-.19-1.18-1.57-1.18-3 0-1.42.75-2.12 1.02-2.41.26-.29.57-.36.76-.36h.55c.18 0 .42-.07.65.5.24.58.8 2.01.87 2.16.07.15.12.32.02.51-.1.19-.15.31-.29.48-.15.17-.31.38-.44.51-.15.15-.3.31-.13.6.17.29.75 1.24 1.62 2.01 1.11.99 2.05 1.3 2.34 1.44.29.15.46.13.63-.05.17-.19.72-.84.91-1.13.19-.29.38-.24.63-.14.26.1 1.64.77 1.92.91.29.14.48.22.55.34.07.13.07.72-.17 1.4Z"/></svg></span>
+          <a href="https://wa.me/6287801822558" target="_blank" rel="noopener">+62 878-0182-2558</a>
+        </li>
+        <li>
+          <span class="site-footer__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg></span>
+          <a href="https://discord.gg/zTYNtgSvW" target="_blank" rel="noopener">Join our Discord</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="wrap site-footer__bottom">
+    <span>&copy; 2026 Magsika Studio.</span>
+    <nav class="site-footer__legal" aria-label="Legal">
+      <a href="https://magsikastudio.com/terms-of-service">Terms of Service</a>
+      <a href="https://magsikastudio.com/privacy-policy">Privacy Policy</a>
+    </nav>
+  </div>
+</footer>
 
 <script>
 const STATUS_ORDER = ["Pending", "Scheduled", "In Progress", "Quality Control", "Done"];
@@ -847,13 +946,6 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { closeModal(); closeLiveOverlay(); }
 });
 
-function updateCommissionsBadge(open) {
-  const badge = document.getElementById("commissions-badge");
-  badge.classList.toggle("open", open);
-  badge.classList.toggle("closed", !open);
-  badge.querySelector(".commissions-label").textContent = open ? "Commissions Open" : "Commissions Closed";
-}
-
 async function load() {
   const line = document.getElementById("status-line");
   try {
@@ -861,7 +953,6 @@ async function load() {
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     allOrders = data.orders || [];
-    updateCommissionsBadge(data.commissions_open !== false);
     renderFiltered();
     line.textContent = "";
     line.classList.remove("error");
