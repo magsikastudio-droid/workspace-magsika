@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useCurrency } from "../context/CurrencyContext";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -24,6 +24,253 @@ const STATUS_COLORS = {
   active: "bg-emerald-100 text-emerald-700",
   pending: "bg-orange-100 text-orange-700",
 };
+
+/* ─── EmailVerificationSection ──────────────────────────────────── */
+function EmailVerificationSection({ user }) {
+  const [emailData, setEmailData] = useState({ email: "", email_verified: false });
+  const [loaded, setLoaded]       = useState(false);
+
+  // UI state: "idle" | "otp_verify" | "change_email" | "otp_change"
+  const [mode, setMode]           = useState("idle");
+  const [newEmail, setNewEmailInput] = useState("");
+  const [otp, setOtp]             = useState(["", "", "", "", "", ""]);
+  const otpRefs = [useRef(), useRef(), useRef(), useRef(), useRef(), useRef()];
+  const [loading, setLoading]     = useState(false);
+  const [resendCd, setResendCd]   = useState(0);
+  const [emailHint, setEmailHint] = useState("");
+
+  useEffect(() => {
+    api.get("/auth/me").then((res) => {
+      const u = res.data.user || {};
+      setEmailData({ email: u.email || "", email_verified: u.email_verified || false });
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  const startResendCooldown = () => {
+    setResendCd(60);
+    const t = setInterval(() => {
+      setResendCd((p) => { if (p <= 1) { clearInterval(t); return 0; } return p - 1; });
+    }, 1000);
+  };
+
+  const resetOtp = () => setOtp(["", "", "", "", "", ""]);
+
+  const handleOtpChange = (i, val) => {
+    if (!/^\d*$/.test(val)) return;
+    const next = [...otp]; next[i] = val.slice(-1); setOtp(next);
+    if (val && i < 5) otpRefs[i + 1].current?.focus();
+  };
+  const handleOtpKeyDown = (i, e) => {
+    if (e.key === "Backspace" && !otp[i] && i > 0) otpRefs[i - 1].current?.focus();
+  };
+  const handleOtpPaste = (e) => {
+    const p = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (p.length === 6) { setOtp(p.split("")); otpRefs[5].current?.focus(); }
+  };
+
+  // — Kirim OTP ke email saat ini untuk verifikasi
+  const handleRequestVerify = async () => {
+    setLoading(true);
+    try {
+      const res = await api.post("/auth/request-email-verify");
+      setEmailHint(res.data.email_hint);
+      setMode("otp_verify");
+      resetOtp();
+      startResendCooldown();
+      toast.success("Kode OTP dikirim ke email kamu");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal mengirim OTP");
+    } finally { setLoading(false); }
+  };
+
+  // — Konfirmasi OTP verifikasi email
+  const handleConfirmVerify = async (e) => {
+    e.preventDefault();
+    const code = otp.join("");
+    if (code.length < 6) { toast.error("Masukkan 6 digit OTP"); return; }
+    setLoading(true);
+    try {
+      await api.post("/auth/confirm-email-verify", { otp: code });
+      setEmailData((p) => ({ ...p, email_verified: true }));
+      setMode("idle");
+      toast.success("Email berhasil diverifikasi ✅");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "OTP salah atau kedaluwarsa");
+      resetOtp(); otpRefs[0].current?.focus();
+    } finally { setLoading(false); }
+  };
+
+  // — Kirim OTP ke email BARU untuk ganti email
+  const handleRequestChange = async (e) => {
+    e.preventDefault();
+    if (!newEmail || !newEmail.includes("@")) { toast.error("Masukkan email yang valid"); return; }
+    setLoading(true);
+    try {
+      const res = await api.post("/auth/request-email-change", { new_email: newEmail });
+      setEmailHint(res.data.email_hint);
+      setMode("otp_change");
+      resetOtp();
+      startResendCooldown();
+      toast.success("Kode OTP dikirim ke email baru");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal mengirim OTP");
+    } finally { setLoading(false); }
+  };
+
+  // — Konfirmasi OTP ganti email
+  const handleConfirmChange = async (e) => {
+    e.preventDefault();
+    const code = otp.join("");
+    if (code.length < 6) { toast.error("Masukkan 6 digit OTP"); return; }
+    setLoading(true);
+    try {
+      const res = await api.post("/auth/confirm-email-change", { new_email: newEmail, otp: code });
+      setEmailData({ email: res.data.new_email, email_verified: true });
+      setMode("idle");
+      setNewEmailInput("");
+      toast.success("Email berhasil diperbarui ✅");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "OTP salah atau kedaluwarsa");
+      resetOtp(); otpRefs[0].current?.focus();
+    } finally { setLoading(false); }
+  };
+
+  if (!loaded) return <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm animate-pulse h-36" />;
+
+  const isVerified = emailData.email_verified;
+  const hasRealEmail = emailData.email && !emailData.email.endsWith("@magsika.local");
+
+  return (
+    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-2 mb-4 pb-4 border-b border-slate-100">
+        <Mail size={18} className="text-violet-500" />
+        <h2 className="text-lg font-semibold">Email & Verifikasi</h2>
+      </div>
+
+      {/* Email display + status */}
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-slate-500 mb-1">Email Terdaftar</p>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-800 truncate">
+              {hasRealEmail ? emailData.email : <span className="text-slate-400 italic">Belum ada email</span>}
+            </span>
+            {hasRealEmail && (
+              isVerified
+                ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700"><Check size={11} /> Terverifikasi</span>
+                : <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-700">⚠ Belum Diverifikasi</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Action buttons (idle mode) */}
+      {mode === "idle" && (
+        <div className="flex flex-wrap gap-2">
+          {hasRealEmail && !isVerified && (
+            <button onClick={handleRequestVerify} disabled={loading}
+              className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+              <ShieldCheck size={14} /> {loading ? "Mengirim..." : "Minta Verifikasi"}
+            </button>
+          )}
+          <button onClick={() => { setMode("change_email"); setNewEmailInput(""); }}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+            <Mail size={14} /> {hasRealEmail ? "Ganti Email" : "Tambah Email"}
+          </button>
+        </div>
+      )}
+
+      {/* OTP input untuk verifikasi email saat ini */}
+      {mode === "otp_verify" && (
+        <form onSubmit={handleConfirmVerify} className="mt-2">
+          <p className="text-sm text-slate-600 mb-3">
+            Masukkan kode OTP yang dikirim ke <span className="font-semibold text-violet-600">{emailHint}</span>
+          </p>
+          <div className="flex gap-2 mb-4" onPaste={handleOtpPaste}>
+            {otp.map((digit, i) => (
+              <input key={i} ref={otpRefs[i]} type="text" inputMode="numeric" maxLength={1}
+                value={digit} autoFocus={i === 0}
+                onChange={(e) => handleOtpChange(i, e.target.value)}
+                onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                className="h-12 w-11 rounded-xl border-2 text-center text-lg font-bold text-slate-900 outline-none transition"
+                style={{ borderColor: digit ? "#7c3aed" : "#e2e8f0" }}
+              />
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" disabled={loading || otp.join("").length < 6}
+              className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+              <ShieldCheck size={14} /> {loading ? "Memverifikasi..." : "Konfirmasi OTP"}
+            </button>
+            <button type="button" onClick={handleRequestVerify} disabled={resendCd > 0 || loading}
+              className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition">
+              {resendCd > 0 ? `Kirim ulang (${resendCd}d)` : "Kirim ulang"}
+            </button>
+            <button type="button" onClick={() => { setMode("idle"); resetOtp(); }}
+              className="rounded-2xl px-4 py-2.5 text-sm text-slate-400 hover:text-slate-600 transition">
+              Batal
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Form ganti email */}
+      {mode === "change_email" && (
+        <form onSubmit={handleRequestChange} className="mt-2">
+          <p className="text-sm text-slate-600 mb-3">Masukkan email baru kamu. OTP akan dikirim ke email tersebut.</p>
+          <div className="flex gap-2">
+            <input type="email" value={newEmail} onChange={(e) => setNewEmailInput(e.target.value)}
+              placeholder="email.baru@contoh.com" required autoFocus
+              className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+            <button type="submit" disabled={loading}
+              className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+              <Send size={14} /> {loading ? "Mengirim..." : "Kirim OTP"}
+            </button>
+            <button type="button" onClick={() => setMode("idle")}
+              className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm text-slate-500 hover:bg-slate-50 transition">
+              Batal
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* OTP input untuk konfirmasi email baru */}
+      {mode === "otp_change" && (
+        <form onSubmit={handleConfirmChange} className="mt-2">
+          <p className="text-sm text-slate-600 mb-3">
+            Masukkan kode OTP yang dikirim ke <span className="font-semibold text-violet-600">{emailHint}</span>
+          </p>
+          <div className="flex gap-2 mb-4" onPaste={handleOtpPaste}>
+            {otp.map((digit, i) => (
+              <input key={i} ref={otpRefs[i]} type="text" inputMode="numeric" maxLength={1}
+                value={digit} autoFocus={i === 0}
+                onChange={(e) => handleOtpChange(i, e.target.value)}
+                onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                className="h-12 w-11 rounded-xl border-2 text-center text-lg font-bold text-slate-900 outline-none transition"
+                style={{ borderColor: digit ? "#7c3aed" : "#e2e8f0" }}
+              />
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" disabled={loading || otp.join("").length < 6}
+              className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+              <ShieldCheck size={14} /> {loading ? "Menyimpan..." : "Konfirmasi & Simpan"}
+            </button>
+            <button type="button" onClick={() => api.post("/auth/request-email-change", { new_email: newEmail }).then(() => startResendCooldown())} disabled={resendCd > 0 || loading}
+              className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition">
+              {resendCd > 0 ? `Kirim ulang (${resendCd}d)` : "Kirim ulang"}
+            </button>
+            <button type="button" onClick={() => { setMode("change_email"); resetOtp(); }}
+              className="rounded-2xl px-4 py-2.5 text-sm text-slate-400 hover:text-slate-600 transition">
+              ← Ganti email
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
 
 /* ─── ProfileSection ─────────────────────────────────────────────── */
 function ProfileSection({ user }) {
@@ -452,7 +699,12 @@ export default function SettingsPage() {
         ))}
       </div>
 
-      {activeTab === "profil" && <ProfileSection user={user} />}
+      {activeTab === "profil" && (
+        <div className="space-y-5">
+          <ProfileSection user={user} />
+          <EmailVerificationSection user={user} />
+        </div>
+      )}
 
       {activeTab === "tampilan" && (
         <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
