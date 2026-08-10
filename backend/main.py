@@ -884,23 +884,43 @@ def _mask_email(email: str) -> str:
     except Exception:
         return "***"
 
-def _smtp_send(gmail_user: str, gmail_pass: str, to: str, msg: MIMEMultipart):
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as s:
-        s.ehlo()
-        s.starttls()
-        s.login(gmail_user, gmail_pass)
-        s.send_message(msg)
+def _smtp_send(host: str, port: int, user: str, password: str, to: str, msg: MIMEMultipart):
+    if port == 465:
+        # SSL langsung (Hostinger default)
+        import ssl as _ssl
+        ctx = _ssl.create_default_context()
+        with smtplib.SMTP_SSL(host, port, timeout=15, context=ctx) as s:
+            s.login(user, password)
+            s.send_message(msg)
+    else:
+        # STARTTLS (Gmail / port 587)
+        with smtplib.SMTP(host, port, timeout=15) as s:
+            s.ehlo()
+            s.starttls()
+            s.login(user, password)
+            s.send_message(msg)
 
 async def send_otp_email(to_email: str, otp: str, purpose: str = "login"):
-    gmail_user = os.getenv("GMAIL_USER", "")          # akun SMTP auth: contact@magsikastudio.com
-    gmail_pass = os.getenv("GMAIL_APP_PASSWORD", "")
-    gmail_from = os.getenv("GMAIL_FROM", gmail_user)  # display sender: noreply@magsikastudio.com
-    if not gmail_user or not gmail_pass:
-        raise HTTPException(status_code=503, detail="Email service belum dikonfigurasi — tambahkan GMAIL_USER dan GMAIL_APP_PASSWORD di server")
+    smtp_host = os.getenv("SMTP_HOST", "smtp.hostinger.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "465"))
+    smtp_user = os.getenv("SMTP_USER", "")       # noreply@magsikastudio.com
+    smtp_pass = os.getenv("SMTP_PASS", "")       # password mailbox Hostinger
+    smtp_from = os.getenv("SMTP_FROM", smtp_user) # bisa sama atau alias
+
+    # Fallback ke config Gmail lama kalau ada
+    if not smtp_user:
+        smtp_user = os.getenv("GMAIL_USER", "")
+        smtp_pass = os.getenv("GMAIL_APP_PASSWORD", "")
+        smtp_from = os.getenv("GMAIL_FROM", smtp_user)
+        smtp_host = "smtp.gmail.com"
+        smtp_port = 587
+
+    if not smtp_user or not smtp_pass:
+        raise HTTPException(status_code=503, detail="Email service belum dikonfigurasi — tambahkan SMTP_USER dan SMTP_PASS di server")
 
     action = "masuk ke" if purpose == "login" else "mendaftar di"
     msg = MIMEMultipart("alternative")
-    msg["From"] = f"Magsika Workspace <{gmail_from}>"
+    msg["From"] = f"Magsika Workspace <{smtp_from}>"
     msg["To"] = to_email
     msg["Subject"] = f"Kode OTP Workspace Magsika — {otp}"
 
@@ -929,7 +949,7 @@ async def send_otp_email(to_email: str, otp: str, purpose: str = "login"):
 
     import asyncio as _aio
     loop = _aio.get_event_loop()
-    await loop.run_in_executor(None, _smtp_send, gmail_user, gmail_pass, to_email, msg)
+    await loop.run_in_executor(None, _smtp_send, smtp_host, smtp_port, smtp_user, smtp_pass, to_email, msg)
 
 
 async def create_otp_record(email: str, purpose: str, username: str = "") -> str:
