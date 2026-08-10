@@ -778,6 +778,172 @@ class RTCSignalingManager:
 rtc = RTCSignalingManager()
 
 
+# ── Frame Relay — kirim JPEG frames langsung via WS, server forward ke viewers ──
+
+class FrameRelayManager:
+    """1 streamer → server → N viewers. Streamer encode 1x, server forward."""
+
+    def __init__(self):
+        # streamer_id → {ws, username, task, avatar, brb}
+        self.streamers: Dict[str, dict] = {}
+        # viewer_id → ws
+        self.viewers:   Dict[str, WebSocket] = {}
+
+    async def broadcast_frame(self, streamer_id: str, frame_bytes: bytes):
+        """Forward raw JPEG bytes ke semua viewer dengan header JSON kecil."""
+        if not self.viewers:
+            return
+        info = self.streamers.get(streamer_id, {})
+        # Kirim metadata dulu sebagai JSON, lalu frame sebagai binary
+        meta = {"type": "frame", "id": streamer_id,
+                "username": info.get("username", ""),
+                "task":     info.get("task", ""),
+                "brb":      info.get("brb", False)}
+        dead = []
+        for vid, vws in list(self.viewers.items()):
+            try:
+                await vws.send_json(meta)
+                await vws.send_bytes(frame_bytes)
+            except Exception:
+                dead.append(vid)
+        for vid in dead:
+            self.viewers.pop(vid, None)
+
+    async def broadcast_meta(self, msg: dict):
+        dead = []
+        for vid, vws in list(self.viewers.items()):
+            try:
+                await vws.send_json(msg)
+            except Exception:
+                dead.append(vid)
+        for vid in dead:
+            self.viewers.pop(vid, None)
+
+    def streamer_list(self):
+        return [{"id": k, "username": v["username"], "task": v["task"], "brb": v.get("brb", False)}
+                for k, v in self.streamers.items()]
+
+
+frame_relay = FrameRelayManager()
+
+
+@app.websocket("/ws/screen")
+async def screen_relay(websocket: WebSocket, token: str = Query(None)):
+    """
+    Frame-relay WebSocket — JPEG frames dari streamer di-forward ke semua viewer.
+    Jauh lebih ringan dari WebRTC untuk monitoring: streamer encode 1x saja.
+
+    Protocol:
+      Streamer → server:
+        JSON  {type:"join_streamer", username, task}
+        JSON  {type:"brb", active: bool}
+        JSON  {type:"update_task", task}
+        BYTES raw JPEG frame
+      Viewer → server:
+        JSON  {type:"join_viewer"}
+      Server → viewer:
+        JSON  {type:"streamers_list", streamers:[...]}
+        JSON  {type:"streamer_joined", id, username, task}
+        JSON  {type:"streamer_left", id}
+        JSON  {type:"streamer_brb", id, active}
+        JSON  {type:"frame", id, username, task, brb}  ← diikuti bytes
+        BYTES raw JPEG frame
+    """
+    if not token:
+        await websocket.close(code=4001); return
+    try:
+        payload  = decode_token(token)
+        username = payload.get("sub")
+        if not username: raise ValueError("no sub")
+        if username == "admin":
+            user = {"username": "admin", "full_name": "Studio Admin", "role": "admin", "avatar": ""}
+        else:
+            user = await db.users.find_one({"username": username})
+        if not user: raise ValueError("user not found")
+    except Exception as e:
+        await websocket.close(code=4001); return
+
+    await websocket.accept()
+    cid  = str(uuid.uuid4())[:8]
+    role = None
+
+    try:
+        while True:
+            msg = await websocket.receive()
+
+            # ── Binary frame dari streamer ──
+            if msg.get("bytes"):
+                if role == "streamer" and cid in frame_relay.streamers:
+                    await frame_relay.broadcast_frame(cid, msg["bytes"])
+                continue
+
+            # ── JSON control message ──
+            try:
+                data = json.loads(msg.get("text", "{}"))
+            except Exception:
+                continue
+            t = data.get("type")
+
+            if t == "join_streamer":
+                role = "streamer"
+                frame_relay.streamers[cid] = {
+                    "ws":       websocket,
+                    "username": data.get("username") or user.get("full_name") or username,
+                    "task":     data.get("task", ""),
+                    "avatar":   user.get("avatar", ""),
+                    "brb":      False,
+                }
+                await frame_relay.broadcast_meta({
+                    "type": "streamer_joined", "id": cid,
+                    "username": frame_relay.streamers[cid]["username"],
+                    "task":     frame_relay.streamers[cid]["task"],
+                })
+                await manager.broadcast({
+                    "type":  "rtc_update",
+                    "count": len(frame_relay.streamers),
+                    "names": [v["username"] for v in frame_relay.streamers.values()],
+                })
+
+            elif t == "join_viewer":
+                role = "viewer"
+                frame_relay.viewers[cid] = websocket
+                await websocket.send_json({
+                    "type":      "streamers_list",
+                    "streamers": frame_relay.streamer_list(),
+                })
+
+            elif t == "update_task" and role == "streamer":
+                if cid in frame_relay.streamers:
+                    frame_relay.streamers[cid]["task"] = data.get("task", "")
+                    await frame_relay.broadcast_meta({
+                        "type": "streamer_updated", "id": cid, "task": data.get("task", ""),
+                    })
+
+            elif t == "brb" and role == "streamer":
+                if cid in frame_relay.streamers:
+                    frame_relay.streamers[cid]["brb"] = data.get("active", False)
+                    await frame_relay.broadcast_meta({
+                        "type": "streamer_brb", "id": cid, "active": data.get("active", False),
+                    })
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"[screen_relay] {cid} error: {e}", flush=True)
+    finally:
+        if role == "streamer":
+            frame_relay.streamers.pop(cid, None)
+            await frame_relay.broadcast_meta({"type": "streamer_left", "id": cid})
+            await manager.broadcast({
+                "type":  "rtc_update",
+                "count": len(frame_relay.streamers),
+                "names": [v["username"] for v in frame_relay.streamers.values()],
+            })
+        elif role == "viewer":
+            frame_relay.viewers.pop(cid, None)
+
+
+
 @app.websocket("/ws/rtc")
 async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
     print(f"[WS/RTC] koneksi masuk — token={'ada' if token else 'TIDAK ADA'}", flush=True)

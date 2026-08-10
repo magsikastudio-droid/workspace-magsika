@@ -1,17 +1,26 @@
 /**
- * StreamContext — global WebRTC screen-sharing state.
+ * StreamContext — screen sharing via JPEG Frame Relay (bukan WebRTC).
  *
- * Provides:
- *   startStream(taskTitle)                   → shows browser picker, then connects
- *   connectStreamWithMedia(stream, taskTitle) → connect with already-captured stream
- *   resumeStream()                            → re-capture screen & reconnect after refresh
+ * Arsitektur baru (lebih ringan):
+ *   Talent  → canvas.toBlob(JPEG) @ 2fps → WS /ws/screen (binary)
+ *   Server  → forward bytes ke semua viewer
+ *   Viewer  → <img src=objectURL> diupdate tiap frame
+ *
+ * Keuntungan vs WebRTC mesh lama:
+ *   • Talent encode 1x saja (dulu N kali, N = jumlah viewer)
+ *   • Tidak perlu ICE/STUN/TURN negotiation
+ *   • CPU jauh lebih rendah di sisi talent
+ *
+ * API yang disediakan ke komponen:
+ *   startStream(taskTitle)          → minta screen share, mulai stream
+ *   connectStreamWithMedia(stream)  → pakai stream yang sudah ada
+ *   resumeStream()                  → re-capture setelah refresh
  *   stopStream()
- *   sendBRB(active)                          → broadcast BRB overlay to viewers
- *   streaming     (bool)
- *   loading       (bool)
- *   currentTask   (string)
- *   iceServers    (array)
- *   pendingResume (object|null) — {task} if stream was active before refresh
+ *   sendBRB(active)                 → overlay BRB di viewer
+ *   updateTask(task)                → update judul task di viewer
+ *   streaming, loading, currentTask
+ *   iceServers                      → masih ada untuk fallback / LiveMonitor lama
+ *   pendingResume                   → {task} jika ada stream sebelum refresh
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthContext";
@@ -21,7 +30,7 @@ import { toast } from "sonner";
 const StreamContext = createContext(null);
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-const resolved = BACKEND_URL.startsWith("/")
+const resolved    = BACKEND_URL.startsWith("/")
   ? `${window.location.protocol}//${window.location.host}${BACKEND_URL}`
   : BACKEND_URL;
 const WS_BASE = resolved.replace(/^http/, "ws");
@@ -31,10 +40,11 @@ const STUN = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
-const DISPLAY_CONSTRAINTS = {
-  video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 15, max: 30 } },
-  audio: false,
-};
+/* Resolusi canvas untuk encode frame — 1280×720 cukup untuk monitoring kerja */
+const FRAME_W   = 1280;
+const FRAME_H   = 720;
+const FRAME_FPS = 2;       // 2 frame per detik — cukup untuk monitoring
+const FRAME_Q   = 0.60;    // JPEG quality 60% — balance kualitas vs bandwidth
 
 const LS_KEY = "magsika_active_stream";
 
@@ -49,7 +59,6 @@ function loadStreamState() {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    // Expired setelah 8 jam
     if (Date.now() - data.ts > 8 * 60 * 60 * 1000) { clearStreamState(); return null; }
     return data;
   } catch { return null; }
@@ -58,23 +67,25 @@ function loadStreamState() {
 export function StreamProvider({ children }) {
   const { user, token } = useAuth();
 
-  const [streaming,      setStreaming]      = useState(false);
-  const [loading,        setLoading]        = useState(false);
-  const [currentTask,    setCurrentTask]    = useState("");
-  const [iceServers,     setIceServers]     = useState(STUN);
-  const [pendingResume,  setPendingResume]  = useState(null); // {task} jika ada state tersimpan
+  const [streaming,     setStreaming]     = useState(false);
+  const [loading,       setLoading]       = useState(false);
+  const [currentTask,   setCurrentTask]   = useState("");
+  const [iceServers,    setIceServers]    = useState(STUN);
+  const [pendingResume, setPendingResume] = useState(null);
 
-  const wsRef     = useRef(null);
-  const streamRef = useRef(null);
-  const pcsRef    = useRef({});
+  const wsRef         = useRef(null);
+  const streamRef     = useRef(null);
+  const canvasRef     = useRef(null);   // offscreen canvas untuk encode
+  const videoElRef    = useRef(null);   // offscreen video element
+  const frameTimerRef = useRef(null);   // setInterval untuk capture
 
-  /* ── Cek localStorage saat mount — ada sisa stream sebelum refresh? ── */
+  /* ── Cek localStorage saat mount ── */
   useEffect(() => {
     const saved = loadStreamState();
     if (saved) setPendingResume(saved);
   }, []);
 
-  /* ── Ambil TURN credentials dari backend ── */
+  /* ── Ambil TURN credentials (masih dipakai LiveMonitor untuk fallback) ── */
   useEffect(() => {
     if (!token) return;
     api.get("/turn-credentials")
@@ -90,12 +101,24 @@ export function StreamProvider({ children }) {
       .catch(() => {});
   }, [token]);
 
-  /* ── Stop dan bersihkan semua ── */
+  /* ── Stop frame capture timer ── */
+  const _stopFrameTimer = useCallback(() => {
+    if (frameTimerRef.current) {
+      clearInterval(frameTimerRef.current);
+      frameTimerRef.current = null;
+    }
+    if (videoElRef.current) {
+      videoElRef.current.srcObject = null;
+      videoElRef.current = null;
+    }
+    canvasRef.current = null;
+  }, []);
+
+  /* ── Stop semua ── */
   const stopStream = useCallback((skipClearLS = false) => {
+    _stopFrameTimer();
     streamRef.current?.getTracks().forEach(t => t.stop());
     streamRef.current = null;
-    Object.values(pcsRef.current).forEach(pc => pc.close());
-    pcsRef.current = {};
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.close();
@@ -107,73 +130,97 @@ export function StreamProvider({ children }) {
       clearStreamState();
       setPendingResume(null);
     }
-  }, []);
+  }, [_stopFrameTimer]);
 
-  /* ── Kirim BRB signal ke viewers ── */
+  /* ── Kirim BRB signal ── */
   const sendBRB = useCallback((active) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "brb", active }));
     }
   }, []);
 
-  /* ── Internal: WebSocket + WebRTC signaling ── */
-  const _connectSignaling = useCallback((mediaStream, taskTitle) => {
+  /* ── Update task title di viewer ── */
+  const updateTask = useCallback((task) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "update_task", task }));
+    }
+  }, []);
+
+  /* ── Setup offscreen canvas + video, mulai kirim frame ── */
+  const _startFrameCapture = useCallback((mediaStream, ws) => {
+    /* Setup video element untuk baca frame */
+    const videoEl = document.createElement("video");
+    videoEl.srcObject = mediaStream;
+    videoEl.muted     = true;
+    videoEl.playsInline = true;
+    videoElRef.current = videoEl;
+
+    /* Canvas offscreen untuk encode */
+    const canvas = document.createElement("canvas");
+    canvas.width  = FRAME_W;
+    canvas.height = FRAME_H;
+    const ctx = canvas.getContext("2d");
+    canvasRef.current = canvas;
+
+    videoEl.play().catch(() => {});
+
+    /* Mulai kirim frame ke server */
+    const interval = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      if (!videoEl.readyState || videoEl.videoWidth === 0) return;
+      try {
+        ctx.drawImage(videoEl, 0, 0, FRAME_W, FRAME_H);
+        canvas.toBlob(blob => {
+          if (blob && ws.readyState === WebSocket.OPEN) {
+            ws.send(blob);
+          }
+        }, "image/jpeg", FRAME_Q);
+      } catch (e) {
+        /* Stream mungkin sudah berhenti */
+      }
+    }, Math.floor(1000 / FRAME_FPS));
+
+    frameTimerRef.current = interval;
+  }, []);
+
+  /* ── Internal: koneksi ke /ws/screen (frame relay) ── */
+  const _connectFrameRelay = useCallback((mediaStream, taskTitle) => {
     if (!token) { toast.error("Belum login — tidak bisa stream."); return; }
 
-    const ws = new WebSocket(`${WS_BASE}/ws/rtc?token=${token}`);
+    const ws = new WebSocket(`${WS_BASE}/ws/screen?token=${token}`);
     wsRef.current = ws;
+
+    ws.binaryType = "arraybuffer"; // tidak dipakai di streamer side, tapi set untuk konsistensi
 
     ws.onopen = () => {
       ws.send(JSON.stringify({
         type:     "join_streamer",
-        username: user?.name || user?.username || "Tim",
+        username: user?.name || user?.full_name || user?.username || "Tim",
         task:     taskTitle,
       }));
+      _startFrameCapture(mediaStream, ws);
       setStreaming(true);
       setCurrentTask(taskTitle);
       setLoading(false);
       setPendingResume(null);
       saveStreamState(taskTitle);
-      toast.success("🔴 Stream dimulai — admin bisa memantau layarmu.");
+      toast.success("🔴 Stream dimulai (Frame Relay, ringan).");
     };
 
-    ws.onmessage = async (e) => {
-      let msg;
-      try { msg = JSON.parse(e.data); } catch { return; }
-
-      if (msg.type === "offer") {
-        const viewerId = msg.from;
-        const pc = new RTCPeerConnection({ iceServers });
-        pcsRef.current[viewerId] = pc;
-
-        mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
-
-        pc.onicecandidate = (ev) => {
-          if (ev.candidate && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "ice", to: viewerId, candidate: ev.candidate }));
-          }
-        };
-
+    ws.onmessage = (e) => {
+      /* Streamer tidak perlu menerima pesan apapun dari server, tapi log jika ada */
+      if (typeof e.data === "string") {
         try {
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          ws.send(JSON.stringify({ type: "answer", to: viewerId, sdp: pc.localDescription }));
-        } catch (err) {
-          console.error("[Stream] answer error:", err);
-        }
-      } else if (msg.type === "ice") {
-        const pc = pcsRef.current[msg.from];
-        if (pc && msg.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
-        }
+          const msg = JSON.parse(e.data);
+          console.log("[Stream] msg dari server:", msg);
+        } catch {}
       }
     };
 
     ws.onclose = (ev) => {
       console.log("[Stream] WS closed", ev.code);
-      // Simpan state ke LS sebelum stream mati — ini bisa karena refresh
-      if (streaming || currentTask) saveStreamState(currentTask);
+      if (streaming || currentTask) saveStreamState(currentTask || taskTitle);
+      _stopFrameTimer();
       setStreaming(false);
       setLoading(false);
       streamRef.current?.getTracks().forEach(t => t.stop());
@@ -185,20 +232,23 @@ export function StreamProvider({ children }) {
       stopStream();
       setLoading(false);
     };
-  }, [token, user, iceServers, stopStream, streaming, currentTask]);
+  }, [token, user, _startFrameCapture, _stopFrameTimer, stopStream, streaming, currentTask]);
 
   /* ── startStream: tampilkan picker lalu connect ── */
   const startStream = useCallback(async (taskTitle = "") => {
     if (streaming || loading) return;
     setLoading(true);
     try {
-      const mediaStream = await navigator.mediaDevices.getDisplayMedia(DISPLAY_CONSTRAINTS);
+      const mediaStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+        audio: false,
+      });
       streamRef.current = mediaStream;
       mediaStream.getVideoTracks()[0].onended = () => {
         toast.info("Stream dihentikan.");
         stopStream();
       };
-      _connectSignaling(mediaStream, taskTitle);
+      _connectFrameRelay(mediaStream, taskTitle);
     } catch (err) {
       setLoading(false);
       if (err.name === "NotAllowedError") return;
@@ -207,7 +257,7 @@ export function StreamProvider({ children }) {
       streamRef.current?.getTracks().forEach(t => t.stop());
       streamRef.current = null;
     }
-  }, [streaming, loading, stopStream, _connectSignaling]);
+  }, [streaming, loading, stopStream, _connectFrameRelay]);
 
   /* ── connectStreamWithMedia: gunakan stream yang sudah di-capture ── */
   const connectStreamWithMedia = useCallback((mediaStream, taskTitle = "") => {
@@ -219,46 +269,49 @@ export function StreamProvider({ children }) {
       toast.info("Stream dihentikan.");
       stopStream();
     };
-    _connectSignaling(mediaStream, taskTitle);
-  }, [streaming, loading, stopStream, _connectSignaling]);
+    _connectFrameRelay(mediaStream, taskTitle);
+  }, [streaming, loading, stopStream, _connectFrameRelay]);
 
-  /* ── resumeStream: re-capture setelah refresh (dipanggil saat user klik banner) ── */
+  /* ── resumeStream: re-capture setelah refresh ── */
   const resumeStream = useCallback(async (taskTitle = "") => {
     const task = taskTitle || pendingResume?.task || "";
     clearStreamState();
     setPendingResume(null);
     setLoading(true);
     try {
-      const mediaStream = await navigator.mediaDevices.getDisplayMedia(DISPLAY_CONSTRAINTS);
+      const mediaStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+        audio: false,
+      });
       streamRef.current = mediaStream;
       mediaStream.getVideoTracks()[0].onended = () => {
         toast.info("Stream dihentikan.");
         stopStream();
       };
-      _connectSignaling(mediaStream, task);
+      _connectFrameRelay(mediaStream, task);
     } catch (err) {
       setLoading(false);
       clearStreamState();
       if (err.name !== "NotAllowedError") toast.error("Gagal resume stream: " + err.message);
     }
-  }, [pendingResume, stopStream, _connectSignaling]);
+  }, [pendingResume, stopStream, _connectFrameRelay]);
 
   /* ── Cleanup saat unmount ── */
   useEffect(() => () => {
-    // Saat unmount karena refresh: simpan state dulu
+    _stopFrameTimer();
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.close();
     }
     streamRef.current?.getTracks().forEach(t => t.stop());
-    Object.values(pcsRef.current).forEach(pc => pc.close());
-  }, []);
+  }, [_stopFrameTimer]);
 
   return (
     <StreamContext.Provider value={{
       streaming, loading, currentTask, iceServers,
       pendingResume,
-      startStream, connectStreamWithMedia, resumeStream, stopStream, sendBRB,
+      startStream, connectStreamWithMedia, resumeStream, stopStream,
+      sendBRB, updateTask,
     }}>
       {children}
     </StreamContext.Provider>
