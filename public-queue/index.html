@@ -7,48 +7,71 @@
 <meta property="og:title" content="Magsika Queue" />
 <meta property="og:description" content="Live commission queue — track the status of active orders in real time." />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Work+Sans:wght@300..700&display=swap" rel="stylesheet" />
 <title>Magsika Queue</title>
 <style>
+  /* Same token system as staging.magsikastudio.com (wp-content/themes/magsika/style.css) —
+     near-black base, one disciplined violet accent, sharp angular cuts, condensed display type. */
   :root {
     color-scheme: dark;
-    --bg: #0b0d12;
-    --panel: #14161d;
-    --panel-2: #1b1e27;
-    --border: #262a35;
-    --text: #eef0f4;
-    --muted: #8b90a0;
-    --accent: #7aa2ff;
+    --bg: #0a090d;        /* --ink */
+    --panel: #131118;
+    --panel-2: #1a1720;
+    --border: #2c2833;    /* --edge */
+    --text: #f2f0f5;
+    --muted: #a49dae;
+    --faint: #6b6475;
+    --accent: #a238ff;    /* --violet-vivid */
+    --violet: #31004a;
+    --gold: #e8b64c;
+    --font-display: 'Rajdhani', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'Work Sans', system-ui, -apple-system, sans-serif;
+    --cut: 12px;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: radial-gradient(1200px 600px at 50% -10%, #191c26 0%, var(--bg) 60%);
+    font-family: var(--font-body);
+    background: var(--bg);
     color: var(--text);
     min-height: 100vh;
+  }
+  h1, h2, h3, .label-caps {
+    font-family: var(--font-display);
+    font-weight: 700;
+    text-transform: uppercase;
   }
   header {
     padding: 40px 24px 28px;
     text-align: center;
   }
+  .eyebrow {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
   header h1 {
     margin: 0;
-    font-size: 30px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    background: linear-gradient(135deg, #ffffff 0%, #9fb4ff 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    font-size: 42px;
+    letter-spacing: 0.01em;
+    color: var(--text);
   }
+  header h1 em { font-style: normal; color: var(--accent); }
   .commissions-badge {
     margin-top: 12px;
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    font-size: 12px;
+    font-family: var(--font-display);
+    font-size: 12.5px;
     font-weight: 600;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     padding: 6px 14px;
     border-radius: 999px;
@@ -149,9 +172,11 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-weight: 600;
-    font-size: 13.5px;
-    letter-spacing: 0.2px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     position: relative;
   }
   .column-header::before {
@@ -198,10 +223,12 @@
     border-color: #3a3f4f;
   }
   .card .project {
-    font-size: 13.5px;
-    font-weight: 600;
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    text-transform: uppercase;
     color: var(--text);
-    line-height: 1.3;
+    line-height: 1.25;
   }
   .card .client {
     font-size: 11.5px;
@@ -210,7 +237,7 @@
   }
   .card .code {
     font-size: 10px;
-    color: #565c6d;
+    color: var(--faint);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     margin-top: 6px;
     word-break: break-word;
@@ -232,11 +259,15 @@
     color: var(--muted);
   }
   .badge {
-    background: rgba(122,162,255,0.12);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
     color: var(--accent);
-    border-radius: 5px;
-    padding: 2px 7px;
-    font-weight: 500;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 10.5px;
   }
   .timer {
     margin-top: 8px;
@@ -319,7 +350,7 @@
     cursor: pointer;
   }
   .modal-close:hover { color: var(--text); }
-  .modal-project { font-size: 18px; font-weight: 700; padding-right: 30px; }
+  .modal-project { font-family: var(--font-display); font-size: 22px; font-weight: 700; text-transform: uppercase; padding-right: 30px; }
   .modal-client { color: var(--muted); font-size: 13px; margin-top: 3px; }
   .modal-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; font-size: 12px; color: var(--muted); }
   .modal-last-updated {
@@ -366,8 +397,9 @@
     padding: 5px 11px;
     border-radius: 999px;
     cursor: pointer;
-    letter-spacing: 0.3px;
-    font-family: inherit;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-family: var(--font-display);
   }
   .live-badge-btn:hover { background: rgba(255,59,59,0.26); }
   .live-rec-dot {
@@ -405,12 +437,23 @@
   .live-submit-btn {
     margin-top: 12px;
     width: 100%;
-    text-align: center;
+    display: flex;
+    align-items: center;
     justify-content: center;
     cursor: pointer;
     border: none;
-    font-family: inherit;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 13px 20px;
+    background: var(--accent);
+    color: var(--bg);
+    clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+    transition: background 0.15s ease;
   }
+  .live-submit-btn:hover:not(:disabled) { background: var(--text); }
   .live-submit-btn:disabled { opacity: 0.6; cursor: default; }
   .live-error { color: #ff8a8a; font-size: 12px; margin-top: 8px; }
   .live-video-wrap {
@@ -438,7 +481,8 @@
 </head>
 <body>
 <header>
-  <h1>Magsika Queue</h1>
+  <p class="eyebrow">Live Commission Tracker</p>
+  <h1>Magsika <em>Queue</em></h1>
   <div id="commissions-badge" class="commissions-badge open"><span class="dot"></span><span class="commissions-label">Commissions Open</span></div>
   <a class="discord-link" href="https://discord.gg/zTYNtgSvW" target="_blank" rel="noopener noreferrer">
     <svg viewBox="0 0 24 24"><path d="M20.317 4.369A19.791 19.791 0 0 0 16.558 3c-.211.375-.444.87-.608 1.262a18.27 18.27 0 0 0-5.9 0A12.64 12.64 0 0 0 9.442 3a19.736 19.736 0 0 0-3.762 1.37C2.68 8.58 1.907 12.678 2.294 16.72a19.9 19.9 0 0 0 5.993 3.03c.483-.658.914-1.357 1.284-2.09a12.9 12.9 0 0 1-2.022-.97c.17-.124.336-.253.497-.386 3.9 1.81 8.13 1.81 11.984 0 .162.133.328.262.497.386-.646.383-1.323.71-2.024.971.37.732.8 1.431 1.283 2.089a19.83 19.83 0 0 0 6.002-3.03c.462-4.687-.766-8.746-3.471-12.351ZM8.68 14.246c-1.156 0-2.102-1.06-2.102-2.36 0-1.303.926-2.362 2.102-2.362 1.187 0 2.123 1.069 2.103 2.362 0 1.3-.926 2.36-2.103 2.36Zm6.647 0c-1.157 0-2.102-1.06-2.102-2.36 0-1.303.925-2.362 2.102-2.362 1.187 0 2.123 1.069 2.102 2.362 0 1.3-.915 2.36-2.102 2.36Z"/></svg>
@@ -459,21 +503,21 @@
 <script>
 const STATUS_ORDER = ["Pending", "Scheduled", "In Progress", "Quality Control", "Done"];
 const STATUS_COLORS = {
-  "Pending": "#8b90a0",
-  "Scheduled": "#5eead4",
-  "In Progress": "#60a5fa",
-  "Quality Control": "#c792ea",
+  "Pending": "#a49dae",
+  "Scheduled": "#e8b64c",
+  "In Progress": "#a238ff",
+  "Quality Control": "#5eead4",
   "Done": "#4ade80",
 };
 // Per-card label colors — more granular than the 5 board columns above.
 const LABEL_COLORS = {
   "Need Designer": "#f5a623",
-  "Pending": "#8b90a0",
-  "Scheduled": "#5eead4",
-  "In Progress": "#60a5fa",
-  "Quality Control": "#c792ea",
+  "Pending": "#a49dae",
+  "Scheduled": "#e8b64c",
+  "In Progress": "#a238ff",
+  "Quality Control": "#5eead4",
   "Modeling": "#7aa2ff",
-  "Teksturing": "#a78bfa",
+  "Teksturing": "#f472b6",
   "Rigging": "#ff9f68",
   "Revisi": "#ff6b6b",
   "Done": "#4ade80",
@@ -734,7 +778,7 @@ function openLiveModal(order) {
       <div class="modal-client" style="margin-top:4px;">Enter your Fiverr or Etsy order code to watch.</div>
       <input type="text" id="live-code-input" placeholder="e.g. FO12345678" autocomplete="off" />
       <div class="live-error" id="live-error" style="display:none;"></div>
-      <button type="button" class="discord-link live-submit-btn" id="live-submit-btn">Watch Live</button>
+      <button type="button" class="live-submit-btn" id="live-submit-btn">Watch Live</button>
       <div class="live-video-wrap" id="live-video-wrap" style="display:none;">
         <img id="live-video-img" alt="Live stream" />
         <div class="live-ended-badge" id="live-ended-badge"></div>
