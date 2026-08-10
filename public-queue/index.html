@@ -353,6 +353,84 @@
   .history-date { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
   .history-status { flex: 1; text-align: left; margin-left: 10px; }
   .history-time { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
+  .live-badge-btn {
+    margin-top: 9px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,59,59,0.14);
+    border: 1px solid rgba(255,59,59,0.4);
+    color: #ff6b6b;
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 5px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    font-family: inherit;
+  }
+  .live-badge-btn:hover { background: rgba(255,59,59,0.26); }
+  .live-rec-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: #ff3b3b;
+    animation: pulse 1.4s infinite;
+  }
+  #live-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(6,7,10,0.75);
+    backdrop-filter: blur(2px);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 60;
+  }
+  #live-overlay.open { display: flex; }
+  .live-modal input[type="text"] {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    margin-top: 12px;
+    font-family: inherit;
+  }
+  .live-modal input[type="text"]:focus { border-color: var(--accent); }
+  .live-submit-btn {
+    margin-top: 12px;
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+  }
+  .live-submit-btn:disabled { opacity: 0.6; cursor: default; }
+  .live-error { color: #ff8a8a; font-size: 12px; margin-top: 8px; }
+  .live-video-wrap {
+    margin-top: 14px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    position: relative;
+    aspect-ratio: 16/9;
+  }
+  .live-video-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .live-ended-badge {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    font-size: 13px;
+    text-align: center;
+    padding: 10px;
+  }
 </style>
 </head>
 <body>
@@ -373,6 +451,7 @@
 <div id="board"></div>
 <div id="status-line"></div>
 <div id="modal-overlay"></div>
+<div id="live-overlay"></div>
 
 <script>
 const STATUS_ORDER = ["Pending", "Scheduled", "In Progress", "Quality Control", "Done"];
@@ -476,6 +555,7 @@ function renderCard(order) {
       </div>
       ${timerHtml}
       ${pct !== null ? `<div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>` : ""}
+      ${order.is_live ? `<button type="button" class="live-badge-btn" data-live-code="${escapeHtml(order.code)}"><span class="live-rec-dot"></span>Watch Live</button>` : ""}
       ${order.code ? `<div class="code">${escapeHtml(order.code)}</div>` : ""}
     </div>
   `;
@@ -580,7 +660,126 @@ function closeModal() {
   document.getElementById("modal-overlay").classList.remove("open");
 }
 
+let liveWs = null;
+
+function closeLiveOverlay() {
+  document.getElementById("live-overlay").classList.remove("open");
+  if (liveWs) { liveWs.close(); liveWs = null; }
+}
+
+function startLiveView(ticket) {
+  const codeInput  = document.getElementById("live-code-input");
+  const submitBtn  = document.getElementById("live-submit-btn");
+  const errorEl    = document.getElementById("live-error");
+  const wrap       = document.getElementById("live-video-wrap");
+  const img        = document.getElementById("live-video-img");
+  const endedBadge = document.getElementById("live-ended-badge");
+  if (codeInput) codeInput.style.display = "none";
+  if (submitBtn) submitBtn.style.display = "none";
+  if (errorEl) errorEl.style.display = "none";
+  wrap.style.display = "block";
+
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}/api/public/ws/screen?ticket=${encodeURIComponent(ticket)}`);
+  ws.binaryType = "arraybuffer";
+  liveWs = ws;
+  let pendingBrb = false;
+  let lastUrl = null;
+
+  ws.onmessage = (e) => {
+    if (typeof e.data === "string") {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === "live_status" && !msg.live) {
+          endedBadge.textContent = "Stream has ended";
+          endedBadge.style.display = "flex";
+        } else if (msg.type === "frame") {
+          pendingBrb = !!msg.brb;
+        }
+      } catch {}
+      return;
+    }
+    const blob = new Blob([e.data], { type: "image/jpeg" });
+    const url = URL.createObjectURL(blob);
+    img.src = url;
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = url;
+    if (pendingBrb) {
+      endedBadge.textContent = "Be right back...";
+      endedBadge.style.display = "flex";
+    } else {
+      endedBadge.style.display = "none";
+    }
+  };
+  ws.onclose = () => {
+    endedBadge.textContent = "Stream has ended";
+    endedBadge.style.display = "flex";
+  };
+  ws.onerror = () => {
+    endedBadge.textContent = "Connection error";
+    endedBadge.style.display = "flex";
+  };
+}
+
+function openLiveModal(order) {
+  const overlay = document.getElementById("live-overlay");
+  overlay.innerHTML = `
+    <div class="modal live-modal">
+      <button class="modal-close" aria-label="Close">&times;</button>
+      <div class="modal-project">Watch Live: ${escapeHtml(order.project || "Untitled")}</div>
+      <div class="modal-client" style="margin-top:4px;">Enter your Fiverr or Etsy order code to watch.</div>
+      <input type="text" id="live-code-input" placeholder="e.g. FO12345678" autocomplete="off" />
+      <div class="live-error" id="live-error" style="display:none;"></div>
+      <button type="button" class="discord-link live-submit-btn" id="live-submit-btn">Watch Live</button>
+      <div class="live-video-wrap" id="live-video-wrap" style="display:none;">
+        <img id="live-video-img" alt="Live stream" />
+        <div class="live-ended-badge" id="live-ended-badge"></div>
+      </div>
+    </div>
+  `;
+  overlay.classList.add("open");
+  overlay.querySelector(".modal-close").addEventListener("click", closeLiveOverlay);
+
+  const input = document.getElementById("live-code-input");
+  const submitBtn = document.getElementById("live-submit-btn");
+  const errorEl = document.getElementById("live-error");
+
+  const submit = async () => {
+    const code = input.value.trim();
+    if (!code) return;
+    errorEl.style.display = "none";
+    submitBtn.textContent = "Checking...";
+    submitBtn.disabled = true;
+    try {
+      const res = await fetch("/api/public/stream/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_code: order.code, secret: code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Verification failed");
+      startLiveView(data.ticket);
+    } catch (e) {
+      errorEl.textContent = e.message;
+      errorEl.style.display = "block";
+      submitBtn.textContent = "Watch Live";
+      submitBtn.disabled = false;
+    }
+  };
+
+  submitBtn.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  input.focus();
+}
+
 document.getElementById("board").addEventListener("click", (e) => {
+  const liveBtn = e.target.closest(".live-badge-btn");
+  if (liveBtn) {
+    const code = liveBtn.getAttribute("data-live-code");
+    const order = allOrders.find(o => o.code === code);
+    if (order) openLiveModal(order);
+    return;
+  }
   const card = e.target.closest(".card");
   if (!card) return;
   const code = card.getAttribute("data-code");
@@ -592,8 +791,12 @@ document.getElementById("modal-overlay").addEventListener("click", (e) => {
   if (e.target.id === "modal-overlay") closeModal();
 });
 
+document.getElementById("live-overlay").addEventListener("click", (e) => {
+  if (e.target.id === "live-overlay") closeLiveOverlay();
+});
+
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeModal();
+  if (e.key === "Escape") { closeModal(); closeLiveOverlay(); }
 });
 
 function updateCommissionsBadge(open) {
