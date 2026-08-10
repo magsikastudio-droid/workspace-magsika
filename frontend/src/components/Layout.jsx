@@ -5,8 +5,9 @@ import {
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
-  Send, Loader2, LayoutGrid, Receipt, Database, ExternalLink,
+  Send, Loader2, LayoutGrid, Receipt, Database, ExternalLink, Monitor,
 } from "lucide-react";
+import StreamButton from "./StreamButton";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { api } from "../lib/api";
@@ -63,6 +64,7 @@ const NAV_SECTIONS = [
       { to: "/todo",          label: "To Do",         icon: CheckSquare,  roles: ["admin", "pm", "talent"] },
       { to: "/daily-report",  label: "Daily Report",  icon: BookOpen,     roles: ["admin", "pm", "talent"] },
       { to: "/performance",   label: "Performance",   icon: TrendingUp,   roles: ["admin", "pm", "talent"] },
+      { to: "/live",          label: "Live Monitor",  icon: Monitor,      roles: ["admin", "pm"] },
     ],
   },
   {
@@ -277,6 +279,11 @@ export default function Layout({ children }) {
           </div>
         </div>
       )}
+
+      {/* Stream button — visible to all roles */}
+      <div className="px-4 pb-2">
+        <StreamButton />
+      </div>
 
       <div className="border-t border-slate-100 dark:border-white/[0.06] px-4 py-4">
         <div className="flex items-center justify-between gap-3">
