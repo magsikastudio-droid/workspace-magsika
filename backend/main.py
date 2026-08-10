@@ -671,6 +671,21 @@ async def on_startup():
         print(f"[Migration] Email update error: {_e}", flush=True)
     # ────────────────────────────────────────────────────────────────
 
+    # ── One-time password reset (ivo) ────────────────────────────────
+    _pw_reset_flag = "migration_ivo_pw_reset_v1"
+    try:
+        _done = await db.settings.find_one({"key": _pw_reset_flag})
+        if not _done:
+            await db.users.update_one(
+                {"username": "ivo"},
+                {"$set": {"hashed_password": hash_password("!V0belajar")}},
+            )
+            await db.settings.insert_one({"key": _pw_reset_flag, "done": True})
+            print("[Migration] Password ivo berhasil direset.", flush=True)
+    except Exception as _e:
+        print(f"[Migration] Password reset error: {_e}", flush=True)
+    # ────────────────────────────────────────────────────────────────
+
     if scheduler:
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
