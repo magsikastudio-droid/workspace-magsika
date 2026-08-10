@@ -933,11 +933,22 @@ async def send_otp_email(to_email: str, otp: str, purpose: str = "login"):
     if not smtp_user or not smtp_pass:
         raise HTTPException(status_code=503, detail="Email service belum dikonfigurasi — tambahkan SMTP_USER dan SMTP_PASS di server")
 
-    action = "masuk ke" if purpose == "login" else "mendaftar di"
+    if purpose == "login":
+        action = "masuk ke"
+        subject_tag = "Login"
+    elif purpose == "verify_email":
+        action = "verifikasi email di"
+        subject_tag = "Verifikasi Email"
+    elif purpose == "change_email":
+        action = "ganti email di"
+        subject_tag = "Ganti Email"
+    else:
+        action = "mendaftar di"
+        subject_tag = "Pendaftaran"
     msg = MIMEMultipart("alternative")
     msg["From"] = f"Magsika Workspace <{smtp_from}>"
     msg["To"] = to_email
-    msg["Subject"] = f"Kode OTP Workspace Magsika — {otp}"
+    msg["Subject"] = f"[{subject_tag}] Kode OTP Workspace Magsika — {otp}"
 
     html_body = f"""
 <!DOCTYPE html>
@@ -1049,7 +1060,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     raw_role = user.get("role", "talent")
     is_superadmin = raw_role == "superadmin"
-    return {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "role": "admin" if is_superadmin else raw_role, "is_superadmin": is_superadmin, "status": user.get("status", "active")}
+    return {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "email_verified": user.get("email_verified", False), "role": "admin" if is_superadmin else raw_role, "is_superadmin": is_superadmin, "status": user.get("status", "active")}
 
 
 @app.post("/auth/login")
@@ -1112,6 +1123,72 @@ async def verify_login(req: VerifyLoginRequest):
 @app.get("/auth/me")
 async def auth_me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
+
+
+# ── Email Verification Endpoints ─────────────────────────────────────────────
+
+@app.post("/auth/request-email-verify")
+async def request_email_verify(current_user: dict = Depends(get_current_user)):
+    """Kirim OTP ke email terdaftar untuk verifikasi kepemilikan."""
+    email = current_user.get("email", "")
+    if not email or email.endswith("@magsika.local"):
+        raise HTTPException(status_code=400, detail="Email tidak valid untuk diverifikasi")
+    otp = await create_otp_record(email, "verify_email", username=current_user["username"])
+    await send_otp_email(email, otp, purpose="verify_email")
+    return {"message": f"OTP dikirim ke {_mask_email(email)}", "email_hint": _mask_email(email)}
+
+
+class ConfirmEmailVerifyRequest(BaseModel):
+    otp: str
+
+
+@app.post("/auth/confirm-email-verify")
+async def confirm_email_verify(req: ConfirmEmailVerifyRequest, current_user: dict = Depends(get_current_user)):
+    """Verifikasi OTP → tandai email_verified = True."""
+    email = current_user.get("email", "")
+    valid = await verify_otp_record(email, req.otp, "verify_email")
+    if not valid:
+        raise HTTPException(status_code=400, detail="Kode OTP salah atau sudah kedaluwarsa")
+    await db.users.update_one(
+        {"username": current_user["username"]},
+        {"$set": {"email_verified": True}},
+    )
+    return {"message": "Email berhasil diverifikasi ✅"}
+
+
+class RequestEmailChangeRequest(BaseModel):
+    new_email: EmailStr
+
+
+@app.post("/auth/request-email-change")
+async def request_email_change(req: RequestEmailChangeRequest, current_user: dict = Depends(get_current_user)):
+    """Kirim OTP ke email BARU sebelum ganti alamat email."""
+    new_email = str(req.new_email).lower().strip()
+    existing = await db.users.find_one({"email": new_email, "username": {"$ne": current_user["username"]}})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email sudah digunakan akun lain")
+    otp = await create_otp_record(new_email, "change_email", username=current_user["username"])
+    await send_otp_email(new_email, otp, purpose="change_email")
+    return {"message": f"OTP dikirim ke {_mask_email(new_email)}", "email_hint": _mask_email(new_email)}
+
+
+class ConfirmEmailChangeRequest(BaseModel):
+    new_email: EmailStr
+    otp: str
+
+
+@app.post("/auth/confirm-email-change")
+async def confirm_email_change(req: ConfirmEmailChangeRequest, current_user: dict = Depends(get_current_user)):
+    """Verifikasi OTP → update email + set email_verified = True."""
+    new_email = str(req.new_email).lower().strip()
+    valid = await verify_otp_record(new_email, req.otp, "change_email")
+    if not valid:
+        raise HTTPException(status_code=400, detail="Kode OTP salah atau sudah kedaluwarsa")
+    await db.users.update_one(
+        {"username": current_user["username"]},
+        {"$set": {"email": new_email, "email_verified": True}},
+    )
+    return {"message": "Email berhasil diperbarui", "new_email": new_email}
 
 
 @app.get("/turn-credentials")
