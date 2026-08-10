@@ -386,6 +386,9 @@
     z-index: 60;
   }
   #live-overlay.open { display: flex; }
+  .live-modal {
+    max-width: min(92vw, 860px);
+  }
   .live-modal input[type="text"] {
     width: 100%;
     background: var(--panel-2);
@@ -683,7 +686,6 @@ function startLiveView(ticket) {
   const ws = new WebSocket(`${proto}//${location.host}/api/public/ws/screen?ticket=${encodeURIComponent(ticket)}`);
   ws.binaryType = "arraybuffer";
   liveWs = ws;
-  let pendingBrb = false;
   let lastUrl = null;
 
   ws.onmessage = (e) => {
@@ -693,23 +695,25 @@ function startLiveView(ticket) {
         if (msg.type === "live_status" && !msg.live) {
           endedBadge.textContent = "Stream has ended";
           endedBadge.style.display = "flex";
-        } else if (msg.type === "frame") {
-          pendingBrb = !!msg.brb;
+        } else if (msg.type === "brb_status") {
+          if (msg.active) {
+            endedBadge.textContent = "Be right back...";
+            endedBadge.style.display = "flex";
+          } else {
+            endedBadge.style.display = "none";
+          }
         }
       } catch {}
       return;
     }
+    // Binary frame bytes only ever arrive while actively streaming (server
+    // withholds them entirely during BRB), so receiving one always means live.
     const blob = new Blob([e.data], { type: "image/jpeg" });
     const url = URL.createObjectURL(blob);
     img.src = url;
     if (lastUrl) URL.revokeObjectURL(lastUrl);
     lastUrl = url;
-    if (pendingBrb) {
-      endedBadge.textContent = "Be right back...";
-      endedBadge.style.display = "flex";
-    } else {
-      endedBadge.style.display = "none";
-    }
+    endedBadge.style.display = "none";
   };
   ws.onclose = () => {
     endedBadge.textContent = "Stream has ended";
