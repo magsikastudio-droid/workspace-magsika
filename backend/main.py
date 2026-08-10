@@ -979,7 +979,11 @@ async def verify_otp_record(email: str, otp: str, purpose: str) -> bool:
     })
     if not record:
         return False
-    if datetime.now(timezone.utc) > record["expires_at"].replace(tzinfo=timezone.utc) if record["expires_at"].tzinfo is None else datetime.now(timezone.utc) > record["expires_at"]:
+    # Pastikan expires_at timezone-aware sebelum dibandingkan
+    exp = record["expires_at"]
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > exp:
         return False
     await db.otps.update_one({"_id": record["_id"]}, {"$set": {"used": True}})
     return True
