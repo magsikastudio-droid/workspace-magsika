@@ -421,10 +421,13 @@ function ProfileSection({ user }) {
 }
 
 /* ─── UserRow ────────────────────────────────────────────────────── */
-function UserRow({ u, onApprove, onUpdate, onDelete }) {
+function UserRow({ u, onApprove, onUpdate, onDelete, onRefresh }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ full_name: u.full_name, role: u.role, password: "" });
   const [saving, setSaving] = useState(false);
+  const [emailEdit, setEmailEdit] = useState(false);
+  const [newEmail, setNewEmail] = useState(u.email || "");
+  const [savingEmail, setSavingEmail] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
@@ -441,6 +444,21 @@ function UserRow({ u, onApprove, onUpdate, onDelete }) {
     }
   };
 
+  const handleSaveEmail = async () => {
+    if (!newEmail || !newEmail.includes("@")) { toast.error("Email tidak valid"); return; }
+    setSavingEmail(true);
+    try {
+      await api.post("/admin/set-user-email", { username: u.username, email: newEmail, verified: true });
+      toast.success(`Email ${u.username} diset → ${newEmail} ✅`);
+      setEmailEdit(false);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal set email");
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3">
@@ -449,7 +467,12 @@ function UserRow({ u, onApprove, onUpdate, onDelete }) {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-900 truncate">{u.full_name || u.username}</p>
-          <p className="text-xs text-slate-400 truncate">{u.email}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-xs text-slate-400 truncate">{u.email || <span className="italic">belum ada email</span>}</p>
+            {u.email_verified
+              ? <span className="shrink-0 text-[10px] text-emerald-600 font-bold">✅</span>
+              : u.email ? <span className="shrink-0 text-[10px] text-amber-500 font-bold">⚠</span> : null}
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${ROLE_COLORS[u.role] || "bg-slate-100 text-slate-600"}`}>
@@ -464,7 +487,11 @@ function UserRow({ u, onApprove, onUpdate, onDelete }) {
               <Check size={15} />
             </button>
           )}
-          <button onClick={() => setEditing((p) => !p)} title="Edit"
+          <button onClick={() => { setEmailEdit((p) => !p); setEditing(false); }} title="Set Email"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-violet-50 hover:text-violet-500 transition">
+            <Mail size={14} />
+          </button>
+          <button onClick={() => { setEditing((p) => !p); setEmailEdit(false); }} title="Edit"
             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 transition">
             <Pencil size={14} />
           </button>
@@ -495,6 +522,23 @@ function UserRow({ u, onApprove, onUpdate, onDelete }) {
               className="rounded-xl bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
               {saving ? "Menyimpan..." : "Simpan"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {emailEdit && (
+        <div className="border-t border-violet-100 bg-violet-50 px-4 py-3">
+          <p className="text-xs font-semibold text-violet-700 mb-2">Set Email (langsung terverifikasi, tanpa OTP)</p>
+          <div className="flex gap-2">
+            <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
+              placeholder="email@baru.com"
+              className="flex-1 rounded-xl border border-violet-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400" />
+            <button onClick={handleSaveEmail} disabled={savingEmail}
+              className="rounded-xl bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+              {savingEmail ? "..." : "Simpan"}
+            </button>
+            <button onClick={() => setEmailEdit(false)}
+              className="rounded-xl px-3 py-1.5 text-sm text-slate-500 hover:bg-violet-100 transition">Batal</button>
           </div>
         </div>
       )}
@@ -847,7 +891,7 @@ export default function SettingsPage() {
                       <p className="text-xs font-bold uppercase tracking-wide text-orange-500">Menunggu Persetujuan ({pendingUsers.length})</p>
                     </div>
                     <div className="space-y-2">
-                      {pendingUsers.map((u) => <UserRow key={u.id} u={u} onApprove={handleApprove} onUpdate={handleUpdate} onDelete={handleDelete} />)}
+                      {pendingUsers.map((u) => <UserRow key={u.id} u={u} onApprove={handleApprove} onUpdate={handleUpdate} onDelete={handleDelete} onRefresh={fetchUsers} />)}
                     </div>
                   </div>
                 )}
@@ -856,7 +900,7 @@ export default function SettingsPage() {
                   <div>
                     <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Anggota Aktif ({activeUsers.length})</p>
                     <div className="space-y-2">
-                      {activeUsers.map((u) => <UserRow key={u.id} u={u} onApprove={handleApprove} onUpdate={handleUpdate} onDelete={handleDelete} />)}
+                      {activeUsers.map((u) => <UserRow key={u.id} u={u} onApprove={handleApprove} onUpdate={handleUpdate} onDelete={handleDelete} onRefresh={fetchUsers} />)}
                     </div>
                   </div>
                 )}
@@ -983,12 +1027,76 @@ export default function SettingsPage() {
             <p className="text-xs text-slate-400 mt-1">Deploy: {new Date().toLocaleDateString("id-ID")}</p>
           </div>
 
+          {isAdmin && <SmtpTestSection />}
           {isAdmin && <ClearDataSection />}
         </div>
       )}
 
       {showInvite && (
         <InviteModal onClose={() => setShowInvite(false)} onInvited={(newUser) => setUsers((prev) => [...prev, newUser])} />
+      )}
+    </div>
+  );
+}
+
+/* ─── SmtpTestSection ─────────────────────────────────────────────── */
+function SmtpTestSection() {
+  const [targetEmail, setTargetEmail] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleTest = async () => {
+    if (!targetEmail || !targetEmail.includes("@")) { toast.error("Masukkan email tujuan yang valid"); return; }
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await api.post("/admin/test-smtp", { target_email: targetEmail });
+      setResult(res.data);
+      if (res.data.ok) toast.success("Email test berhasil dikirim ✅");
+      else toast.error("SMTP gagal — lihat detail di bawah");
+    } catch (err) {
+      setResult({ ok: false, error: err.response?.data?.detail || err.message });
+      toast.error("Gagal memanggil test SMTP");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-2 mb-1">
+        <Mail size={18} className="text-violet-500" />
+        <h2 className="text-lg font-semibold">Diagnostik SMTP Email</h2>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Uji apakah server bisa mengirim email OTP. Masukkan email tujuan, klik Test.
+      </p>
+      <div className="flex gap-2">
+        <input type="email" value={targetEmail} onChange={(e) => setTargetEmail(e.target.value)}
+          placeholder="email@tujuan.com" onKeyDown={(e) => e.key === "Enter" && handleTest()}
+          className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+        <button onClick={handleTest} disabled={testing}
+          className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+          <Send size={14} /> {testing ? "Mengirim..." : "Test Kirim"}
+        </button>
+      </div>
+      {result && (
+        <div className={`mt-4 rounded-2xl p-4 text-sm ${result.ok ? "bg-emerald-50 border border-emerald-200" : "bg-rose-50 border border-rose-200"}`}>
+          {result.ok ? (
+            <p className="text-emerald-700 font-semibold">✅ {result.message}</p>
+          ) : (
+            <>
+              <p className="text-rose-700 font-semibold mb-2">❌ {result.error}</p>
+              {result.smtp_host && (
+                <div className="text-xs text-rose-600 space-y-0.5 font-mono">
+                  <p>Host: {result.smtp_host}:{result.smtp_port}</p>
+                  <p>User: {result.smtp_user}</p>
+                  <p>From: {result.smtp_from}</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   );

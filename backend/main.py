@@ -2500,9 +2500,12 @@ async def update_daily_report_deadline(data: DeadlineUpdate, current_user: dict 
 class TelegramSendBody(BaseModel):
     message: str
 
+class TestSmtpRequest(BaseModel):
+    target_email: EmailStr
+
 @app.post("/admin/test-smtp")
-async def test_smtp(current_user: dict = Depends(get_current_user)):
-    """Test SMTP connection — admin only. Returns OK or error detail."""
+async def test_smtp(req: TestSmtpRequest, current_user: dict = Depends(get_current_user)):
+    """Test SMTP — kirim email percobaan ke target_email. Admin only."""
     if current_user.get("role") not in ["admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Forbidden")
     smtp_host = os.getenv("SMTP_HOST", "smtp.hostinger.com")
@@ -2510,16 +2513,39 @@ async def test_smtp(current_user: dict = Depends(get_current_user)):
     smtp_user = os.getenv("SMTP_USER", "")
     smtp_pass = os.getenv("SMTP_PASS", "")
     smtp_from = os.getenv("SMTP_FROM", smtp_user)
+    config_info = {"smtp_host": smtp_host, "smtp_port": smtp_port, "smtp_user": smtp_user or "(kosong)", "smtp_from": smtp_from or "(kosong)"}
     if not smtp_user or not smtp_pass:
-        return {"ok": False, "error": "SMTP_USER atau SMTP_PASS belum di-set di .env"}
+        return {"ok": False, "error": "SMTP_USER atau SMTP_PASS belum di-set di server .env", **config_info}
     try:
-        otp = await create_otp_record(current_user["email"], "login", username=current_user["username"])
-        await send_otp_email(current_user["email"], otp, purpose="login")
-        return {"ok": True, "message": f"Email test berhasil dikirim ke {current_user['email']}", "smtp_host": smtp_host, "smtp_port": smtp_port, "smtp_user": smtp_user, "smtp_from": smtp_from}
+        await send_otp_email(str(req.target_email), "123456", purpose="login")
+        return {"ok": True, "message": f"Email test berhasil dikirim ke {req.target_email}", **config_info}
     except RuntimeError as e:
-        return {"ok": False, "error": str(e), "smtp_host": smtp_host, "smtp_port": smtp_port, "smtp_user": smtp_user}
+        return {"ok": False, "error": str(e), **config_info}
     except Exception as e:
-        return {"ok": False, "error": f"Unexpected: {e}"}
+        return {"ok": False, "error": f"Unexpected: {type(e).__name__}: {e}", **config_info}
+
+
+class AdminSetEmailRequest(BaseModel):
+    username: str
+    email: EmailStr
+    verified: bool = True
+
+@app.post("/admin/set-user-email")
+async def admin_set_user_email(req: AdminSetEmailRequest, current_user: dict = Depends(get_current_user)):
+    """Admin: set email + status verifikasi user langsung tanpa OTP."""
+    if current_user.get("role") not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    new_email = str(req.email).lower().strip()
+    existing = await db.users.find_one({"email": new_email, "username": {"$ne": req.username}})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email sudah digunakan akun lain")
+    result = await db.users.update_one(
+        {"username": req.username},
+        {"$set": {"email": new_email, "email_verified": req.verified}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail=f"User '{req.username}' tidak ditemukan")
+    return {"ok": True, "message": f"Email {req.username} diset ke {new_email} (verified={req.verified})"}
 
 
 @app.post("/telegram/send")
