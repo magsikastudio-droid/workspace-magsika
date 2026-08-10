@@ -75,9 +75,17 @@ export function AuthProvider({ children }) {
 
   const login = async ({ username, password }) => {
     const res = await api.post("/auth/login", { username, password });
+    // Jika backend butuh OTP, kembalikan data tanpa set token
+    if (res.data.step === "otp") return res.data;
     saveToken(res.data.access_token);
     await fetchUser();
     return res.data;
+  };
+
+  // Dipanggil setelah OTP berhasil diverifikasi
+  const loginWithToken = (accessToken, userData) => {
+    saveToken(accessToken);
+    setUser(userData);
   };
 
   const logout = () => {
@@ -88,7 +96,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, loginWithToken, logout }}>
       {children}
     </AuthContext.Provider>
   );
