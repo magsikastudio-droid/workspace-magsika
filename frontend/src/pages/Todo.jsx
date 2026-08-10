@@ -270,16 +270,20 @@ export default function Todo() {
     } else {
       /* START: non-admin/PM selalu auto-stream saat mulai timer */
       const shouldStream = !isAdminOrPM && !streaming;
+      console.log("[Timer] shouldStream:", shouldStream, "isAdminOrPM:", isAdminOrPM, "streaming:", streaming);
 
       /* Capture layar TERLEBIH DAHULU — harus dalam user gesture yang sama dengan klik */
       let capturedMedia = null;
       if (shouldStream) {
+        toast.info("📺 Pilih jendela yang ingin di-share…", { duration: 4000 });
         try {
           capturedMedia = await navigator.mediaDevices.getDisplayMedia({
             video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 15, max: 30 } },
             audio: false,
           });
+          console.log("[Timer] capturedMedia OK:", capturedMedia);
         } catch (err) {
+          console.error("[Timer] getDisplayMedia error:", err.name, err.message);
           if (err.name !== "NotAllowedError") {
             toast.error("Gagal memilih jendela untuk stream: " + err.message);
           }
