@@ -14,12 +14,8 @@ const ICE = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
-const TOKEN_KEY = "admin_dashboard_token";
-
 export default function StreamButton({ collapsed = false }) {
-  const { user, token: authToken } = useAuth();
-  // Baca token dari localStorage sebagai fallback — React state mungkin belum ready
-  const token = authToken || localStorage.getItem(TOKEN_KEY);
+  const { user, token } = useAuth();
 
   const [streaming, setStreaming] = useState(false);
   const [loading,   setLoading]   = useState(false);
