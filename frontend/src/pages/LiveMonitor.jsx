@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Monitor, Wifi, WifiOff, Radio, Users, RefreshCw } from "lucide-react";
+import { Maximize2, Monitor, Wifi, WifiOff, Radio, Users } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { useStream } from "../context/StreamContext";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const resolved    = BACKEND_URL.startsWith("/")
@@ -8,16 +9,12 @@ const resolved    = BACKEND_URL.startsWith("/")
   : BACKEND_URL;
 const WS_BASE = resolved.replace(/^http/, "ws");
 
-const ICE = [
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-];
-
 /* ═══════════════════════════════════════════════════════════
    Stream card — video element dikelola sendiri via useRef
 ═══════════════════════════════════════════════════════════ */
 function StreamCard({ username, task, avatar, status, stream }) {
-  const videoRef = useRef(null);
+  const videoRef    = useRef(null);
+  const containerRef = useRef(null);
 
   /* Set srcObject setiap kali stream berubah */
   useEffect(() => {
@@ -30,6 +27,16 @@ function StreamCard({ username, task, avatar, status, stream }) {
       v.srcObject = null;
     }
   }, [stream]);
+
+  /* Fullscreen */
+  const enterFullscreen = (e) => {
+    e.stopPropagation();
+    const el = containerRef.current;
+    if (!el) return;
+    if (el.requestFullscreen)             el.requestFullscreen();
+    else if (el.webkitRequestFullscreen)  el.webkitRequestFullscreen();
+    else if (el.mozRequestFullScreen)     el.mozRequestFullScreen();
+  };
 
   const dot = {
     connecting: "bg-amber-400",
@@ -44,7 +51,10 @@ function StreamCard({ username, task, avatar, status, stream }) {
   }[status] ?? status;
 
   return (
-    <div className="relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-700/50 shadow-xl aspect-video">
+    <div
+      ref={containerRef}
+      className="relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-700/50 shadow-xl aspect-video group"
+    >
       {/* Video — selalu ada di DOM supaya srcObject bisa di-set */}
       <video
         ref={videoRef}
@@ -53,6 +63,15 @@ function StreamCard({ username, task, avatar, status, stream }) {
         muted
         className="w-full h-full object-contain bg-slate-950"
       />
+
+      {/* Tombol fullscreen — muncul saat hover */}
+      <button
+        onClick={enterFullscreen}
+        title="Fullscreen"
+        className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-lg bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-all duration-150 z-10"
+      >
+        <Maximize2 size={13} />
+      </button>
 
       {/* Overlay bawah */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent px-3 py-2.5">
@@ -92,7 +111,9 @@ function StreamCard({ username, task, avatar, status, stream }) {
           <div className="text-center">
             <WifiOff size={28} className="text-rose-400 mx-auto mb-2" />
             <p className="text-white/60 text-xs">Koneksi gagal</p>
-            <p className="text-white/35 text-[10px] mt-1">Coba pakai jaringan yang sama, atau pasang TURN server</p>
+            <p className="text-white/35 text-[10px] mt-1">
+              Jaringan berbeda — TURN server mengatasi ini otomatis jika sudah terpasang.
+            </p>
           </div>
         </div>
       )}
@@ -104,7 +125,8 @@ function StreamCard({ username, task, avatar, status, stream }) {
    Main page
 ═══════════════════════════════════════════════════════════ */
 export default function LiveMonitor() {
-  const { token } = useAuth();
+  const { token }     = useAuth();
+  const { iceServers } = useStream(); // pakai TURN dari StreamContext
 
   const wsRef  = useRef(null);
   const pcsRef = useRef({});   // {streamer_id: RTCPeerConnection}
@@ -119,7 +141,7 @@ export default function LiveMonitor() {
   const connectToStreamer = useCallback((streamerId, ws) => {
     if (pcsRef.current[streamerId]) return; // sudah ada
 
-    const pc = new RTCPeerConnection({ iceServers: ICE });
+    const pc = new RTCPeerConnection({ iceServers });
     pcsRef.current[streamerId] = pc;
 
     /* Terima video track dari streamer */
@@ -168,7 +190,7 @@ export default function LiveMonitor() {
         );
       }
     })();
-  }, []);
+  }, [iceServers]);
 
   /* ── WebSocket signaling ── */
   useEffect(() => {
@@ -257,6 +279,7 @@ export default function LiveMonitor() {
 
   const entries   = Object.entries(streamers);
   const hasFailed = entries.some(([, s]) => s.status === "failed");
+  const hasTurn   = iceServers.length > 2; // lebih dari STUN saja
 
   /* ── Render ── */
   return (
@@ -275,6 +298,14 @@ export default function LiveMonitor() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* TURN indicator */}
+          <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${
+            hasTurn
+              ? "border-violet-500/30 bg-violet-500/10 text-violet-400"
+              : "border-slate-700 bg-slate-800/50 text-slate-600"
+          }`}>
+            {hasTurn ? "🛡 TURN aktif" : "TURN belum ada"}
+          </div>
           <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${
             wsOk
               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
@@ -296,9 +327,10 @@ export default function LiveMonitor() {
           </div>
           <p className="text-slate-400 font-semibold text-lg mb-1">Belum ada yang streaming</p>
           <p className="text-slate-600 text-sm max-w-xs">
-            Tim bisa mulai stream dari tombol{" "}
-            <span className="text-violet-400 font-medium">Mulai Stream</span>{" "}
-            di bagian bawah sidebar
+            Stream akan otomatis dimulai saat tim menekan{" "}
+            <span className="text-violet-400 font-medium">▶ Mulai</span>{" "}
+            pada task yang memiliki opsi <em>Live Stream</em>,
+            atau bisa juga manual dari tombol di sidebar.
           </p>
         </div>
       ) : (
@@ -320,13 +352,13 @@ export default function LiveMonitor() {
         </div>
       )}
 
-      {/* TURN server warning */}
-      {hasFailed && (
+      {/* TURN server warning (tanpa TURN) */}
+      {hasFailed && !hasTurn && (
         <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">
           <p className="font-semibold mb-0.5">💡 Ada stream yang gagal terhubung</p>
           <p className="text-amber-500/70">
-            Biasanya terjadi saat tim &amp; admin di jaringan berbeda (beda WiFi / mobile).
-            Solusi: pasang <strong>coturn</strong> (TURN server) di VPS — minta bantuan setup jika perlu.
+            Tim &amp; admin di jaringan berbeda.{" "}
+            <strong>TURN server belum aktif</strong> — deploy ulang untuk menginstall coturn secara otomatis.
           </p>
         </div>
       )}
