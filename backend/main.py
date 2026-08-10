@@ -775,6 +775,12 @@ async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
                     "task":     rtc.clients[cid]["task"],
                     "avatar":   rtc.clients[cid]["avatar"],
                 })
+                # Beritahu semua klien (via main WS) supaya sidebar bisa tampilkan badge
+                await manager.broadcast({
+                    "type":  "rtc_update",
+                    "count": len(rtc.streamers()),
+                    "names": [v["username"] for v in rtc.streamers().values()],
+                })
 
             elif t == "join_viewer":
                 role = "viewer"
@@ -814,6 +820,11 @@ async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
         rtc.clients.pop(cid, None)
         if role == "streamer":
             await rtc.broadcast_viewers({"type": "streamer_left", "id": cid})
+            await manager.broadcast({
+                "type":  "rtc_update",
+                "count": len(rtc.streamers()),
+                "names": [v["username"] for v in rtc.streamers().values()],
+            })
 
 
 def verify_default_admin(username: str, password: str) -> Optional[dict]:

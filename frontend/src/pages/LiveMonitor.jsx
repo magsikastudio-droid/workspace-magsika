@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Monitor, Wifi, WifiOff, Radio, RefreshCw, Users } from "lucide-react";
+import { Monitor, Wifi, WifiOff, Radio, Users, RefreshCw } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
-/* ── WebSocket base URL (same pattern as ws.js) ── */
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const resolved    = BACKEND_URL.startsWith("/")
   ? `${window.location.protocol}//${window.location.host}${BACKEND_URL}`
@@ -14,66 +13,86 @@ const ICE = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
-/* ── Individual stream card ── */
-function StreamCard({ id, username, task, avatar, videoEl, status }) {
-  const statusColor = {
-    connecting: "bg-amber-400",
-    connected:  "bg-emerald-400",
-    failed:     "bg-rose-500",
-  }[status] || "bg-slate-400";
+/* ═══════════════════════════════════════════════════════════
+   Stream card — video element dikelola sendiri via useRef
+═══════════════════════════════════════════════════════════ */
+function StreamCard({ username, task, avatar, status, stream }) {
+  const videoRef = useRef(null);
 
-  const statusLabel = {
+  /* Set srcObject setiap kali stream berubah */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (stream) {
+      v.srcObject = stream;
+      v.play().catch(() => {});
+    } else {
+      v.srcObject = null;
+    }
+  }, [stream]);
+
+  const dot = {
+    connecting: "bg-amber-400",
+    connected:  "bg-emerald-400 animate-pulse",
+    failed:     "bg-rose-500",
+  }[status] ?? "bg-slate-400";
+
+  const lbl = {
     connecting: "Menghubungkan…",
-    connected:  "Live",
-    failed:     "Koneksi gagal",
-  }[status] || status;
+    connected:  "LIVE",
+    failed:     "Gagal",
+  }[status] ?? status;
 
   return (
-    <div className="relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-700/50 shadow-xl flex flex-col aspect-video">
-      {/* Video feed */}
-      <div
-        className="flex-1 w-full"
-        ref={(el) => { if (el && videoEl && !el.contains(videoEl)) el.appendChild(videoEl); }}
+    <div className="relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-700/50 shadow-xl aspect-video">
+      {/* Video — selalu ada di DOM supaya srcObject bisa di-set */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className="w-full h-full object-contain bg-slate-950"
       />
 
-      {/* Dark overlay at bottom */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent px-3 py-2.5">
+      {/* Overlay bawah */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent px-3 py-2.5">
         <div className="flex items-end justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            {avatar ? (
-              <img src={avatar} className="w-7 h-7 rounded-full border-2 border-white/30 shrink-0 object-cover" />
-            ) : (
-              <div className="w-7 h-7 rounded-full bg-violet-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                {username?.[0]?.toUpperCase() || "?"}
-              </div>
-            )}
+            {avatar
+              ? <img src={avatar} className="w-7 h-7 rounded-full border-2 border-white/30 shrink-0 object-cover" />
+              : (
+                <div className="w-7 h-7 rounded-full bg-violet-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                  {username?.[0]?.toUpperCase() ?? "?"}
+                </div>
+              )
+            }
             <div className="min-w-0">
               <p className="text-white text-xs font-bold leading-tight truncate">{username}</p>
-              {task && <p className="text-white/60 text-[10px] leading-tight truncate">{task}</p>}
+              {task && <p className="text-white/55 text-[10px] leading-tight truncate">{task}</p>}
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className={`w-1.5 h-1.5 rounded-full ${statusColor} ${status === "connected" ? "animate-pulse" : ""}`} />
-            <span className="text-white/70 text-[10px]">{statusLabel}</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+            <span className="text-white/70 text-[10px] font-semibold">{lbl}</span>
           </div>
         </div>
       </div>
 
-      {/* Loading / failed overlay */}
+      {/* Overlay loading */}
       {status === "connecting" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/70">
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/75 pointer-events-none">
           <div className="text-center">
             <div className="w-8 h-8 border-2 border-violet-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-white/60 text-xs">Menghubungkan…</p>
+            <p className="text-white/50 text-xs">Menghubungkan ke {username}…</p>
           </div>
         </div>
       )}
       {status === "failed" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80 pointer-events-none">
           <div className="text-center">
             <WifiOff size={28} className="text-rose-400 mx-auto mb-2" />
             <p className="text-white/60 text-xs">Koneksi gagal</p>
-            <p className="text-white/40 text-[10px] mt-1">Mungkin beda jaringan — perlu TURN server</p>
+            <p className="text-white/35 text-[10px] mt-1">Coba pakai jaringan yang sama, atau pasang TURN server</p>
           </div>
         </div>
       )}
@@ -81,35 +100,32 @@ function StreamCard({ id, username, task, avatar, videoEl, status }) {
   );
 }
 
-/* ── Main page ── */
+/* ═══════════════════════════════════════════════════════════
+   Main page
+═══════════════════════════════════════════════════════════ */
 export default function LiveMonitor() {
   const { token } = useAuth();
 
-  const wsRef     = useRef(null);
-  const pcsRef    = useRef({});           // {streamer_id: RTCPeerConnection}
-  const videoEls  = useRef({});           // {streamer_id: HTMLVideoElement}
+  const wsRef  = useRef(null);
+  const pcsRef = useRef({});   // {streamer_id: RTCPeerConnection}
 
   const [wsOk,      setWsOk]      = useState(false);
   const [streamers, setStreamers] = useState({});
-  // {id: {username, task, avatar, status: "connecting"|"connected"|"failed"}}
+  // {id: {username, task, avatar, status}}
+  const [streams,   setStreams]   = useState({});
+  // {id: MediaStream}  ← terpisah supaya update tidak buang PeerConnection
 
-  /* ── Connect to a streamer (create offer) ── */
+  /* ── Connect ke satu streamer (buat offer) ── */
   const connectToStreamer = useCallback((streamerId, ws) => {
-    if (pcsRef.current[streamerId]) return; // already in progress
+    if (pcsRef.current[streamerId]) return; // sudah ada
 
     const pc = new RTCPeerConnection({ iceServers: ICE });
     pcsRef.current[streamerId] = pc;
 
-    /* Build video element for this streamer */
-    const video = document.createElement("video");
-    video.autoplay    = true;
-    video.playsInline = true;
-    video.muted       = true;
-    video.className   = "w-full h-full object-contain bg-slate-900";
-    videoEls.current[streamerId] = video;
-
+    /* Terima video track dari streamer */
     pc.ontrack = (ev) => {
-      video.srcObject = ev.streams[0];
+      console.log("[LiveMonitor] ontrack dari", streamerId, ev.streams[0]);
+      setStreams(prev  => ({ ...prev, [streamerId]: ev.streams[0] }));
       setStreamers(prev =>
         prev[streamerId]
           ? { ...prev, [streamerId]: { ...prev[streamerId], status: "connected" } }
@@ -117,6 +133,7 @@ export default function LiveMonitor() {
       );
     };
 
+    /* Kirim ICE candidate ke streamer */
     pc.onicecandidate = (ev) => {
       if (ev.candidate && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "ice", to: streamerId, candidate: ev.candidate }));
@@ -124,7 +141,8 @@ export default function LiveMonitor() {
     };
 
     pc.onconnectionstatechange = () => {
-      if (["failed", "closed"].includes(pc.connectionState)) {
+      console.log("[LiveMonitor] connectionState", streamerId, pc.connectionState);
+      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
         setStreamers(prev =>
           prev[streamerId]
             ? { ...prev, [streamerId]: { ...prev[streamerId], status: "failed" } }
@@ -133,14 +151,16 @@ export default function LiveMonitor() {
       }
     };
 
+    /* Buat offer (recvonly — kita hanya terima video) */
     (async () => {
       try {
         pc.addTransceiver("video", { direction: "recvonly" });
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+        console.log("[LiveMonitor] mengirim offer ke", streamerId);
         ws.send(JSON.stringify({ type: "offer", to: streamerId, sdp: pc.localDescription }));
       } catch (err) {
-        console.error("LiveMonitor offer error:", err);
+        console.error("[LiveMonitor] offer error:", err);
         setStreamers(prev =>
           prev[streamerId]
             ? { ...prev, [streamerId]: { ...prev[streamerId], status: "failed" } }
@@ -150,14 +170,16 @@ export default function LiveMonitor() {
     })();
   }, []);
 
-  /* ── Main WebSocket connection ── */
+  /* ── WebSocket signaling ── */
   useEffect(() => {
     if (!token) return;
 
+    console.log("[LiveMonitor] connecting to", `${WS_BASE}/ws/rtc`);
     const ws = new WebSocket(`${WS_BASE}/ws/rtc?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      console.log("[LiveMonitor] WS open, join_viewer");
       ws.send(JSON.stringify({ type: "join_viewer" }));
       setWsOk(true);
     };
@@ -165,66 +187,81 @@ export default function LiveMonitor() {
     ws.onmessage = async (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
+      console.log("[LiveMonitor] <<", msg.type, msg);
 
-      if (msg.type === "streamers_list") {
-        const init = {};
-        msg.streamers.forEach(s => { init[s.id] = { ...s, status: "connecting" }; });
-        setStreamers(init);
-        msg.streamers.forEach(s => connectToStreamer(s.id, ws));
-      }
+      switch (msg.type) {
 
-      else if (msg.type === "streamer_joined") {
-        setStreamers(prev => ({
-          ...prev,
-          [msg.id]: { id: msg.id, username: msg.username, task: msg.task, avatar: msg.avatar, status: "connecting" },
-        }));
-        connectToStreamer(msg.id, ws);
-      }
-
-      else if (msg.type === "streamer_left") {
-        pcsRef.current[msg.id]?.close();
-        delete pcsRef.current[msg.id];
-        const v = videoEls.current[msg.id];
-        if (v) { v.srcObject = null; delete videoEls.current[msg.id]; }
-        setStreamers(prev => { const n = { ...prev }; delete n[msg.id]; return n; });
-      }
-
-      else if (msg.type === "streamer_updated") {
-        setStreamers(prev =>
-          prev[msg.id] ? { ...prev, [msg.id]: { ...prev[msg.id], task: msg.task } } : prev
-        );
-      }
-
-      else if (msg.type === "answer") {
-        const pc = pcsRef.current[msg.from];
-        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)).catch(() => {});
-      }
-
-      else if (msg.type === "ice") {
-        const pc = pcsRef.current[msg.from];
-        if (pc && msg.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
+        case "streamers_list": {
+          const init = {};
+          msg.streamers.forEach(s => { init[s.id] = { ...s, status: "connecting" }; });
+          setStreamers(init);
+          msg.streamers.forEach(s => connectToStreamer(s.id, ws));
+          break;
         }
+
+        case "streamer_joined": {
+          setStreamers(prev => ({
+            ...prev,
+            [msg.id]: { id: msg.id, username: msg.username, task: msg.task, avatar: msg.avatar, status: "connecting" },
+          }));
+          connectToStreamer(msg.id, ws);
+          break;
+        }
+
+        case "streamer_left": {
+          pcsRef.current[msg.id]?.close();
+          delete pcsRef.current[msg.id];
+          setStreamers(prev => { const n = { ...prev }; delete n[msg.id]; return n; });
+          setStreams(prev   => { const n = { ...prev }; delete n[msg.id]; return n; });
+          break;
+        }
+
+        case "streamer_updated": {
+          setStreamers(prev =>
+            prev[msg.id] ? { ...prev, [msg.id]: { ...prev[msg.id], task: msg.task } } : prev
+          );
+          break;
+        }
+
+        case "answer": {
+          const pc = pcsRef.current[msg.from];
+          if (pc) {
+            console.log("[LiveMonitor] setRemoteDescription answer dari", msg.from);
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)).catch(console.error);
+          }
+          break;
+        }
+
+        case "ice": {
+          const pc = pcsRef.current[msg.from];
+          if (pc && msg.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(() => {});
+          }
+          break;
+        }
+
+        default: break;
       }
     };
 
-    ws.onclose  = () => setWsOk(false);
-    ws.onerror  = () => setWsOk(false);
+    ws.onclose  = (e) => { console.log("[LiveMonitor] WS closed", e.code); setWsOk(false); };
+    ws.onerror  = (e) => { console.error("[LiveMonitor] WS error", e); setWsOk(false); };
 
     return () => {
       ws.close();
       Object.values(pcsRef.current).forEach(pc => pc.close());
       pcsRef.current = {};
-      Object.values(videoEls.current).forEach(v => { v.srcObject = null; });
-      videoEls.current = {};
+      setStreams({});
     };
   }, [token, connectToStreamer]);
 
-  /* ── Render ── */
-  const entries = Object.entries(streamers);
+  const entries   = Object.entries(streamers);
+  const hasFailed = entries.some(([, s]) => s.status === "failed");
 
+  /* ── Render ── */
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -232,70 +269,64 @@ export default function LiveMonitor() {
             <Monitor size={20} className="text-violet-400" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Live Monitor</h1>
+            <h1 className="text-lg font-bold">Live Monitor</h1>
             <p className="text-xs text-slate-500">Pantau layar tim secara real-time</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* WS status */}
+        <div className="flex items-center gap-2">
           <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${
             wsOk
               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-              : "border-slate-600 bg-slate-800 text-slate-500"
+              : "border-slate-700 bg-slate-800 text-slate-500"
           }`}>
-            {wsOk
-              ? <><Wifi size={12} /> Terhubung</>
-              : <><WifiOff size={12} /> Terputus</>
-            }
+            {wsOk ? <><Wifi size={11} /> Terhubung</> : <><WifiOff size={11} /> Terputus</>}
           </div>
-
-          {/* Stream count */}
           <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-slate-700 bg-slate-800/50 text-slate-400">
-            <Users size={12} />
-            {entries.length} streaming
+            <Users size={11} /> {entries.length} streaming
           </div>
         </div>
       </div>
 
       {/* Grid */}
       {entries.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
+        <div className="flex flex-col items-center justify-center py-28 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-800 mb-4">
-            <Radio size={28} className="text-slate-600" />
+            <Radio size={26} className="text-slate-600" />
           </div>
           <p className="text-slate-400 font-semibold text-lg mb-1">Belum ada yang streaming</p>
           <p className="text-slate-600 text-sm max-w-xs">
-            Tim bisa mulai stream dari tombol <span className="text-violet-400 font-medium">🔴 Mulai Stream</span> di sidebar
+            Tim bisa mulai stream dari tombol{" "}
+            <span className="text-violet-400 font-medium">Mulai Stream</span>{" "}
+            di bagian bawah sidebar
           </p>
         </div>
       ) : (
         <div className={`grid gap-4 ${
           entries.length === 1 ? "grid-cols-1 max-w-3xl mx-auto" :
-          entries.length === 2 ? "grid-cols-2" :
           entries.length <= 4  ? "grid-cols-2" :
-          "grid-cols-3"
+                                  "grid-cols-3"
         }`}>
-          {entries.map(([id, streamer]) => (
+          {entries.map(([id, info]) => (
             <StreamCard
               key={id}
-              id={id}
-              username={streamer.username}
-              task={streamer.task}
-              avatar={streamer.avatar}
-              videoEl={videoEls.current[id]}
-              status={streamer.status}
+              username={info.username}
+              task={info.task}
+              avatar={info.avatar}
+              status={info.status}
+              stream={streams[id] ?? null}
             />
           ))}
         </div>
       )}
 
-      {/* TURN server note */}
-      {entries.some(([, s]) => s.status === "failed") && (
+      {/* TURN server warning */}
+      {hasFailed && (
         <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">
-          <p className="font-semibold mb-0.5">💡 Koneksi gagal di beberapa stream</p>
-          <p className="text-amber-500/80">
-            Ini terjadi saat tim dan admin di jaringan berbeda. Pasang TURN server (coturn) di VPS untuk koneksi yang stabil.
+          <p className="font-semibold mb-0.5">💡 Ada stream yang gagal terhubung</p>
+          <p className="text-amber-500/70">
+            Biasanya terjadi saat tim &amp; admin di jaringan berbeda (beda WiFi / mobile).
+            Solusi: pasang <strong>coturn</strong> (TURN server) di VPS — minta bantuan setup jika perlu.
           </p>
         </div>
       )}

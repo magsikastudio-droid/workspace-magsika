@@ -12,6 +12,7 @@ import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { subscribe } from "../lib/ws";
 import { showLocalNotification } from "../lib/notifications";
 import OverdueAlarmBanner from "./OverdueAlarmBanner";
 import BirthdayBanner from "./BirthdayBanner";
@@ -102,6 +103,7 @@ export default function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [unreadCounts, setUnreadCounts] = useState({ announcements: 0, schedule: 0, notifications: 0 });
+  const [liveCount, setLiveCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -119,6 +121,13 @@ export default function Layout({ children }) {
       .then((r) => setDeadline({ hour: r.data.hour ?? 16, minute: r.data.minute ?? 30 }))
       .catch(() => {});
   }, [user, role]);
+
+  /* Live streaming count — update badge di sidebar */
+  useEffect(() => {
+    return subscribe("rtc_update", (msg) => {
+      setLiveCount(msg.count ?? 0);
+    });
+  }, []);
 
   useEffect(() => {
     if (!user || !["talent", "pm"].includes(role)) return;
@@ -244,6 +253,7 @@ export default function Layout({ children }) {
     : item.to === "/performance" && role === "talent" ? unreadCounts.notifications
     : item.to === "/pengumuman" ? unreadCounts.announcements
     : item.to === "/schedule" ? unreadCounts.schedule
+    : item.to === "/live" ? liveCount
     : 0
 } />)}
             {filteredItems.length === 0 && <p className="px-3 py-2 text-xs text-slate-400 dark:text-slate-600">Tidak ditemukan.</p>}
@@ -258,6 +268,7 @@ export default function Layout({ children }) {
     : item.to === "/performance" && role === "talent" ? unreadCounts.notifications
     : item.to === "/pengumuman" ? unreadCounts.announcements
     : item.to === "/schedule" ? unreadCounts.schedule
+    : item.to === "/live" ? liveCount
     : 0
 } />)}
               </div>
