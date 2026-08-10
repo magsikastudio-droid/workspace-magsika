@@ -242,7 +242,7 @@ def format_task(record: dict) -> dict:
 
 
 class LoginRequest(BaseModel):
-    username: str
+    email: str      # bisa email atau username (fallback untuk admin)
     password: str
 
 
@@ -1028,7 +1028,7 @@ async def verify_otp_record(email: str, otp: str, purpose: str) -> bool:
 
 
 def verify_default_admin(username: str, password: str) -> Optional[dict]:
-    if username == "admin" and password == "password":
+    if username in ("admin", "admin@magsika.local") and password == "password":
         return {
             "username": "admin",
             "full_name": "Studio Admin",
@@ -1040,14 +1040,18 @@ def verify_default_admin(username: str, password: str) -> Optional[dict]:
     return None
 
 
-async def authenticate_user(username: str, password: str) -> Optional[dict]:
-    # Default admin always works regardless of DB state
-    default_user = verify_default_admin(username, password)
+async def authenticate_user(login: str, password: str) -> Optional[dict]:
+    """Cari user by email atau username (fallback). Admin hardcoded."""
+    # Cek default admin (username "admin" atau email lokal)
+    default_user = verify_default_admin(login, password)
     if default_user:
         return default_user
 
     try:
-        user = await db.users.find_one({"username": username})
+        # Cari by email dulu, lalu by username sebagai fallback
+        user = await db.users.find_one({"email": login})
+        if not user:
+            user = await db.users.find_one({"username": login})
         if user and verify_password(password, user.get("hashed_password", "")):
             return user
     except Exception:
@@ -1077,29 +1081,24 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 @app.post("/auth/login")
 async def login(req: LoginRequest):
-    user = await authenticate_user(req.username, req.password)
+    user = await authenticate_user(req.email, req.password)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Username atau password salah")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email atau password salah")
     if user.get("status") == "pending":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Akun menunggu persetujuan admin")
 
-    email = user.get("email", "")
-
-    # Akun default admin (email lokal) — bypass OTP
-    if email.endswith("@magsika.local"):
-        token = create_access_token({"sub": user["username"]}, expires_delta=timedelta(days=365))
-        return {"access_token": token, "token_type": "bearer", "user": {"username": user["username"], "full_name": user["full_name"], "email": email, "role": user.get("role", "talent"), "status": user.get("status", "active")}}
-
-    # Kirim OTP ke email pengguna
-    otp = await create_otp_record(email, "login", username=user["username"])
-    try:
-        await send_otp_email(email, otp, purpose="login")
-    except RuntimeError as smtp_err:
-        raise HTTPException(status_code=503, detail=f"Gagal kirim OTP: {smtp_err}")
+    token = create_access_token({"sub": user["username"]}, expires_delta=timedelta(days=365))
     return {
-        "step": "otp",
-        "email_hint": _mask_email(email),
-        "message": f"Kode OTP telah dikirim ke {_mask_email(email)}",
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "username": user["username"],
+            "full_name": user.get("full_name", ""),
+            "email": user.get("email", ""),
+            "email_verified": user.get("email_verified", False),
+            "role": user.get("role", "talent"),
+            "status": user.get("status", "active"),
+        },
     }
 
 
@@ -1138,6 +1137,25 @@ async def verify_login(req: VerifyLoginRequest):
 @app.get("/auth/me")
 async def auth_me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
+
+
+class UpdateMyEmailRequest(BaseModel):
+    email: EmailStr
+
+@app.patch("/users/me/email")
+async def update_my_email(req: UpdateMyEmailRequest, current_user: dict = Depends(get_current_user)):
+    """Ganti email sendiri langsung tanpa OTP."""
+    new_email = str(req.email).lower().strip()
+    existing = await db.users.find_one({"email": new_email, "username": {"$ne": current_user["username"]}})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email sudah digunakan akun lain")
+    result = await db.users.update_one(
+        {"username": current_user["username"]},
+        {"$set": {"email": new_email, "email_verified": True}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan di database")
+    return {"message": "Email berhasil diperbarui", "email": new_email}
 
 
 # ── Email Verification Endpoints ─────────────────────────────────────────────
@@ -2157,40 +2175,22 @@ class EmailWhitelistUpdate(BaseModel):
 
 @app.post("/auth/send-register-otp")
 async def send_register_otp(req: SendRegisterOTPRequest):
-    """Step 1 register: kirim OTP ke email untuk verifikasi kepemilikan."""
-    existing = await db.users.find_one({"$or": [{"username": req.username}, {"email": req.email}]})
-    if existing:
-        raise HTTPException(status_code=400, detail="Username atau email sudah digunakan")
-
-    whitelist_doc = await db.settings.find_one({"key": "email_whitelist"})
-    whitelist = whitelist_doc.get("emails", []) if whitelist_doc else []
-    if whitelist and req.email not in whitelist:
-        raise HTTPException(status_code=403, detail="Email tidak ada dalam whitelist")
-
-    otp = await create_otp_record(str(req.email), "register")
-    await send_otp_email(str(req.email), otp, purpose="register")
-    return {"message": f"Kode OTP dikirim ke {_mask_email(str(req.email))}"}
+    """Deprecated — tidak digunakan lagi. Diteruskan ke /auth/register."""
+    return {"message": "OTP tidak lagi diperlukan. Langsung daftar via /auth/register."}
 
 
 @app.post("/auth/register")
 async def register(req: RegisterRequest):
-    """Step 2 register: verifikasi OTP lalu buat akun."""
-    if not req.otp:
-        raise HTTPException(status_code=400, detail="Kode OTP wajib diisi")
-
+    """Daftar akun langsung — tanpa OTP."""
     try:
         whitelist_doc = await db.settings.find_one({"key": "email_whitelist"})
         whitelist = whitelist_doc.get("emails", []) if whitelist_doc else []
-        if whitelist and req.email not in whitelist:
-            raise HTTPException(status_code=403, detail="Email tidak ada dalam whitelist")
+        if whitelist and str(req.email) not in whitelist:
+            raise HTTPException(status_code=403, detail="Email tidak ada dalam whitelist pendaftaran")
 
-        existing = await db.users.find_one({"$or": [{"username": req.username}, {"email": req.email}]})
+        existing = await db.users.find_one({"$or": [{"username": req.username}, {"email": str(req.email)}]})
         if existing:
             raise HTTPException(status_code=400, detail="Username atau email sudah digunakan")
-
-        valid = await verify_otp_record(str(req.email), req.otp, "register")
-        if not valid:
-            raise HTTPException(status_code=400, detail="Kode OTP salah atau sudah kedaluwarsa")
 
         user_doc = {
             "username": req.username,
