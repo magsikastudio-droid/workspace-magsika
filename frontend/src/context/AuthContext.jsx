@@ -73,16 +73,14 @@ export function AuthProvider({ children }) {
     };
   }, [fetchUser]);
 
-  const login = async ({ username, password }) => {
-    const res = await api.post("/auth/login", { username, password });
-    // Jika backend butuh OTP, kembalikan data tanpa set token
-    if (res.data.step === "otp") return res.data;
+  const login = async ({ email, password }) => {
+    const res = await api.post("/auth/login", { email, password });
     saveToken(res.data.access_token);
-    await fetchUser();
+    setUser(res.data.user);
     return res.data;
   };
 
-  // Dipanggil setelah OTP berhasil diverifikasi
+  // Kept for backwards compat (no longer used for OTP flow)
   const loginWithToken = (accessToken, userData) => {
     saveToken(accessToken);
     setUser(userData);
