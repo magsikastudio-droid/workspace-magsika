@@ -14,8 +14,12 @@ const ICE = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
+const TOKEN_KEY = "admin_dashboard_token";
+
 export default function StreamButton({ collapsed = false }) {
-  const { user, token } = useAuth();
+  const { user, token: authToken } = useAuth();
+  // Baca token dari localStorage sebagai fallback — React state mungkin belum ready
+  const token = authToken || localStorage.getItem(TOKEN_KEY);
 
   const [streaming, setStreaming] = useState(false);
   const [loading,   setLoading]   = useState(false);
@@ -124,8 +128,8 @@ export default function StreamButton({ collapsed = false }) {
         }
       };
 
-      ws.onclose = () => {
-        console.log("[StreamButton] WS closed");
+      ws.onclose = (ev) => {
+        console.log("[StreamButton] WS closed — code:", ev.code, "reason:", ev.reason, "wasClean:", ev.wasClean);
         setStreaming(false);
         setLoading(false);
         streamRef.current?.getTracks().forEach(t => t.stop());
@@ -133,8 +137,8 @@ export default function StreamButton({ collapsed = false }) {
       };
 
       ws.onerror = (err) => {
-        console.error("[StreamButton] WS error:", err);
-        toast.error("Gagal terhubung ke server stream.");
+        console.error("[StreamButton] WS error — URL:", ws.url, "readyState:", ws.readyState, err);
+        toast.error(`Gagal terhubung ke server stream. (buka DevTools Console untuk detail)`);
         stopStream();
         setLoading(false);
       };

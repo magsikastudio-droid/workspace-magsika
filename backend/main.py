@@ -734,25 +734,29 @@ rtc = RTCSignalingManager()
 
 @app.websocket("/ws/rtc")
 async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
-    # Verify token
+    print(f"[WS/RTC] koneksi masuk — token={'ada' if token else 'TIDAK ADA'}", flush=True)
     if not token:
+        print("[WS/RTC] ditolak: token kosong", flush=True)
         await websocket.close(code=4001)
         return
     try:
         payload = decode_token(token)
         username = payload.get("sub")
+        print(f"[WS/RTC] token valid, username={username}", flush=True)
         if not username:
-            raise ValueError
+            raise ValueError("sub kosong di payload")
         # Fast path: default admin tidak ada di MongoDB
         if username == "admin":
             user = {"username": "admin", "name": "Admin", "role": "admin", "avatar": ""}
         else:
             user = await db.users.find_one({"username": username})
         if not user:
-            raise ValueError
-    except Exception:
+            raise ValueError(f"user '{username}' tidak ada di DB")
+    except Exception as e:
+        print(f"[WS/RTC] ditolak: {e}", flush=True)
         await websocket.close(code=4001)
         return
+    print(f"[WS/RTC] menerima koneksi untuk {username}", flush=True)
 
     await websocket.accept()
     cid  = str(uuid.uuid4())[:8]
