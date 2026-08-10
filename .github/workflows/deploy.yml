@@ -62,3 +62,8 @@ jobs:
       - name: Restart service
         run: |
           ssh vps "systemctl restart admin-dashboard"
+
+      - name: Fix nginx WebSocket support
+        run: |
+          scp scripts/fix-nginx-ws.py vps:/tmp/fix-nginx-ws.py
+          ssh vps "python3 /tmp/fix-nginx-ws.py"
