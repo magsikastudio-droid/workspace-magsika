@@ -38,22 +38,46 @@
 <script>
   const params = new URLSearchParams(window.location.search);
   const taskTitle = params.get("title") || "task hari ini";
-  const kind = params.get("kind") || "not_started";
+  const taskId = params.get("taskId") || "";
+  const orderId = params.get("orderId") || "";
+  const kind = params.get("kind") || "not_started"; // "not_started" | "not_streaming" | "review"
 
-  const isReview = kind === "review";
-  document.getElementById("headline").textContent = isReview ? "Task Menunggu Review!" : "Belum Mulai Kerja!";
+  // Konfigurasi per jenis alarm — teks, tombol, suara, dan aksi klik semua beda
+  // biar tim langsung ngerti dari bunyi/tampilannya tanpa perlu baca detail.
+  const CONFIG = {
+    not_started: {
+      headline: "Belum Mulai Kerja!",
+      hint: "Ayo klik tombol di bawah, langsung mulai timer + rekam layar — tidak perlu buka web dulu.",
+      button: "Oke, Mulai Timer + Rekam →",
+      speakText: `Ayo mulai kerjain: ${taskTitle}`,
+      beep: { notes: [660, 0, 520, 0, 660, 0, 440], wave: "sine" }, // turun-turun, nada rendah
+      action: "start-work", // PATCH timer dulu, baru buka picker
+    },
+    not_streaming: {
+      headline: "Timer Jalan, Belum Live Stream!",
+      hint: "Timer kamu sudah jalan tapi layar belum di-share. Klik untuk mulai rekam sekarang.",
+      button: "Oke, Mulai Rekam Sekarang →",
+      speakText: `Timer jalan tapi belum live stream: ${taskTitle}`,
+      beep: { notes: [440, 0, 440, 0, 880, 0, 880], wave: "triangle" }, // dua nada bolak-balik — beda karakter lagi
+      action: "start-recording-only", // timer udah jalan, langsung picker aja
+    },
+    review: {
+      headline: "Task Menunggu Review!",
+      hint: "Ada task yang perlu dicek.",
+      button: "Oke, Saya Mulai Sekarang →",
+      speakText: `Ada task menunggu review: ${taskTitle}`,
+      beep: { notes: [880, 0, 1100, 0, 880, 0, 1320], wave: "square" }, // naik-naik — alarm lama
+      action: "open-dashboard",
+    },
+  };
+  const cfg = CONFIG[kind] || CONFIG.not_started;
+
+  document.getElementById("headline").textContent = cfg.headline;
   document.getElementById("taskTitle").textContent = taskTitle;
-  document.getElementById("hint").textContent = isReview
-    ? "Ada task yang perlu dicek."
-    : "Ayo klik tombol di bawah, lalu pencet \"Mulai\" di task-nya.";
+  document.getElementById("hint").textContent = cfg.hint;
+  document.getElementById("ackBtn").textContent = cfg.button;
 
-  // ── beep pattern (Web Audio, tanpa perlu file audio) ──────────────
-  // Pola beda per jenis alarm biar kedengeran beda tanpa perlu lihat layar:
-  //   review      → naik-naik (880→1100→880→1320), square wave — alarm lama
-  //   not_started → turun-turun, nada lebih rendah, sine wave — lebih "nudge", beda karakter
-  const BEEP_PATTERN = isReview
-    ? { notes: [880, 0, 1100, 0, 880, 0, 1320], wave: "square" }
-    : { notes: [660, 0, 520, 0, 660, 0, 440], wave: "sine" };
+  const BEEP_PATTERN = cfg.beep;
 
   let audioCtx;
   function playBeep() {
@@ -75,8 +99,7 @@
 
   function speak() {
     if (!window.speechSynthesis) return;
-    const text = isReview ? `Ada task menunggu review: ${taskTitle}` : `Ayo mulai kerjain: ${taskTitle}`;
-    const utter = new SpeechSynthesisUtterance(text);
+    const utter = new SpeechSynthesisUtterance(cfg.speakText);
     utter.lang = "id-ID"; utter.rate = 0.9;
     const run = () => {
       const voice = speechSynthesis.getVoices().find(v => v.lang.startsWith("id"))
@@ -95,7 +118,15 @@
   document.getElementById("ackBtn").addEventListener("click", () => {
     clearInterval(beepInterval);
     speechSynthesis.cancel();
-    window.desktopApp.openDashboard();
+    const action = !taskId ? "open-dashboard" : cfg.action; // tanpa task_id, tidak ada yang bisa di-PATCH
+    if (action === "start-work") {
+      window.desktopApp.startWork({ taskId, taskTitle, orderId });
+    } else if (action === "start-recording-only") {
+      window.desktopApp.startWork({ taskId, taskTitle, orderId, skipTimerPatch: true });
+    } else {
+      // "review" itu aksi admin (approve/reject) — arahkan ke dashboard, bukan mulai kerja.
+      window.desktopApp.openDashboard();
+    }
     window.close();
   });
 </script>

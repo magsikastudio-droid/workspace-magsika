@@ -313,17 +313,6 @@ export default function LiveMonitor() {
           ))}
         </div>
       )}
-
-      {/* Info card */}
-      <div className="mt-8 rounded-xl border border-slate-700/50 bg-slate-900/40 px-4 py-3 text-xs text-slate-500 flex items-start gap-2">
-        <span className="text-violet-400 mt-0.5">⚡</span>
-        <div>
-          <span className="text-slate-400 font-semibold">Frame Relay aktif</span>
-          {" "}— streamer encode layar 1× (2fps JPEG), server forward ke semua viewer.
-          Tidak butuh WebRTC, ICE, atau TURN server. CPU streamer
-          {" "}<strong className="text-slate-300">jauh lebih ringan</strong>.
-        </div>
-      </div>
     </div>
   );
 }

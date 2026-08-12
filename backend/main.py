@@ -597,6 +597,96 @@ async def check_not_started_tasks():
         _last_start_reminder.pop(stale, None)
 
 
+_stream_gap_since: Dict[str, datetime] = {}
+_last_stream_reminder: Dict[str, datetime] = {}
+NOT_STREAMING_GRACE_MINUTES = 1  # TODO: balikin ke nilai wajar (mis. 3) setelah testing
+NOT_STREAMING_REPEAT_MINUTES = 1
+
+
+async def check_not_streaming_tasks():
+    """Tiap 1 menit — kasus BEDA dari 'belum mulai': task-nya SUDAH di-start
+    (status in progress, timer jalan) tapi orangnya tidak kedeteksi live
+    streaming sama sekali (tidak ada entry di frame_relay.streamers yang
+    namanya cocok). Talent kadang klik 'Mulai' tapi lupa/batal share layar."""
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    if jkt_now.weekday() == 6:  # Minggu = libur
+        return
+    if not (8 <= jkt_now.hour < 20):  # jam kerja saja
+        return
+    today = jkt_now.strftime("%Y-%m-%d")
+    try:
+        tasks = await db.tasks.find({"date": today, "status": "in progress"}).to_list(2000)
+    except Exception:
+        return
+    tasks = [t for t in tasks if t.get("timer_started")]
+    if not tasks:
+        return
+
+    live_usernames = {v.get("username", "") for v in frame_relay.streamers.values() if v.get("username")}
+
+    still_gap = set()
+    for t in tasks:
+        assignee = t.get("assignee")
+        if not assignee:
+            continue
+
+        user_doc = await _resolve_user_by_assignee(assignee)
+        if user_doc and user_doc.get("work_status") == "break":
+            continue  # lagi istirahat, jangan nge-nag
+
+        display_name = (user_doc.get("full_name") if user_doc else None) or assignee
+        if display_name in live_usernames or assignee in live_usernames:
+            continue  # udah live, aman
+
+        still_gap.add(assignee)
+        started_gap_at = _stream_gap_since.setdefault(assignee, jkt_now)
+        gap_minutes = (jkt_now - started_gap_at).total_seconds() / 60
+        if gap_minutes < NOT_STREAMING_GRACE_MINUTES:
+            continue
+
+        last_sent = _last_stream_reminder.get(assignee)
+        if last_sent and (jkt_now - last_sent).total_seconds() < NOT_STREAMING_REPEAT_MINUTES * 60:
+            continue
+
+        task_id = str(t.get("_id", ""))
+        order_id = t.get("order_id", "") or ""
+        title = t.get("title", "task ini")
+        if user_doc:
+            try:
+                await send_fcm_to_username(
+                    user_doc.get("username", ""),
+                    "📵 Belum Live Stream!",
+                    f"Timer jalan tapi belum share layar: {title}",
+                    {
+                        "type": "not_streaming_alert",
+                        "task_id": task_id,
+                        "task_title": title,
+                        "order_id": order_id,
+                        "assignee": display_name,
+                    },
+                )
+            except Exception as e:
+                print(f"[not_streaming_alert] Error kirim ke {assignee}: {e}")
+        else:
+            print(f"[not_streaming_alert] Tidak ketemu akun buat assignee '{assignee}' — push di-skip, WS tetap jalan")
+        try:
+            await manager.broadcast({
+                "type": "not_streaming_alert",
+                "task_id": task_id,
+                "task_title": title,
+                "order_id": order_id,
+                "assignee": display_name,
+                "gap_minutes": round(gap_minutes),
+            })
+        except Exception:
+            pass
+        _last_stream_reminder[assignee] = jkt_now
+
+    for stale in set(_stream_gap_since) - still_gap:
+        _stream_gap_since.pop(stale, None)
+        _last_stream_reminder.pop(stale, None)
+
+
 async def auto_fail_tasks():
     """Jam 23:59 WIB — task pending/in-progress otomatis jadi failed, hentikan timer."""
     from datetime import timedelta
@@ -814,6 +904,7 @@ async def on_startup():
         scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
         scheduler.add_job(carry_forward_tasks, CronTrigger(hour=0, minute=1, timezone="Asia/Jakarta"))
         scheduler.add_job(check_not_started_tasks, IntervalTrigger(minutes=1), id="check_not_started")
+        scheduler.add_job(check_not_streaming_tasks, IntervalTrigger(minutes=1), id="check_not_streaming")
         scheduler.add_job(auto_daily_ai_reports, CronTrigger(hour=17, minute=0, timezone="Asia/Jakarta"))
         # Load deadline from DB (default 16:30)
         _deadline = {"hour": 16, "minute": 30}
