@@ -509,6 +509,20 @@ async def _resolve_user_by_assignee(name: str) -> Optional[dict]:
     return None
 
 
+def _is_working_hours(jkt_now: datetime) -> bool:
+    """Jam kerja resmi tim: 09:00-17:00 WIB, kecuali jam istirahat 11:30-13:00
+    (sama seperti WORK_START/BREAK di compute_estimated_starts) — reminder
+    'belum mulai'/'belum live stream' jangan ganggu di luar itu."""
+    mins = jkt_now.hour * 60 + jkt_now.minute
+    WORK_START, WORK_END = 9 * 60, 17 * 60
+    BREAK_START, BREAK_END = 11 * 60 + 30, 13 * 60
+    if mins < WORK_START or mins >= WORK_END:
+        return False
+    if BREAK_START <= mins < BREAK_END:
+        return False
+    return True
+
+
 async def check_not_started_tasks():
     """Tiap 1 menit — reminder push ke HP kalau tim idle (tidak ada timer jalan)
     padahal masih ada task pending hari ini. Beda dari alarm 'Overdue' yang cuma
@@ -517,7 +531,7 @@ async def check_not_started_tasks():
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
     if jkt_now.weekday() == 6:  # Minggu = libur
         return
-    if not (8 <= jkt_now.hour < 20):  # jam kerja saja, jangan ganggu malam
+    if not _is_working_hours(jkt_now):  # jam kerja saja
         return
     today = jkt_now.strftime("%Y-%m-%d")
     try:
@@ -611,7 +625,7 @@ async def check_not_streaming_tasks():
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
     if jkt_now.weekday() == 6:  # Minggu = libur
         return
-    if not (8 <= jkt_now.hour < 20):  # jam kerja saja
+    if not _is_working_hours(jkt_now):  # jam kerja saja
         return
     today = jkt_now.strftime("%Y-%m-%d")
     try:

@@ -9,6 +9,7 @@
     "build": "electron-builder --win"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -23,12 +24,17 @@
       "!README.md"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://workspace.magsikastudio.com/downloads/desktop-app/"
     }
   },
   "allowScripts": {

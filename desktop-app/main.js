@@ -2,11 +2,38 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, screen, Not
 const path = require("path");
 const fs = require("fs");
 const WebSocket = require("ws");
+const { autoUpdater } = require("electron-updater");
 
 function notify(title, body) {
   try {
     if (Notification.isSupported()) new Notification({ title, body }).show();
   } catch (_) {}
+}
+
+/* ── auto-update — persis kayak app Android, tim tidak perlu install ulang ──
+ * electron-builder nge-publish installer + latest.yml ke VPS kalian sendiri
+ * (provider "generic", lihat package.json). App ini cek berkala, download
+ * di background, lalu install otomatis begitu aman (tidak lagi recording). */
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+let updateReadyToInstall = false;
+
+autoUpdater.on("update-available", (info) => {
+  notify("⬇️ Update tersedia", `Magsika Reminder v${info.version} lagi didownload di background...`);
+});
+autoUpdater.on("update-downloaded", () => {
+  updateReadyToInstall = true;
+  if (activeRecording) {
+    notify("🔄 Update siap", "Nunggu recording kamu selesai dulu, baru install otomatis.");
+  } else {
+    notify("🔄 Update siap", "App restart sendiri sebentar lagi buat pakai versi terbaru.");
+    setTimeout(() => { if (!activeRecording) autoUpdater.quitAndInstall(false, true); }, 10000);
+  }
+});
+autoUpdater.on("error", (err) => console.error("[autoUpdater] error:", err));
+
+function checkForUpdates() {
+  autoUpdater.checkForUpdates().catch((e) => console.error("[autoUpdater] check gagal:", e));
 }
 
 // Biar toast Windows nampilin "Magsika Reminder" sebagai pengirim, bukan
@@ -98,6 +125,7 @@ function updateTrayMenu() {
   }
   items.push(
     { label: "Buka Dashboard", click: () => shell.openExternal(WEB_URL) },
+    { label: `Cek Update (v${app.getVersion()})`, click: checkForUpdates },
     { label: "Login Ulang", click: doLogout, enabled: !!session },
     { type: "separator" },
     { label: "Keluar", click: () => { app.isQuitting = true; app.quit(); } }
@@ -307,15 +335,22 @@ function startRecorder(sourceId, work) {
   recorderWin.loadFile(path.join(__dirname, "recorder.html"));
   recorderWin.on("closed", () => {
     recorderWin = null;
-    activeRecording = null;
-    updateTrayMenu();
+    clearActiveRecording();
   });
 }
 
 function stopRecording() {
   if (recorderWin) recorderWin.webContents.send("stop-recording");
+  clearActiveRecording();
+}
+
+// Dipanggil begitu recording benar-benar berhenti (ditutup manual atau window
+// mati sendiri) — sekalian jadi titik aman buat pasang update yang tadi
+// tertunda karena masih ada recording jalan.
+function clearActiveRecording() {
   activeRecording = null;
   updateTrayMenu();
+  if (updateReadyToInstall) autoUpdater.quitAndInstall(false, true);
 }
 
 ipcMain.handle("get-recorder-info", () => {
@@ -349,4 +384,6 @@ app.whenReady().then(() => {
   } else {
     showLoginWindow();
   }
+  checkForUpdates();
+  setInterval(checkForUpdates, 4 * 60 * 60 * 1000); // cek update tiap 4 jam
 });
