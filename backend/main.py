@@ -479,8 +479,8 @@ scheduler = AsyncIOScheduler() if SCHEDULER_AVAILABLE else None
 # memory — kalau server restart, grace period-nya cuma mulai hitung ulang dari 0.
 _idle_since: Dict[str, datetime] = {}
 _last_start_reminder: Dict[str, datetime] = {}
-NOT_STARTED_GRACE_MINUTES = 5
-NOT_STARTED_REPEAT_MINUTES = 5
+NOT_STARTED_GRACE_MINUTES = 1  # TODO: balikin ke 5 setelah selesai testing
+NOT_STARTED_REPEAT_MINUTES = 1
 
 
 async def check_not_started_tasks():
@@ -531,6 +531,18 @@ async def check_not_started_tasks():
             )
         except Exception as e:
             print(f"[not_started_alert] Error kirim ke {assignee}: {e}")
+        # WS realtime juga — dipakai desktop app (dan tab browser yang kebuka) buat
+        # munculin alarm langsung tanpa nunggu FCM. Broadcast global, klien yang
+        # filter berdasarkan field "assignee" biar cuma nyala di laptop orangnya.
+        try:
+            await manager.broadcast({
+                "type": "not_started_alert",
+                "task_title": next_task.get("title", ""),
+                "assignee": assignee,
+                "idle_minutes": round(idle_minutes),
+            })
+        except Exception:
+            pass
         _last_start_reminder[assignee] = jkt_now
 
     # Bersihkan tracking utk assignee yang sudah tidak idle (task selesai / timer jalan)
