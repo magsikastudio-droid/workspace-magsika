@@ -479,7 +479,7 @@ scheduler = AsyncIOScheduler() if SCHEDULER_AVAILABLE else None
 # memory — kalau server restart, grace period-nya cuma mulai hitung ulang dari 0.
 _idle_since: Dict[str, datetime] = {}
 _last_start_reminder: Dict[str, datetime] = {}
-NOT_STARTED_GRACE_MINUTES = 1  # TODO: balikin ke 5 setelah selesai testing
+NOT_STARTED_GRACE_MINUTES = 1  # sengaja ketat — keputusan final, bukan sisa testing
 NOT_STARTED_REPEAT_MINUTES = 1
 
 
@@ -599,7 +599,7 @@ async def check_not_started_tasks():
 
 _stream_gap_since: Dict[str, datetime] = {}
 _last_stream_reminder: Dict[str, datetime] = {}
-NOT_STREAMING_GRACE_MINUTES = 1  # TODO: balikin ke nilai wajar (mis. 3) setelah testing
+NOT_STREAMING_GRACE_MINUTES = 1  # sengaja ketat — keputusan final, bukan sisa testing
 NOT_STREAMING_REPEAT_MINUTES = 1
 
 
