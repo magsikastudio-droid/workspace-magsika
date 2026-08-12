@@ -97,7 +97,27 @@
     } catch (_) {}
   }
 
-  function speak() {
+  // Suara Indonesia beneran lewat gTTS server (dijamin logat Indonesia,
+  // tidak gantung ke voice OS yang belum tentu ke-install di laptop baru).
+  // Fallback ke speechSynthesis browser kalau internet/server lagi bermasalah.
+  let currentAudio = null;
+  async function speak() {
+    try {
+      const audioB64 = await window.desktopApp.getTtsAudio(cfg.speakText);
+      if (audioB64) {
+        const binary = atob(audioB64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: "audio/mpeg" });
+        currentAudio = new Audio(URL.createObjectURL(blob));
+        currentAudio.play();
+        return;
+      }
+    } catch (_) {}
+    speakFallback();
+  }
+
+  function speakFallback() {
     if (!window.speechSynthesis) return;
     const utter = new SpeechSynthesisUtterance(cfg.speakText);
     utter.lang = "id-ID"; utter.rate = 0.9;
@@ -118,6 +138,7 @@
   document.getElementById("ackBtn").addEventListener("click", () => {
     clearInterval(beepInterval);
     speechSynthesis.cancel();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     const action = !taskId ? "open-dashboard" : cfg.action; // tanpa task_id, tidak ada yang bisa di-PATCH
     if (action === "start-work") {
       window.desktopApp.startWork({ taskId, taskTitle, orderId });

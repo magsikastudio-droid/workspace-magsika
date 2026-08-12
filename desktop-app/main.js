@@ -208,6 +208,25 @@ ipcMain.on("login-success", (event, { token, user }) => {
 ipcMain.on("open-dashboard", () => shell.openExternal(WEB_URL));
 ipcMain.handle("get-backend-url", () => BACKEND_URL);
 
+// TTS server-side (gTTS lang=id) — dijamin suara Indonesia beneran, tidak
+// gantung ke voice OS yang belum tentu terinstall di laptop baru.
+ipcMain.handle("get-tts-audio", async (event, text) => {
+  if (!session) return null;
+  try {
+    const res = await fetch(`${BACKEND_URL}/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.audio || null; // base64 mp3
+  } catch (e) {
+    console.error("[tts] gagal ambil audio:", e);
+    return null;
+  }
+});
+
 /* ── "Mulai Sekarang" di alarm → start timer di server, lalu buka picker layar ── */
 async function startTaskTimer(taskId) {
   const res = await fetch(`${BACKEND_URL}/tasks/${taskId}`, {

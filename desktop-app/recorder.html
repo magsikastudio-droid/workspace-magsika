@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="id">
+<head><meta charset="UTF-8" /><title>Recorder</title></head>
+<body style="margin:0;background:#000;">
+<script>
+  // Window ini sengaja tidak ditampilkan (main.js bikin dengan show:false).
+  // Tugasnya cuma satu: tangkap layar yang dipilih di picker.html, encode ke
+  // JPEG ~2fps, kirim ke /ws/screen — protokol PERSIS sama dengan
+  // StreamContext.jsx (_startFrameCapture) di web, biar Live Monitor bisa
+  // nampilin tanpa perlu tau bedanya laptop-app vs web.
+  const FRAME_W = 1280, FRAME_H = 720, FRAME_FPS = 2, FRAME_Q = 0.60;
+
+  let ws = null;
+  let frameTimer = null;
+  let mediaStream = null;
+
+  async function main() {
+    const info = await window.desktopApp.getRecorderInfo();
+    if (!info) return;
+    const { sourceId, wsUrl, token, username, taskTitle, orderId } = info;
+
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: "desktop",
+            chromeMediaSourceId: sourceId,
+            maxWidth: FRAME_W,
+            maxHeight: FRAME_H,
+            maxFrameRate: 30,
+          },
+        },
+      });
+    } catch (err) {
+      window.desktopApp.reportRecordingError(String(err.message || err));
+      return;
+    }
+
+    const videoEl = document.createElement("video");
+    videoEl.srcObject = mediaStream;
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+    videoEl.play().catch(() => {});
+
+    const canvas = document.createElement("canvas");
+    canvas.width = FRAME_W;
+    canvas.height = FRAME_H;
+    const ctx = canvas.getContext("2d");
+
+    ws = new WebSocket(`${wsUrl}?token=${token}`);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "join_streamer", username, task: taskTitle, order_id: orderId || "" }));
+      window.desktopApp.reportRecordingStarted();
+      frameTimer = setInterval(() => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        if (!videoEl.videoWidth) return;
+        try {
+          ctx.drawImage(videoEl, 0, 0, FRAME_W, FRAME_H);
+          canvas.toBlob((blob) => {
+            if (blob && ws.readyState === WebSocket.OPEN) ws.send(blob);
+          }, "image/jpeg", FRAME_Q);
+        } catch (_) {}
+      }, Math.floor(1000 / FRAME_FPS));
+    };
+    ws.onerror = () => window.desktopApp.reportRecordingError("Koneksi stream gagal.");
+  }
+
+  function stopAll() {
+    clearInterval(frameTimer);
+    frameTimer = null;
+    if (ws) { ws.onclose = null; try { ws.close(); } catch (_) {} ws = null; }
+    if (mediaStream) { mediaStream.getTracks().forEach((t) => t.stop()); mediaStream = null; }
+  }
+
+  window.desktopApp.onStopRecording(() => { stopAll(); window.close(); });
+  window.addEventListener("beforeunload", stopAll);
+
+  main();
+</script>
+</body>
+</html>
