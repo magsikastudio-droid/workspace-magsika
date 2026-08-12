@@ -30,6 +30,7 @@ from pydantic import BaseModel, EmailStr, Field
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.triggers.interval import IntervalTrigger
     SCHEDULER_AVAILABLE = True
 except ImportError:
     SCHEDULER_AVAILABLE = False
@@ -473,6 +474,70 @@ app.add_middleware(
 
 scheduler = AsyncIOScheduler() if SCHEDULER_AVAILABLE else None
 
+# In-memory tracker: kapan tiap assignee mulai idle (task pending tapi timer belum
+# jalan). Direset begitu mereka pencet Mulai atau task pending-nya habis. Cukup di
+# memory — kalau server restart, grace period-nya cuma mulai hitung ulang dari 0.
+_idle_since: Dict[str, datetime] = {}
+_last_start_reminder: Dict[str, datetime] = {}
+NOT_STARTED_GRACE_MINUTES = 5
+NOT_STARTED_REPEAT_MINUTES = 5
+
+
+async def check_not_started_tasks():
+    """Tiap 1 menit — reminder push ke HP kalau tim idle (tidak ada timer jalan)
+    padahal masih ada task pending hari ini. Beda dari alarm 'Overdue' yang cuma
+    bunyi SETELAH task dimulai dan waktunya habis — ini menegur SEBELUM mereka
+    mulai sama sekali, jadi tim tidak lupa pencet 'Mulai'."""
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    if jkt_now.weekday() == 6:  # Minggu = libur
+        return
+    if not (8 <= jkt_now.hour < 20):  # jam kerja saja, jangan ganggu malam
+        return
+    today = jkt_now.strftime("%Y-%m-%d")
+    try:
+        tasks = await db.tasks.find({"date": today}).to_list(2000)
+    except Exception:
+        return
+
+    by_assignee: Dict[str, list] = {}
+    for t in tasks:
+        assignee = t.get("assignee")
+        if assignee:
+            by_assignee.setdefault(assignee, []).append(t)
+
+    still_idle = set()
+    for assignee, a_tasks in by_assignee.items():
+        pending = [t for t in a_tasks if t.get("status") not in ("done", "failed", "menunggu_review")]
+        if not pending or any(t.get("timer_started") for t in pending):
+            continue  # tidak ada task pending, atau sedang jalan → bukan idle
+
+        still_idle.add(assignee)
+        started_idle_at = _idle_since.setdefault(assignee, jkt_now)
+        idle_minutes = (jkt_now - started_idle_at).total_seconds() / 60
+        if idle_minutes < NOT_STARTED_GRACE_MINUTES:
+            continue
+
+        last_sent = _last_start_reminder.get(assignee)
+        if last_sent and (jkt_now - last_sent).total_seconds() < NOT_STARTED_REPEAT_MINUTES * 60:
+            continue  # sudah diingatkan baru-baru ini, jangan spam tiap menit
+
+        next_task = sorted(pending, key=lambda t: t.get("order_num") if t.get("order_num") is not None else 999)[0]
+        try:
+            await _fcm_by_full_name(
+                assignee,
+                "⏰ Belum Mulai Kerja!",
+                f"Ayo klik Mulai: {next_task.get('title', 'task hari ini')}",
+                {"type": "not_started_alert", "task_title": next_task.get("title", ""), "assignee": assignee},
+            )
+        except Exception as e:
+            print(f"[not_started_alert] Error kirim ke {assignee}: {e}")
+        _last_start_reminder[assignee] = jkt_now
+
+    # Bersihkan tracking utk assignee yang sudah tidak idle (task selesai / timer jalan)
+    for stale in set(_idle_since) - still_idle:
+        _idle_since.pop(stale, None)
+        _last_start_reminder.pop(stale, None)
+
 
 async def auto_fail_tasks():
     """Jam 23:59 WIB — task pending/in-progress otomatis jadi failed, hentikan timer."""
@@ -690,6 +755,7 @@ async def on_startup():
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
         scheduler.add_job(carry_forward_tasks, CronTrigger(hour=0, minute=1, timezone="Asia/Jakarta"))
+        scheduler.add_job(check_not_started_tasks, IntervalTrigger(minutes=1), id="check_not_started")
         scheduler.add_job(auto_daily_ai_reports, CronTrigger(hour=17, minute=0, timezone="Asia/Jakarta"))
         # Load deadline from DB (default 16:30)
         _deadline = {"hour": 16, "minute": 30}
