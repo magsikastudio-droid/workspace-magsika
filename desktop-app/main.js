@@ -1,0 +1,333 @@
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, screen, Notification, desktopCapturer } = require("electron");
+const path = require("path");
+const fs = require("fs");
+const WebSocket = require("ws");
+
+function notify(title, body) {
+  try {
+    if (Notification.isSupported()) new Notification({ title, body }).show();
+  } catch (_) {}
+}
+
+// Biar toast Windows nampilin "Magsika Reminder" sebagai pengirim, bukan
+// "electron.app.Electron" bawaan default.
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.magsikastudio.reminder");
+}
+
+// Laptop baru sering masih pakai driver display generic (belum di-update OEM),
+// yang bikin GPU process Chromium crash pas render pertama. Paksa software
+// rendering biar app tetap jalan walau driver GPU-nya belum ideal.
+app.disableHardwareAcceleration();
+
+// Crash logging — kalau masih ada apa-apa yang bikin app mati mendadak,
+// paling tidak kelihatan di terminal, bukan diam-diam hilang.
+process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
+app.on("render-process-gone", (event, wc, details) => console.error("[render-process-gone]", details));
+app.on("child-process-gone", (event, details) => console.error("[child-process-gone]", details));
+
+// Ganti via env var kalau perlu arahkan ke server lain (mis. testing lokal):
+//   MAGSIKA_BACKEND_URL=http://localhost:8001 npm start
+const BACKEND_URL = process.env.MAGSIKA_BACKEND_URL || "https://workspace.magsikastudio.com/api";
+const WEB_URL = process.env.MAGSIKA_WEB_URL || "https://workspace.magsikastudio.com";
+const WS_URL = BACKEND_URL.replace(/^http/, "ws") + "/ws";
+
+const CONFIG_PATH = path.join(app.getPath("userData"), "session.json");
+
+let tray = null;
+let loginWin = null;
+let alarmWin = null;
+let pickerWin = null;
+let recorderWin = null;
+let ws = null;
+let wsReconnectTimer = null;
+let session = null; // { token, user }
+let pendingWork = null;   // { taskId, taskTitle, orderId } — nunggu dipilih layarnya di picker
+let recorderInfo = null;  // sekali-pakai, dibaca recorder.html pas load
+let activeRecording = null; // { taskTitle } kalau lagi ngerekam, buat tray menu
+
+/* ── single instance — cegah dobel app kalau di-klik 2x ─────────────── */
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (loginWin) loginWin.focus();
+    else if (alarmWin) alarmWin.focus();
+  });
+}
+
+/* ── session persist (token + user) ke userData, biar auto-login tiap laptop nyala ── */
+function loadSession() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function saveSession(s) {
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(s));
+}
+function clearSession() {
+  try {
+    fs.unlinkSync(CONFIG_PATH);
+  } catch {}
+}
+
+/* ── tray icon ─────────────────────────────────────────────────────── */
+function createTray() {
+  const img = nativeImage.createFromPath(path.join(__dirname, "icon.png"));
+  tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img.resize({ width: 16, height: 16 }));
+  tray.setToolTip("Magsika Reminder");
+  updateTrayMenu();
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+  const label = session?.user?.full_name ? `Login: ${session.user.full_name}` : "Belum login";
+  const items = [
+    { label, enabled: false },
+    { type: "separator" },
+  ];
+  if (activeRecording) {
+    items.push(
+      { label: `🔴 Merekam: ${activeRecording.taskTitle}`, enabled: false },
+      { label: "Berhenti Merekam", click: stopRecording },
+      { type: "separator" }
+    );
+  }
+  items.push(
+    { label: "Buka Dashboard", click: () => shell.openExternal(WEB_URL) },
+    { label: "Login Ulang", click: doLogout, enabled: !!session },
+    { type: "separator" },
+    { label: "Keluar", click: () => { app.isQuitting = true; app.quit(); } }
+  );
+  tray.setContextMenu(Menu.buildFromTemplate(items));
+  tray.setToolTip(activeRecording ? `Magsika Reminder — 🔴 Merekam: ${activeRecording.taskTitle}` : "Magsika Reminder");
+}
+
+function doLogout() {
+  clearSession();
+  session = null;
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  app.setLoginItemSettings({ openAtLogin: false });
+  updateTrayMenu();
+  showLoginWindow();
+}
+
+/* ── login window ──────────────────────────────────────────────────── */
+function showLoginWindow() {
+  if (loginWin) { loginWin.focus(); return; }
+  loginWin = new BrowserWindow({
+    width: 380,
+    height: 480,
+    resizable: false,
+    title: "Login — Magsika Reminder",
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  loginWin.loadFile(path.join(__dirname, "login.html"));
+  loginWin.on("closed", () => { loginWin = null; });
+}
+
+/* ── websocket realtime — nangkep not_started_alert / task_alert ────── */
+function connectWS() {
+  if (!session) return;
+  clearTimeout(wsReconnectTimer);
+  try {
+    ws = new WebSocket(`${WS_URL}?token=${session.token}`);
+    ws.on("message", (data) => {
+      try { handleWSMessage(JSON.parse(data.toString())); } catch {}
+    });
+    ws.on("close", () => { wsReconnectTimer = setTimeout(connectWS, 3000); });
+    ws.on("error", () => { try { ws.close(); } catch {} });
+  } catch {
+    wsReconnectTimer = setTimeout(connectWS, 3000);
+  }
+}
+
+const ALARM_TYPES = new Set(["not_started_alert", "not_streaming_alert", "task_alert"]);
+
+function handleWSMessage(msg) {
+  if (!session?.user) return;
+  const myName = session.user.full_name || session.user.username;
+  if (ALARM_TYPES.has(msg.type) && msg.assignee === myName) {
+    showAlarm(msg);
+  }
+}
+
+/* ── alarm full-screen — tidak bisa di-alt-tab/skip diam-diam ───────── */
+function showAlarm(msg) {
+  if (alarmWin) { alarmWin.focus(); return; }
+  const { width, height } = screen.getPrimaryDisplay().bounds;
+  alarmWin = new BrowserWindow({
+    width, height, x: 0, y: 0,
+    frame: false,
+    fullscreen: true,
+    alwaysOnTop: true,
+    resizable: false,
+    movable: false,
+    skipTaskbar: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  alarmWin.setAlwaysOnTop(true, "screen-saver");
+  const kind = msg.type === "task_alert" ? "review"
+    : msg.type === "not_streaming_alert" ? "not_streaming"
+    : "not_started";
+  alarmWin.loadFile(path.join(__dirname, "alarm.html"), {
+    query: {
+      title: msg.task_title || "task hari ini",
+      taskId: msg.task_id || "",
+      orderId: msg.order_id || "",
+      kind,
+    },
+  });
+  alarmWin.on("closed", () => { alarmWin = null; });
+}
+
+/* ── IPC dari renderer (login.html / alarm.html via preload.js) ─────── */
+ipcMain.on("login-success", (event, { token, user }) => {
+  session = { token, user };
+  saveSession(session);
+  app.setLoginItemSettings({ openAtLogin: true });
+  updateTrayMenu();
+  connectWS();
+  if (loginWin) loginWin.close();
+  notify("✅ Magsika Reminder aktif", `Login sebagai ${user.full_name}. App ini jalan terus di tray.`);
+});
+
+ipcMain.on("open-dashboard", () => shell.openExternal(WEB_URL));
+ipcMain.handle("get-backend-url", () => BACKEND_URL);
+
+/* ── "Mulai Sekarang" di alarm → start timer di server, lalu buka picker layar ── */
+async function startTaskTimer(taskId) {
+  const res = await fetch(`${BACKEND_URL}/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+    body: JSON.stringify({ status: "in progress", timer_started: new Date().toISOString() }),
+  });
+  if (!res.ok) throw new Error(`PATCH /tasks/${taskId} → ${res.status}`);
+}
+
+ipcMain.on("start-work", async (event, { taskId, taskTitle, orderId, skipTimerPatch }) => {
+  if (!session) return;
+  if (!skipTimerPatch) {
+    // Kasus "belum mulai" — timer belum jalan, start dulu.
+    try {
+      await startTaskTimer(taskId);
+      notify("▶️ Timer dimulai", taskTitle);
+    } catch (e) {
+      console.error("[start-work] gagal start timer:", e);
+      notify("⚠️ Gagal start timer", "Coba buka dashboard manual untuk klik \"Mulai\".");
+      return; // tanpa timer jalan, tidak usah lanjut ke recording
+    }
+  }
+  // Kasus "belum live stream" — timer sudah jalan duluan di server, langsung
+  // lanjut ke picker layar tanpa PATCH ulang.
+  pendingWork = { taskId, taskTitle, orderId };
+  showPickerWindow();
+});
+
+/* ── picker layar ─────────────────────────────────────────────────── */
+function showPickerWindow() {
+  if (pickerWin) { pickerWin.focus(); return; }
+  pickerWin = new BrowserWindow({
+    width: 560, height: 460, resizable: false, title: "Pilih Layar — Magsika Reminder",
+    autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false },
+  });
+  pickerWin.loadFile(path.join(__dirname, "picker.html"));
+  pickerWin.on("closed", () => { pickerWin = null; });
+}
+
+ipcMain.handle("get-screen-sources", async () => {
+  const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 300, height: 200 } });
+  return sources.map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.toDataURL() }));
+});
+
+ipcMain.on("source-picked", (event, sourceId) => {
+  if (pickerWin) pickerWin.close();
+  if (!pendingWork) return;
+  startRecorder(sourceId, pendingWork);
+  pendingWork = null;
+});
+
+ipcMain.on("picker-cancelled", () => {
+  // Timer sudah kepencet jalan di server (itu prioritas utamanya) — cuma
+  // recording-nya yang di-skip kalau mereka batal pilih layar.
+  pendingWork = null;
+});
+
+/* ── recorder (hidden window) — JPEG frame relay ke /ws/screen ──────── */
+let recorderTaskTitle = ""; // buat ditampilkan di tray pas "recording-started" lapor balik
+
+function startRecorder(sourceId, work) {
+  if (recorderWin) { try { recorderWin.close(); } catch (_) {} recorderWin = null; }
+  recorderTaskTitle = work.taskTitle;
+  recorderInfo = {
+    sourceId,
+    wsUrl: WS_URL.replace(/\/ws$/, "/ws/screen"),
+    token: session.token,
+    username: session.user.full_name || session.user.username,
+    taskTitle: work.taskTitle,
+    orderId: work.orderId,
+  };
+  recorderWin = new BrowserWindow({
+    show: false, width: 100, height: 100,
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false },
+  });
+  recorderWin.loadFile(path.join(__dirname, "recorder.html"));
+  recorderWin.on("closed", () => {
+    recorderWin = null;
+    activeRecording = null;
+    updateTrayMenu();
+  });
+}
+
+function stopRecording() {
+  if (recorderWin) recorderWin.webContents.send("stop-recording");
+  activeRecording = null;
+  updateTrayMenu();
+}
+
+ipcMain.handle("get-recorder-info", () => {
+  const info = recorderInfo;
+  recorderInfo = null; // sekali pakai
+  return info;
+});
+
+ipcMain.on("recording-started", () => {
+  activeRecording = { taskTitle: recorderTaskTitle };
+  updateTrayMenu();
+  notify("🔴 Recording aktif", "Layar kamu lagi direkam sambil ngerjain task ini.");
+});
+
+ipcMain.on("recording-error", (event, msg) => {
+  console.error("[recorder] error:", msg);
+  notify("⚠️ Gagal mulai recording", String(msg));
+});
+
+/* ── lifecycle ────────────────────────────────────────────────────── */
+// Sengaja tidak panggil app.quit() di sini — begitu semua window ketutup,
+// proses tetap hidup di tray (itu intinya biar app "selalu jalan").
+app.on("window-all-closed", () => {});
+
+app.whenReady().then(() => {
+  createTray();
+  session = loadSession();
+  if (session) {
+    connectWS();
+    notify("🔔 Magsika Reminder aktif", `Login sebagai ${session.user.full_name}. Cek tray kalau perlu.`);
+  } else {
+    showLoginWindow();
+  }
+});
