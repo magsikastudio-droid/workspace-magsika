@@ -1,0 +1,37 @@
+{
+  "name": "magsika-reminder",
+  "version": "1.0.0",
+  "description": "Desktop reminder — notifikasi native + alarm full-screen buat tim Magsika Studio, jalan di background walau browser tidak dibuka.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.magsikastudio.reminder",
+    "productName": "Magsika Reminder",
+    "files": [
+      "**/*",
+      "!README.md"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  },
+  "allowScripts": {
+    "electron@31.7.7": true
+  }
+}
