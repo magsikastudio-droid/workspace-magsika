@@ -483,6 +483,32 @@ NOT_STARTED_GRACE_MINUTES = 1  # TODO: balikin ke 5 setelah selesai testing
 NOT_STARTED_REPEAT_MINUTES = 1
 
 
+async def _resolve_user_by_assignee(name: str) -> Optional[dict]:
+    """Field 'assignee' di task itu teks bebas (kadang cuma nama depan,
+    kadang beda dikit dari full_name yang terdaftar — mis. task-nya bilang
+    'Ivo' padahal akunnya 'Ivo Febrian'). Cari akun yang paling cocok biar
+    push/WS notifikasi nyampe ke device yang benar."""
+    if not name:
+        return None
+    name_l = name.strip().lower()
+    try:
+        users = await db.users.find().to_list(200)
+    except Exception:
+        return None
+    for u in users:  # 1. exact match (full_name atau username)
+        if (u.get("full_name") or "").strip().lower() == name_l or (u.get("username") or "").lower() == name_l:
+            return u
+    for u in users:  # 2. nama depan cocok, mis. "Ivo" → "Ivo Febrian"
+        full = (u.get("full_name") or "").strip().lower()
+        if full and full.split(" ")[0] == name_l:
+            return u
+    for u in users:  # 3. salah satu prefix yang lain
+        full = (u.get("full_name") or "").strip().lower()
+        if full and (full.startswith(name_l) or name_l.startswith(full)):
+            return u
+    return None
+
+
 async def check_not_started_tasks():
     """Tiap 1 menit — reminder push ke HP kalau tim idle (tidak ada timer jalan)
     padahal masih ada task pending hari ini. Beda dari alarm 'Overdue' yang cuma
@@ -522,15 +548,23 @@ async def check_not_started_tasks():
             continue  # sudah diingatkan baru-baru ini, jangan spam tiap menit
 
         next_task = sorted(pending, key=lambda t: t.get("order_num") if t.get("order_num") is not None else 999)[0]
-        try:
-            await _fcm_by_full_name(
-                assignee,
-                "⏰ Belum Mulai Kerja!",
-                f"Ayo klik Mulai: {next_task.get('title', 'task hari ini')}",
-                {"type": "not_started_alert", "task_title": next_task.get("title", ""), "assignee": assignee},
-            )
-        except Exception as e:
-            print(f"[not_started_alert] Error kirim ke {assignee}: {e}")
+        user_doc = await _resolve_user_by_assignee(assignee)
+        # Pakai full_name resmi dari akun yang ketemu (biar match persis sama
+        # yang dipakai desktop app buat filter) — kalau tidak ketemu user-nya
+        # sama sekali, tetap broadcast pakai teks assignee apa adanya.
+        display_name = (user_doc.get("full_name") if user_doc else None) or assignee
+        if user_doc:
+            try:
+                await send_fcm_to_username(
+                    user_doc.get("username", ""),
+                    "⏰ Belum Mulai Kerja!",
+                    f"Ayo klik Mulai: {next_task.get('title', 'task hari ini')}",
+                    {"type": "not_started_alert", "task_title": next_task.get("title", ""), "assignee": display_name},
+                )
+            except Exception as e:
+                print(f"[not_started_alert] Error kirim ke {assignee}: {e}")
+        else:
+            print(f"[not_started_alert] Tidak ketemu akun buat assignee '{assignee}' — push di-skip, WS tetap jalan")
         # WS realtime juga — dipakai desktop app (dan tab browser yang kebuka) buat
         # munculin alarm langsung tanpa nunggu FCM. Broadcast global, klien yang
         # filter berdasarkan field "assignee" biar cuma nyala di laptop orangnya.
@@ -538,7 +572,7 @@ async def check_not_started_tasks():
             await manager.broadcast({
                 "type": "not_started_alert",
                 "task_title": next_task.get("title", ""),
-                "assignee": assignee,
+                "assignee": display_name,
                 "idle_minutes": round(idle_minutes),
             })
         except Exception:
