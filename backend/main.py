@@ -537,6 +537,10 @@ async def check_not_started_tasks():
         if not pending or any(t.get("timer_started") for t in pending):
             continue  # tidak ada task pending, atau sedang jalan → bukan idle
 
+        user_doc = await _resolve_user_by_assignee(assignee)
+        if user_doc and user_doc.get("work_status") == "break":
+            continue  # lagi "Istirahat" — jangan hitung idle sama sekali, jangan nge-nag
+
         still_idle.add(assignee)
         started_idle_at = _idle_since.setdefault(assignee, jkt_now)
         idle_minutes = (jkt_now - started_idle_at).total_seconds() / 60
@@ -548,7 +552,7 @@ async def check_not_started_tasks():
             continue  # sudah diingatkan baru-baru ini, jangan spam tiap menit
 
         next_task = sorted(pending, key=lambda t: t.get("order_num") if t.get("order_num") is not None else 999)[0]
-        user_doc = await _resolve_user_by_assignee(assignee)
+        next_task_id = str(next_task.get("_id", ""))
         # Pakai full_name resmi dari akun yang ketemu (biar match persis sama
         # yang dipakai desktop app buat filter) — kalau tidak ketemu user-nya
         # sama sekali, tetap broadcast pakai teks assignee apa adanya.
@@ -559,7 +563,13 @@ async def check_not_started_tasks():
                     user_doc.get("username", ""),
                     "⏰ Belum Mulai Kerja!",
                     f"Ayo klik Mulai: {next_task.get('title', 'task hari ini')}",
-                    {"type": "not_started_alert", "task_title": next_task.get("title", ""), "assignee": display_name},
+                    {
+                        "type": "not_started_alert",
+                        "task_id": next_task_id,
+                        "task_title": next_task.get("title", ""),
+                        "order_id": next_task.get("order_id", "") or "",
+                        "assignee": display_name,
+                    },
                 )
             except Exception as e:
                 print(f"[not_started_alert] Error kirim ke {assignee}: {e}")
@@ -571,7 +581,9 @@ async def check_not_started_tasks():
         try:
             await manager.broadcast({
                 "type": "not_started_alert",
+                "task_id": next_task_id,
                 "task_title": next_task.get("title", ""),
+                "order_id": next_task.get("order_id", "") or "",
                 "assignee": display_name,
                 "idle_minutes": round(idle_minutes),
             })
@@ -1470,7 +1482,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     raw_role = user.get("role", "talent")
     is_superadmin = raw_role == "superadmin"
-    return {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "email_verified": user.get("email_verified", False), "role": "admin" if is_superadmin else raw_role, "is_superadmin": is_superadmin, "status": user.get("status", "active")}
+    return {"username": user["username"], "full_name": user["full_name"], "email": user["email"], "email_verified": user.get("email_verified", False), "role": "admin" if is_superadmin else raw_role, "is_superadmin": is_superadmin, "status": user.get("status", "active"), "work_status": user.get("work_status", "online")}
 
 
 @app.post("/auth/login")
@@ -1492,6 +1504,7 @@ async def login(req: LoginRequest):
             "email_verified": user.get("email_verified", False),
             "role": user.get("role", "talent"),
             "status": user.get("status", "active"),
+            "work_status": user.get("work_status", "online"),
         },
     }
 
@@ -1531,6 +1544,20 @@ async def verify_login(req: VerifyLoginRequest):
 @app.get("/auth/me")
 async def auth_me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
+
+
+@app.post("/presence/toggle")
+async def toggle_presence(current_user: dict = Depends(get_current_user)):
+    """Toggle Online <-> Istirahat. Pas 'Istirahat', reminder 'belum mulai
+    kerja' (dan alarm overdue di web) dibisukan buat user ini — dipakai kalau
+    lagi break/meeting/sholat/dll biar tidak ke-nag padahal memang lagi tidak kerja."""
+    current = current_user.get("work_status", "online")
+    new_status = "break" if current == "online" else "online"
+    try:
+        await db.users.update_one({"username": current_user["username"]}, {"$set": {"work_status": new_status}})
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Gagal update status")
+    return {"work_status": new_status}
 
 
 class UpdateMyEmailRequest(BaseModel):

@@ -93,8 +93,12 @@ export function AuthProvider({ children }) {
     window.location.href = "/login";
   };
 
+  // Update sebagian field user tanpa refetch — dipakai abis panggil endpoint
+  // kecil kayak /presence/toggle yang langsung balikin state terbaru.
+  const patchUser = (partial) => setUser((prev) => (prev ? { ...prev, ...partial } : prev));
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, loginWithToken, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, loginWithToken, logout, patchUser }}>
       {children}
     </AuthContext.Provider>
   );

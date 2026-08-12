@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<title>Reminder — Magsika</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; width: 100%; overflow: hidden;
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    background: #dc2626; user-select: none;
+  }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; animation: flash 1.2s ease-in-out infinite;
+  }
+  @keyframes flash { 0%, 100% { background: #dc2626; } 50% { background: #991b1b; } }
+  .icon { font-size: 72px; animation: ring 0.8s ease-in-out infinite; }
+  @keyframes ring { 0%, 100% { transform: rotate(0deg); } 25% { transform: rotate(-15deg); } 75% { transform: rotate(15deg); } }
+  h1 { color: #fff; font-size: 34px; font-weight: 900; margin: 18px 0 6px; letter-spacing: 0.02em; }
+  p.title { color: #fecaca; font-size: 20px; font-weight: 600; margin: 0 0 8px; max-width: 80vw; }
+  p.hint { color: #fca5a5; font-size: 13px; margin: 0 0 32px; }
+  button {
+    padding: 16px 40px; border: none; border-radius: 14px; cursor: pointer;
+    background: #fff; color: #b91c1c; font-weight: 800; font-size: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  }
+  button:hover { background: #fee2e2; }
+</style>
+</head>
+<body>
+  <div class="icon">⏰</div>
+  <h1 id="headline">Belum Mulai Kerja!</h1>
+  <p class="title" id="taskTitle"></p>
+  <p class="hint" id="hint"></p>
+  <button id="ackBtn">Oke, Saya Mulai Sekarang →</button>
+
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const taskTitle = params.get("title") || "task hari ini";
+  const kind = params.get("kind") || "not_started";
+
+  const isReview = kind === "review";
+  document.getElementById("headline").textContent = isReview ? "Task Menunggu Review!" : "Belum Mulai Kerja!";
+  document.getElementById("taskTitle").textContent = taskTitle;
+  document.getElementById("hint").textContent = isReview
+    ? "Ada task yang perlu dicek."
+    : "Ayo klik tombol di bawah, lalu pencet \"Mulai\" di task-nya.";
+
+  // ── beep pattern (Web Audio, tanpa perlu file audio) ──────────────
+  // Pola beda per jenis alarm biar kedengeran beda tanpa perlu lihat layar:
+  //   review      → naik-naik (880→1100→880→1320), square wave — alarm lama
+  //   not_started → turun-turun, nada lebih rendah, sine wave — lebih "nudge", beda karakter
+  const BEEP_PATTERN = isReview
+    ? { notes: [880, 0, 1100, 0, 880, 0, 1320], wave: "square" }
+    : { notes: [660, 0, 520, 0, 660, 0, 440], wave: "sine" };
+
+  let audioCtx;
+  function playBeep() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const now = audioCtx.currentTime;
+      BEEP_PATTERN.notes.forEach((freq, i) => {
+        if (!freq) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.type = BEEP_PATTERN.wave; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.3, now + i * 0.18);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.18 + 0.15);
+        osc.start(now + i * 0.18); osc.stop(now + i * 0.18 + 0.15);
+      });
+    } catch (_) {}
+  }
+
+  function speak() {
+    if (!window.speechSynthesis) return;
+    const text = isReview ? `Ada task menunggu review: ${taskTitle}` : `Ayo mulai kerjain: ${taskTitle}`;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "id-ID"; utter.rate = 0.9;
+    const run = () => {
+      const voice = speechSynthesis.getVoices().find(v => v.lang.startsWith("id"))
+        || speechSynthesis.getVoices().find(v => v.lang.startsWith("en"));
+      if (voice) utter.voice = voice;
+      speechSynthesis.speak(utter);
+    };
+    if (speechSynthesis.getVoices().length) run();
+    else speechSynthesis.onvoiceschanged = run;
+  }
+
+  playBeep();
+  speak();
+  const beepInterval = setInterval(playBeep, 4000);
+
+  document.getElementById("ackBtn").addEventListener("click", () => {
+    clearInterval(beepInterval);
+    speechSynthesis.cancel();
+    window.desktopApp.openDashboard();
+    window.close();
+  });
+</script>
+</body>
+</html>
