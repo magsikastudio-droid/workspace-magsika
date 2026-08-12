@@ -510,15 +510,18 @@ async def _resolve_user_by_assignee(name: str) -> Optional[dict]:
 
 
 def _is_working_hours(jkt_now: datetime) -> bool:
-    """Jam kerja resmi tim: 09:00-17:00 WIB, kecuali jam istirahat 11:30-13:00
-    (sama seperti WORK_START/BREAK di compute_estimated_starts) — reminder
-    'belum mulai'/'belum live stream' jangan ganggu di luar itu."""
+    """Jam kerja tim (diatur admin di Settings > Pengaturan, lihat
+    _work_hours_cache) — reminder 'belum mulai'/'belum live stream' jangan
+    ganggu di luar jam kerja atau pas jam istirahat."""
     mins = jkt_now.hour * 60 + jkt_now.minute
-    WORK_START, WORK_END = 9 * 60, 17 * 60
-    BREAK_START, BREAK_END = 11 * 60 + 30, 13 * 60
-    if mins < WORK_START or mins >= WORK_END:
+    c = _work_hours_cache
+    work_start = c["start_hour"] * 60 + c["start_minute"]
+    work_end = c["end_hour"] * 60 + c["end_minute"]
+    break_start = c["break_start_hour"] * 60 + c["break_start_minute"]
+    break_end = c["break_end_hour"] * 60 + c["break_end_minute"]
+    if mins < work_start or mins >= work_end:
         return False
-    if BREAK_START <= mins < BREAK_END:
+    if break_start <= mins < break_end:
         return False
     return True
 
@@ -912,6 +915,8 @@ async def on_startup():
     except Exception as _e:
         print(f"[Migration] Password reset error: {_e}", flush=True)
     # ────────────────────────────────────────────────────────────────
+
+    await _load_work_hours_cache()
 
     if scheduler:
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
@@ -3021,6 +3026,60 @@ async def update_daily_report_deadline(data: DeadlineUpdate, current_user: dict 
             except Exception:
                 pass
         return {"ok": True, "hour": data.hour, "minute": data.minute}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Jam Kerja ───────────────────────────────────────────────────────────────
+# Dipakai reminder "belum mulai" / "belum live stream" (check_not_started_tasks,
+# check_not_streaming_tasks) via _is_working_hours() — cached di memory, di-refresh
+# begitu admin simpan perubahan, biar tidak query DB tiap job jalan tiap 1 menit.
+
+_work_hours_cache = {
+    "start_hour": 9, "start_minute": 0,
+    "end_hour": 17, "end_minute": 0,
+    "break_start_hour": 11, "break_start_minute": 30,
+    "break_end_hour": 13, "break_end_minute": 0,
+}
+
+async def _load_work_hours_cache():
+    try:
+        doc = await db.settings.find_one({"key": "work_hours"})
+        if doc:
+            for k in _work_hours_cache:
+                _work_hours_cache[k] = doc.get(k, _work_hours_cache[k])
+    except Exception:
+        pass
+
+
+class WorkHoursUpdate(BaseModel):
+    start_hour: int
+    start_minute: int
+    end_hour: int
+    end_minute: int
+    break_start_hour: int
+    break_start_minute: int
+    break_end_hour: int
+    break_end_minute: int
+
+@app.get("/settings/work-hours")
+async def get_work_hours(current_user: dict = Depends(get_current_user)):
+    return dict(_work_hours_cache)
+
+@app.put("/settings/work-hours")
+async def update_work_hours(data: WorkHoursUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    for label, h, m in [("Mulai", data.start_hour, data.start_minute), ("Selesai", data.end_hour, data.end_minute),
+                         ("Istirahat mulai", data.break_start_hour, data.break_start_minute),
+                         ("Istirahat selesai", data.break_end_hour, data.break_end_minute)]:
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise HTTPException(status_code=400, detail=f"Jam '{label}' tidak valid")
+    payload = data.dict()
+    try:
+        await db.settings.update_one({"key": "work_hours"}, {"$set": {"key": "work_hours", **payload}}, upsert=True)
+        await _load_work_hours_cache()
+        return {"ok": True, **payload}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -457,6 +457,8 @@ export default function SettingsPage() {
 
   const [deadlineTime, setDeadlineTime] = useState("16:30");
   const [savingDeadline, setSavingDeadline] = useState(false);
+  const [workHours, setWorkHours] = useState({ start: "09:00", end: "17:00", breakStart: "11:30", breakEnd: "13:00" });
+  const [savingWorkHours, setSavingWorkHours] = useState(false);
 
   const [users, setUsers] = useState([]);
   const [whitelist, setWhitelist] = useState([]);
@@ -486,6 +488,16 @@ export default function SettingsPage() {
         const h = String(res.data.hour).padStart(2, "0");
         const m = String(res.data.minute).padStart(2, "0");
         setDeadlineTime(`${h}:${m}`);
+      }).catch(() => {});
+      const pad2 = (n) => String(n).padStart(2, "0");
+      api.get("/settings/work-hours").then((res) => {
+        const d = res.data;
+        setWorkHours({
+          start: `${pad2(d.start_hour)}:${pad2(d.start_minute)}`,
+          end: `${pad2(d.end_hour)}:${pad2(d.end_minute)}`,
+          breakStart: `${pad2(d.break_start_hour)}:${pad2(d.break_start_minute)}`,
+          breakEnd: `${pad2(d.break_end_hour)}:${pad2(d.break_end_minute)}`,
+        });
       }).catch(() => {});
     }
     if (isAdminOrPM) {
@@ -850,6 +862,71 @@ export default function SettingsPage() {
                 </button>
               </div>
               <p className="mt-2 text-xs text-slate-400">Notifikasi otomatis dikirim ke talent yang belum submit pada waktu ini.</p>
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <Clock size={18} className="text-violet-500" />
+                <h2 className="text-lg font-semibold">Jam Kerja</h2>
+              </div>
+              <p className="text-sm text-slate-500 mb-5">
+                Dipakai buat reminder "belum mulai kerja" &amp; "belum live stream" — di luar jam ini (atau pas istirahat), tim tidak akan diganggu notifikasi.
+              </p>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 sm:items-end">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Mulai Kerja</label>
+                  <input type="time" value={workHours.start}
+                    onChange={(e) => setWorkHours((w) => ({ ...w, start: e.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Selesai Kerja</label>
+                  <input type="time" value={workHours.end}
+                    onChange={(e) => setWorkHours((w) => ({ ...w, end: e.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Istirahat Mulai</label>
+                  <input type="time" value={workHours.breakStart}
+                    onChange={(e) => setWorkHours((w) => ({ ...w, breakStart: e.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Istirahat Selesai</label>
+                  <input type="time" value={workHours.breakEnd}
+                    onChange={(e) => setWorkHours((w) => ({ ...w, breakEnd: e.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400" />
+                </div>
+              </div>
+              <button
+                disabled={savingWorkHours}
+                onClick={async () => {
+                  const toParts = (t) => t.split(":").map(Number);
+                  const [sh, sm] = toParts(workHours.start);
+                  const [eh, em] = toParts(workHours.end);
+                  const [bsh, bsm] = toParts(workHours.breakStart);
+                  const [beh, bem] = toParts(workHours.breakEnd);
+                  if ([sh, sm, eh, em, bsh, bsm, beh, bem].some((n) => isNaN(n))) {
+                    toast.error("Format waktu tidak valid"); return;
+                  }
+                  setSavingWorkHours(true);
+                  try {
+                    await api.put("/settings/work-hours", {
+                      start_hour: sh, start_minute: sm,
+                      end_hour: eh, end_minute: em,
+                      break_start_hour: bsh, break_start_minute: bsm,
+                      break_end_hour: beh, break_end_minute: bem,
+                    });
+                    toast.success("Jam kerja disimpan");
+                  } catch { toast.error("Gagal menyimpan"); }
+                  finally { setSavingWorkHours(false); }
+                }}
+                className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
+              >
+                <Save size={14} /> {savingWorkHours ? "Menyimpan..." : "Simpan"}
+              </button>
             </div>
           )}
 
