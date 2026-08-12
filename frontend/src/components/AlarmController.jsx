@@ -78,6 +78,7 @@ export default function AlarmController() {
   const { triggerAlarm } = useAlarm();
   const lastCount = useRef(-1);
   const fcmReady = useRef(false);
+  const lastFireRef = useRef({ key: "", time: 0 });
 
   useEffect(() => {
     if (!user) {
@@ -87,7 +88,17 @@ export default function AlarmController() {
 
     initNotifications();
 
-    const fire = (title, assignee) => triggerAlarm(title, assignee);
+    // WS realtime dan FCM push jalan bersamaan — event yang sama ("task_alert")
+    // sering nyampe dari DUA jalur sekaligus (beda beberapa ratus ms), yang
+    // bikin alarm+suara kepicu dobel. Dedupe berdasarkan isi pesan yang sama
+    // dalam jendela singkat, siapa pun yang nyampe duluan menang.
+    const fire = (title, assignee) => {
+      const key = `${title}|${assignee}`;
+      const now = Date.now();
+      if (lastFireRef.current.key === key && now - lastFireRef.current.time < 5000) return;
+      lastFireRef.current = { key, time: now };
+      triggerAlarm(title, assignee);
+    };
 
     if (!fcmReady.current) {
       fcmReady.current = true;

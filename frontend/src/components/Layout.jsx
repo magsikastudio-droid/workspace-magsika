@@ -7,7 +7,7 @@ import {
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
   Send, Loader2, LayoutGrid, Receipt, Database, ExternalLink, Monitor,
 } from "lucide-react";
-import StreamButton from "./StreamButton";
+import PresenceToggle from "./PresenceToggle";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { api } from "../lib/api";
@@ -183,6 +183,12 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (!user) return;
+    if (user.work_status === "break") {
+      // Lagi "Istirahat" — matikan alarm overdue juga, bukan cuma reminder belum-mulai
+      setOverdueAlarms([]);
+      setAlarmBannerVisible(false);
+      return;
+    }
     const checkOverdue = async () => {
       try {
         const today = todayStrLock();
@@ -291,9 +297,9 @@ export default function Layout({ children }) {
         </div>
       )}
 
-      {/* Stream button — visible to all roles */}
+      {/* Presence toggle (Online/Istirahat) — visible to all roles */}
       <div className="px-4 pb-2">
-        <StreamButton />
+        <PresenceToggle />
       </div>
 
       <div className="border-t border-slate-100 dark:border-white/[0.06] px-4 py-4">
