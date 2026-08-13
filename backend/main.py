@@ -433,14 +433,23 @@ app = FastAPI(title="Admin Dashboard API")
 class ConnectionManager:
     def __init__(self):
         self.active: list[WebSocket] = []
+        self.usernames: Dict[WebSocket, str] = {}  # ws -> username, buat cek "orang ini online/connect gak"
 
-    async def connect(self, ws: WebSocket):
+    async def connect(self, ws: WebSocket, username: str = ""):
         await ws.accept()
         self.active.append(ws)
+        if username:
+            self.usernames[ws] = username
 
     def disconnect(self, ws: WebSocket):
         if ws in self.active:
             self.active.remove(ws)
+        self.usernames.pop(ws, None)
+
+    def is_username_connected(self, username: str) -> bool:
+        """Dipakai buat cek apakah desktop app / tab web orang ini beneran
+        terhubung ke server sekarang — biar 'Ingatkan' tidak kirim buta."""
+        return bool(username) and username in self.usernames.values()
 
     async def broadcast(self, message: dict):
         import json
@@ -964,7 +973,7 @@ async def ws_endpoint(websocket: WebSocket, token: str = Query(None)):
     except Exception:
         await websocket.close(code=4001)
         return
-    await manager.connect(websocket)
+    await manager.connect(websocket, payload.get("sub", ""))
     try:
         while True:
             await websocket.receive_text()
@@ -1708,6 +1717,7 @@ async def get_team_presence(current_user: dict = Depends(get_current_user)):
                 "full_name": u.get("full_name", u.get("username", "")),
                 "work_status": u.get("work_status", "online"),
                 "work_status_since": u.get("work_status_since"),
+                "desktop_connected": manager.is_username_connected(u.get("username", "")),
             }
             for u in users
         ]
@@ -2490,7 +2500,16 @@ async def remind_task(task_id: str, current_user: dict = Depends(get_current_use
     except Exception:
         pass
 
-    return {"ok": True, "type": alert_type, "assignee": display_name}
+    # Reminder ini cuma sampai kalau desktop app orangnya beneran nyala &
+    # terhubung — kasih tau admin secara jujur kalau ternyata tidak ada
+    # koneksi aktif sama sekali, biar tidak salah kira "sudah pasti sampai".
+    connected = manager.is_username_connected(user_doc.get("username", ""))
+    warning = None if connected else (
+        f"⚠️ Reminder dikirim, tapi {display_name} sepertinya TIDAK terhubung "
+        f"ke server sama sekali sekarang (desktop app kemungkinan tidak jalan/login). "
+        f"Coba hubungi manual."
+    )
+    return {"ok": True, "type": alert_type, "assignee": display_name, "connected": connected, "warning": warning}
 
 
 @app.post("/streams/{streamer_id}/end")
