@@ -479,8 +479,8 @@ scheduler = AsyncIOScheduler() if SCHEDULER_AVAILABLE else None
 # memory — kalau server restart, grace period-nya cuma mulai hitung ulang dari 0.
 _idle_since: Dict[str, datetime] = {}
 _last_start_reminder: Dict[str, datetime] = {}
-NOT_STARTED_GRACE_MINUTES = 1  # sengaja ketat — keputusan final, bukan sisa testing
-NOT_STARTED_REPEAT_MINUTES = 1
+NOT_STARTED_GRACE_MINUTES = 3
+NOT_STARTED_REPEAT_MINUTES = 3
 
 
 async def _resolve_user_by_assignee(name: str) -> Optional[dict]:
@@ -616,8 +616,8 @@ async def check_not_started_tasks():
 
 _stream_gap_since: Dict[str, datetime] = {}
 _last_stream_reminder: Dict[str, datetime] = {}
-NOT_STREAMING_GRACE_MINUTES = 1  # sengaja ketat — keputusan final, bukan sisa testing
-NOT_STREAMING_REPEAT_MINUTES = 1
+NOT_STREAMING_GRACE_MINUTES = 3
+NOT_STREAMING_REPEAT_MINUTES = 3
 
 
 async def check_not_streaming_tasks():
@@ -1142,9 +1142,22 @@ async def screen_relay(websocket: WebSocket, token: str = Query(None)):
 
             if t == "join_streamer":
                 role = "streamer"
+                new_username = data.get("username") or user.get("full_name") or username
+                # Cegah double-stream: kalau orang yang sama udah streaming dari
+                # koneksi lain (mis. dari web DAN desktop app bersamaan, atau
+                # reconnect) — tutup yang lama. Cleanup-nya (pop + broadcast
+                # "streamer_left") sudah otomatis ditangani blok finally di
+                # koneksi lama itu sendiri begitu ke-disconnect, jadi tidak
+                # diduplikasi di sini biar tidak race.
+                for old_cid, old_info in list(frame_relay.streamers.items()):
+                    if old_cid != cid and old_info.get("username") == new_username:
+                        try:
+                            await old_info["ws"].close(code=4003, reason="Stream baru dimulai dari tempat lain")
+                        except Exception:
+                            pass
                 frame_relay.streamers[cid] = {
                     "ws":       websocket,
-                    "username": data.get("username") or user.get("full_name") or username,
+                    "username": new_username,
                     "task":     data.get("task", ""),
                     "avatar":   user.get("avatar", ""),
                     "brb":      False,

@@ -296,8 +296,14 @@ function showPickerWindow() {
   pickerWin.on("closed", () => { pickerWin = null; });
 }
 
+// Sengaja cuma "screen" (seluruh layar), bukan "window" per-aplikasi. Capture
+// per-window di Electron gampang: (a) hasilnya hitam kalau app-nya pakai GPU
+// rendering (Blender/Substance/ZBrush dll — kasus yang sering dilaporkan), dan
+// (b) window yang di-run-as-administrator sama sekali tidak muncul di daftar
+// (Windows UIPI, app biasa tidak bisa "lihat" window elevated). Capture layar
+// penuh jauh lebih reliable dan menghindari dua masalah itu sekaligus.
 ipcMain.handle("get-screen-sources", async () => {
-  const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 300, height: 200 } });
+  const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 300, height: 200 } });
   return sources.map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.toDataURL() }));
 });
 
