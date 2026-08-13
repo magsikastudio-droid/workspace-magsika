@@ -506,6 +506,10 @@ async def _resolve_user_by_assignee(name: str) -> Optional[dict]:
         full = (u.get("full_name") or "").strip().lower()
         if full and (full.startswith(name_l) or name_l.startswith(full)):
             return u
+    for u in users:  # 4. salah satu substring yang lain, mis. "Kevin (freelance)" → "Kevin Ari"
+        full = (u.get("full_name") or "").strip().lower()
+        if full and len(full) >= 3 and (full in name_l or name_l in full):
+            return u
     return None
 
 
@@ -924,6 +928,7 @@ async def on_startup():
         scheduler.add_job(carry_forward_tasks, CronTrigger(hour=0, minute=1, timezone="Asia/Jakarta"))
         scheduler.add_job(check_not_started_tasks, IntervalTrigger(minutes=1), id="check_not_started")
         scheduler.add_job(check_not_streaming_tasks, IntervalTrigger(minutes=1), id="check_not_streaming")
+        scheduler.add_job(auto_revert_stale_break, IntervalTrigger(minutes=10), id="auto_revert_stale_break")
         scheduler.add_job(auto_daily_ai_reports, CronTrigger(hour=17, minute=0, timezone="Asia/Jakarta"))
         # Load deadline from DB (default 16:30)
         _deadline = {"hour": 16, "minute": 30}
@@ -1673,14 +1678,57 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
 async def toggle_presence(current_user: dict = Depends(get_current_user)):
     """Toggle Online <-> Istirahat. Pas 'Istirahat', reminder 'belum mulai
     kerja' (dan alarm overdue di web) dibisukan buat user ini — dipakai kalau
-    lagi break/meeting/sholat/dll biar tidak ke-nag padahal memang lagi tidak kerja."""
+    lagi break/meeting/sholat/dll biar tidak ke-nag padahal memang lagi tidak kerja.
+    Auto-balik ke Online sendiri kalau kelamaan (lihat auto_revert_stale_break) —
+    biar tidak bisa dipakai buat "kabur" dari reminder seharian diam-diam."""
     current = current_user.get("work_status", "online")
     new_status = "break" if current == "online" else "online"
+    payload = {"work_status": new_status, "work_status_since": datetime.now(timezone.utc).isoformat()}
     try:
-        await db.users.update_one({"username": current_user["username"]}, {"$set": {"work_status": new_status}})
+        await db.users.update_one({"username": current_user["username"]}, {"$set": payload})
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Gagal update status")
-    return {"work_status": new_status}
+    return payload
+
+
+@app.get("/team/presence")
+async def get_team_presence(current_user: dict = Depends(get_current_user)):
+    """Status Online/Istirahat semua anggota tim aktif — dipakai nampilin titik
+    indikator di halaman To Do, biar admin/PM bisa lihat kalau ada yang 'Istirahat'
+    kelamaan (indikasi dipakai buat kabur dari reminder, bukan istirahat asli)."""
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        users = await db.users.find({"status": "active"}).to_list(200)
+    except Exception:
+        users = []
+    return {
+        "team": [
+            {
+                "full_name": u.get("full_name", u.get("username", "")),
+                "work_status": u.get("work_status", "online"),
+                "work_status_since": u.get("work_status_since"),
+            }
+            for u in users
+        ]
+    }
+
+
+async def auto_revert_stale_break():
+    """Tiap 10 menit — kalau ada yang 'Istirahat' lebih dari 2 jam terus-terusan
+    (istirahat resmi cuma 1.5 jam, 11:30-13:00), balikin otomatis ke 'Online'.
+    Ini biar toggle Istirahat tidak bisa dipakai buat bisukan reminder seharian
+    tanpa ketauan — kalau memang masih istirahat/izin, tinggal toggle lagi."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    try:
+        result = await db.users.update_many(
+            {"work_status": "break", "work_status_since": {"$lt": cutoff}},
+            {"$set": {"work_status": "online"}},
+        )
+        if result.modified_count:
+            print(f"[auto_revert_stale_break] {result.modified_count} akun dibalikin ke Online (istirahat >2 jam)")
+    except Exception as e:
+        print(f"[auto_revert_stale_break] Error: {e}")
 
 
 class UpdateMyEmailRequest(BaseModel):
@@ -2397,7 +2445,16 @@ async def remind_task(task_id: str, current_user: dict = Depends(get_current_use
         raise HTTPException(status_code=400, detail="Task ini tidak punya assignee")
 
     user_doc = await _resolve_user_by_assignee(assignee)
-    display_name = (user_doc.get("full_name") if user_doc else None) or assignee
+    if not user_doc:
+        # Jangan klaim "terkirim" kalau sebenarnya tidak nyampe ke siapa pun —
+        # ini penyebab paling umum reminder "diam-diam gagal": nama assignee
+        # di task tidak cocok dengan nama akun manapun yang terdaftar.
+        return {
+            "ok": False,
+            "message": f"Tidak ketemu akun untuk assignee '{assignee}' — reminder TIDAK terkirim ke siapa pun. "
+                       f"Cek/perbaiki nama assignee di task ini biar cocok sama nama lengkap akunnya.",
+        }
+    display_name = user_doc.get("full_name") or assignee
     title = task.get("title", "task ini")
     order_id = task.get("order_id", "") or ""
     timer_running = bool(task.get("timer_started"))
