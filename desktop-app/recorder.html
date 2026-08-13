@@ -64,6 +64,10 @@
       }, Math.floor(1000 / FRAME_FPS));
     };
     ws.onerror = () => window.desktopApp.reportRecordingError("Koneksi stream gagal.");
+    // Server bisa nutup koneksi ini kapan aja (mis. admin klik "End Stream"
+    // di Live Monitor) — kalau itu terjadi, bersihin semuanya di sini juga,
+    // jangan biarin recording "nyangkut" nganggur tanpa ngirim apa-apa.
+    ws.onclose = () => { stopAll(); window.desktopApp.reportStreamEnded(); window.close(); };
   }
 
   function stopAll() {

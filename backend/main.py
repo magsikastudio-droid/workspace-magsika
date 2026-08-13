@@ -1220,6 +1220,26 @@ async def screen_relay(websocket: WebSocket, token: str = Query(None)):
             frame_relay.viewers.pop(cid, None)
 
 
+@app.post("/streams/{streamer_id}/end")
+async def end_stream(streamer_id: str, current_user: dict = Depends(get_current_user)):
+    """Tombol 'End Stream' di Live Monitor (admin/PM) — paksa berhentiin live
+    stream talent. Cukup nutup koneksi WS streamer-nya; cleanup (pop dari
+    frame_relay.streamers, broadcast 'streamer_left', dst) sudah otomatis
+    ditangani blok finally di screen_relay begitu WebSocketDisconnect
+    ke-trigger — sengaja tidak diduplikasi di sini biar tidak race."""
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    info = frame_relay.streamers.get(streamer_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Stream tidak ditemukan (mungkin sudah berhenti)")
+    username = info.get("username", "")
+    try:
+        await info["ws"].close(code=4002, reason="Dihentikan admin")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal menghentikan stream: {e}")
+    return {"ok": True, "username": username}
+
+
 class PublicStreamVerify(BaseModel):
     public_code: str
     secret: str

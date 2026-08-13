@@ -20,5 +20,6 @@ contextBridge.exposeInMainWorld("desktopApp", {
   getRecorderInfo: () => ipcRenderer.invoke("get-recorder-info"),
   reportRecordingStarted: () => ipcRenderer.send("recording-started"),
   reportRecordingError: (msg) => ipcRenderer.send("recording-error", msg),
+  reportStreamEnded: () => ipcRenderer.send("stream-ended-remotely"),
   onStopRecording: (cb) => ipcRenderer.on("stop-recording", cb),
 });

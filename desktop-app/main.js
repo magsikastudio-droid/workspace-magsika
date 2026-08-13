@@ -370,6 +370,12 @@ ipcMain.on("recording-error", (event, msg) => {
   notify("⚠️ Gagal mulai recording", String(msg));
 });
 
+ipcMain.on("stream-ended-remotely", () => {
+  notify("⏹️ Stream dihentikan", "Admin menghentikan live stream kamu dari Live Monitor.");
+  // recorderWin nutup sendiri (recorder.html udah panggil window.close()),
+  // handler "closed" di startRecorder() yang bersihin activeRecording + tray.
+});
+
 /* ── lifecycle ────────────────────────────────────────────────────── */
 // Sengaja tidak panggil app.quit() di sini — begitu semua window ketutup,
 // proses tetap hidup di tray (itu intinya biar app "selalu jalan").
