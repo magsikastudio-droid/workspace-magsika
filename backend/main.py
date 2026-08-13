@@ -2949,7 +2949,9 @@ async def get_bank_info(current_user: dict = Depends(get_current_user)):
 
 @app.post("/settings/bank-info")
 async def update_bank_info(data: BankInfoUpdate, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") not in ["admin", "pm"]:
+    # Baca boleh admin+pm (dipakai Invoice.jsx), tapi UBAH info rekening
+    # pembayaran cuma admin/superadmin — ini data finansial sensitif.
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden")
     try:
         await db.settings.update_one(
