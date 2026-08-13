@@ -2366,6 +2366,63 @@ async def delete_task(task_id: str, current_user: dict = Depends(get_current_use
     return {"deleted": True}
 
 
+@app.post("/tasks/{task_id}/remind")
+async def remind_task(task_id: str, current_user: dict = Depends(get_current_user)):
+    """Tombol 'Ingatkan' manual di card task (admin/PM) — fallback kalau
+    reminder otomatis (check_not_started_tasks / check_not_streaming_tasks)
+    kebetulan telat atau desktop app orangnya lagi bug/mati. Kirim SEKARANG
+    JUGA, tidak nunggu grace period ataupun cooldown job otomatis."""
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    object_id = to_object_id(task_id)
+    task = await db.tasks.find_one({"_id": object_id})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task tidak ditemukan")
+
+    assignee = task.get("assignee")
+    if not assignee:
+        raise HTTPException(status_code=400, detail="Task ini tidak punya assignee")
+
+    user_doc = await _resolve_user_by_assignee(assignee)
+    display_name = (user_doc.get("full_name") if user_doc else None) or assignee
+    title = task.get("title", "task ini")
+    order_id = task.get("order_id", "") or ""
+    timer_running = bool(task.get("timer_started"))
+
+    is_streaming = False
+    if timer_running:
+        live_usernames = {v.get("username", "") for v in frame_relay.streamers.values() if v.get("username")}
+        is_streaming = display_name in live_usernames or assignee in live_usernames
+
+    if not timer_running:
+        alert_type = "not_started_alert"
+        push_title, push_body = "⏰ Belum Mulai Kerja!", f"Ayo klik Mulai: {title}"
+    elif not is_streaming:
+        alert_type = "not_streaming_alert"
+        push_title, push_body = "📵 Belum Live Stream!", f"Timer jalan tapi belum share layar: {title}"
+    else:
+        return {"ok": False, "message": f"{display_name} sudah jalan & live streaming, tidak ada yang perlu diingatkan."}
+
+    if user_doc:
+        try:
+            await send_fcm_to_username(
+                user_doc.get("username", ""), push_title, push_body,
+                {"type": alert_type, "task_id": task_id, "task_title": title, "order_id": order_id, "assignee": display_name},
+            )
+        except Exception as e:
+            print(f"[manual_remind] Error kirim FCM ke {assignee}: {e}")
+
+    try:
+        await manager.broadcast({
+            "type": alert_type, "task_id": task_id, "task_title": title,
+            "order_id": order_id, "assignee": display_name, "manual": True,
+        })
+    except Exception:
+        pass
+
+    return {"ok": True, "type": alert_type, "assignee": display_name}
+
+
 class AutoGenerateRequest(BaseModel):
     date: Optional[str] = None
 
