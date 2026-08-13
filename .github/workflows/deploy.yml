@@ -84,6 +84,25 @@ jobs:
           ssh vps "rm -rf /root/admin-dashboard/frontend/dist && mkdir -p /root/admin-dashboard/frontend/dist/assets"
           scp -r frontend/dist/* vps:/root/admin-dashboard/frontend/dist/
 
+      - name: "[TEMP] Diagnose public-queue location"
+        run: |
+          ssh vps bash << 'ENDSSH'
+          OUT=/root/admin-dashboard/frontend/dist/_debug.txt
+          echo "=== nginx sites-enabled ===" > "$OUT"
+          ls -la /etc/nginx/sites-enabled/ >> "$OUT" 2>&1
+          echo "" >> "$OUT"
+          echo "=== configs mentioning 'queue' ===" >> "$OUT"
+          for f in /etc/nginx/sites-enabled/* /etc/nginx/sites-available/*; do
+            if grep -qi "queue" "$f" 2>/dev/null; then
+              echo "--- $f ---" >> "$OUT"
+              cat "$f" >> "$OUT"
+              echo "" >> "$OUT"
+            fi
+          done
+          echo "=== files containing 'WATCH LIVE' under /root or /var/www ===" >> "$OUT"
+          grep -rl "WATCH LIVE" /root /var/www 2>/dev/null >> "$OUT"
+          ENDSSH
+
       - name: Copy backend to VPS
         run: |
           scp backend/main.py vps:/root/admin-dashboard/backend/
