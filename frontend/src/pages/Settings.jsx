@@ -570,7 +570,8 @@ export default function SettingsPage() {
   const TABS = [
     { key: "profil", label: "Profil Saya" },
     { key: "tampilan", label: "Tampilan" },
-    ...(isAdminOrPM ? [{ key: "tim", label: "Manajemen Tim" }, { key: "umum", label: "Pengaturan" }] : []),
+    ...(isAdminOrPM ? [{ key: "tim", label: "Manajemen Tim" }] : []),
+    ...(isAdmin ? [{ key: "umum", label: "Pengaturan" }] : []),
   ];
 
   return (
@@ -757,7 +758,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {activeTab === "umum" && isAdminOrPM && (
+      {activeTab === "umum" && isAdmin && (
         <div className="space-y-6">
           {/* Currency */}
           <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
