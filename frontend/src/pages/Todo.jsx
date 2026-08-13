@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2, ClipboardList, GripVertical, Kanban, Loader2, Pause, Pencil, Play,
-  Plus, Search, Send, X, Zap, Clock, CheckCheck, AlarmClock, Target,
+  Plus, Search, Send, X, Zap, Clock, CheckCheck, AlarmClock, Target, Bell,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
@@ -316,6 +316,17 @@ export default function Todo() {
     }
   }, [isAdminOrPM, handleStatus]);
 
+  /* ── admin/PM: ingatkan manual — fallback kalau desktop app lagi bug/mati ── */
+  const handleRemind = useCallback(async (task) => {
+    try {
+      const res = await api.post(`/tasks/${task.id}/remind`);
+      if (res.data?.ok) toast.success(`🔔 Reminder terkirim ke ${res.data.assignee}`);
+      else toast.info(res.data?.message || "Tidak ada yang perlu diingatkan saat ini.");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal kirim reminder.");
+    }
+  }, []);
+
   /* ── admin approve/reject dari card ── */
   const handleApprove = useCallback(async (task) => {
     await handleStatus(task, "done");
@@ -504,7 +515,7 @@ export default function Todo() {
       ) : viewMode === "kanban" ? (
         <KanbanView
           tasks={visibleTasks} now={now} isAdminOrPM={isAdminOrPM}
-          onTimer={handleTimer} onMarkDone={handleMarkDone}
+          onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind}
           onApprove={handleApprove} onReject={handleReject}
           onStatus={handleStatus} onEdit={setEditTask}
           onDetail={(t) => setDetailTaskId(t.id)} onDelete={handleDelete}
@@ -514,7 +525,7 @@ export default function Todo() {
           <TaskGroup
             title="Tim Internal" icon="👥" groups={grouped.tim} assigneeType="tim"
             orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
-            onTimer={handleTimer} onMarkDone={handleMarkDone}
+            onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind}
             onApprove={handleApprove} onReject={handleReject}
             onStatus={handleStatus} onDelete={handleDelete}
             onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
@@ -523,7 +534,7 @@ export default function Todo() {
           <TaskGroup
             title="Freelance" icon="🎨" groups={grouped.freelance} assigneeType="freelance"
             orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
-            onTimer={handleTimer} onMarkDone={handleMarkDone}
+            onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind}
             onApprove={handleApprove} onReject={handleReject}
             onStatus={handleStatus} onDelete={handleDelete}
             onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
@@ -612,7 +623,7 @@ export default function Todo() {
 }
 
 /* ─── KanbanView ────────────────────────────────────────────────── */
-function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onStatus, onEdit, onDetail, onDelete }) {
+function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onRemind, onApprove, onReject, onStatus, onEdit, onDetail, onDelete }) {
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
       {KANBAN_COLS.map(({ key, label, color }) => {
@@ -631,7 +642,7 @@ function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onApprove, o
                 ? <div className="rounded-xl border border-dashed border-slate-200 py-6 text-center text-xs text-slate-400">Kosong</div>
                 : colTasks.map((task) => (
                   <TaskCard key={task.id} task={task} now={now} isAdminOrPM={isAdminOrPM}
-                    onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+                    onTimer={onTimer} onMarkDone={onMarkDone} onRemind={onRemind} onApprove={onApprove} onReject={onReject}
                     onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
                     onDragStart={() => {}} onDragOver={() => {}} compact />
                 ))}
@@ -644,7 +655,7 @@ function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onApprove, o
 }
 
 /* ─── TaskGroup ─────────────────────────────────────────────────── */
-function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskMap, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskMap, now, isAdminOrPM, onTimer, onMarkDone, onRemind, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const entries = Object.entries(groups);
   const totalTasks = entries.reduce((s, [, t]) => s + t.length, 0);
   return (
@@ -666,7 +677,7 @@ function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskM
             return (
               <ArtistSection
                 key={assignee} assignee={assignee} tasks={ordered} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
-                onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+                onTimer={onTimer} onMarkDone={onMarkDone} onRemind={onRemind} onApprove={onApprove} onReject={onReject}
                 onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
                 onDragStart={onDragStart}
                 onDragOver={(e, overId) => onDragOver(e, assignee, overId)}
@@ -681,7 +692,7 @@ function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskM
 }
 
 /* ─── ArtistSection ─────────────────────────────────────────────── */
-function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemind, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const bgColor = avatarColor(assignee);
   const totalElapsed = tasks.reduce((s, t) => s + getElapsed(t, now), 0);
 
@@ -764,7 +775,7 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
           <TaskCard
             key={task.id} task={task} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
             estStart={schedule[task.id] ?? null}
-            onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+            onTimer={onTimer} onMarkDone={onMarkDone} onRemind={onRemind} onApprove={onApprove} onReject={onReject}
             onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
             onDragStart={onDragStart} onDragOver={onDragOver}
           />
@@ -775,7 +786,7 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
 }
 
 /* ─── TaskCard ──────────────────────────────────────────────────── */
-function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, estStart = null, compact = false }) {
+function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemind, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, estStart = null, compact = false }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
   const linkedOrderInfo = useMemo(() => {
@@ -967,6 +978,18 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onAppro
             >
               <CheckCircle2 size={12} />
               <span>Done</span>
+            </button>
+          )}
+
+          {/* Admin/PM: ingatkan manual — fallback kalau desktop app talent lagi bug/mati */}
+          {isActive && isAdminOrPM && (
+            <button
+              onClick={stopProp(() => onRemind(task))}
+              title="Ingatkan mulai / live stream (manual, buat jaga-jaga kalau app di laptop-nya lagi bug)"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition"
+            >
+              <Bell size={12} />
+              <span>Ingatkan</span>
             </button>
           )}
 
