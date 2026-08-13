@@ -148,6 +148,23 @@ export default function Todo() {
 
   useEffect(() => { if (user) fetchTasks(date); }, [date, fetchTasks, user]);
 
+  /* ── Status Online/Istirahat tim — biar admin/PM bisa lihat kalau ada
+     yang "Istirahat" kelamaan (indikasi dipakai kabur dari reminder) ── */
+  const [presenceMap, setPresenceMap] = useState({}); // {full_name: {work_status, work_status_since}}
+  useEffect(() => {
+    if (!isAdminOrPM) return;
+    const fetchPresence = () => {
+      api.get("/team/presence").then((r) => {
+        const map = {};
+        (r.data?.team || []).forEach((t) => { map[t.full_name] = t; });
+        setPresenceMap(map);
+      }).catch(() => {});
+    };
+    fetchPresence();
+    const id = setInterval(fetchPresence, 30000);
+    return () => clearInterval(id);
+  }, [isAdminOrPM]);
+
   useEffect(() => {
     if (!user) return;
     setLayoutLoading(true);
@@ -525,6 +542,7 @@ export default function Todo() {
           <TaskGroup
             title="Tim Internal" icon="👥" groups={grouped.tim} assigneeType="tim"
             orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
+            presenceMap={presenceMap}
             onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind}
             onApprove={handleApprove} onReject={handleReject}
             onStatus={handleStatus} onDelete={handleDelete}
@@ -534,6 +552,7 @@ export default function Todo() {
           <TaskGroup
             title="Freelance" icon="🎨" groups={grouped.freelance} assigneeType="freelance"
             orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
+            presenceMap={presenceMap}
             onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind}
             onApprove={handleApprove} onReject={handleReject}
             onStatus={handleStatus} onDelete={handleDelete}
@@ -655,7 +674,7 @@ function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onRemind, on
 }
 
 /* ─── TaskGroup ─────────────────────────────────────────────────── */
-function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskMap, now, isAdminOrPM, onTimer, onMarkDone, onRemind, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskMap, now, isAdminOrPM, presenceMap, onTimer, onMarkDone, onRemind, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const entries = Object.entries(groups);
   const totalTasks = entries.reduce((s, [, t]) => s + t.length, 0);
   return (
@@ -677,6 +696,7 @@ function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskM
             return (
               <ArtistSection
                 key={assignee} assignee={assignee} tasks={ordered} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
+                presence={presenceMap[assignee]}
                 onTimer={onTimer} onMarkDone={onMarkDone} onRemind={onRemind} onApprove={onApprove} onReject={onReject}
                 onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
                 onDragStart={onDragStart}
@@ -692,7 +712,7 @@ function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskM
 }
 
 /* ─── ArtistSection ─────────────────────────────────────────────── */
-function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemind, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, presence, onTimer, onMarkDone, onRemind, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const bgColor = avatarColor(assignee);
   const totalElapsed = tasks.reduce((s, t) => s + getElapsed(t, now), 0);
 
@@ -759,8 +779,24 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, onTimer, onM
   return (
     <div>
       <div className="mb-2 flex items-center gap-2.5">
-        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${bgColor}`}>
-          {assignee?.charAt(0)?.toUpperCase() || "?"}
+        <div className="relative shrink-0">
+          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-white ${bgColor}`}>
+            {assignee?.charAt(0)?.toUpperCase() || "?"}
+          </div>
+          {/* Titik status Online/Istirahat — biar admin bisa lihat kalau ada
+              yang "Istirahat" kelamaan (dipakai buat kabur dari reminder) */}
+          {presence && (
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white ${
+                presence.work_status === "break" ? "bg-amber-400" : "bg-emerald-500"
+              }`}
+              title={
+                presence.work_status === "break"
+                  ? `☕ Istirahat${presence.work_status_since ? ` sejak ${new Date(presence.work_status_since).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : ""}`
+                  : "⚡ Online"
+              }
+            />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-900">{assignee}</p>
