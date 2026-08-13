@@ -875,7 +875,7 @@ function openLiveModal(order) {
       <button class="modal-close" aria-label="Close">&times;</button>
       <div class="modal-project">Watch Live: ${escapeHtml(order.project || "Untitled")}</div>
       <div class="modal-client" style="margin-top:4px;">Enter your Fiverr or Etsy order code to watch.</div>
-      <input type="text" id="live-code-input" placeholder="e.g. FO12345678" autocomplete="off" />
+      <input type="text" id="live-code-input" placeholder="e.g. #FO12345678" autocomplete="off" />
       <div class="live-error" id="live-error" style="display:none;"></div>
       <button type="button" class="live-submit-btn" id="live-submit-btn">Watch Live</button>
       <div class="live-video-wrap" id="live-video-wrap" style="display:none;">
@@ -892,7 +892,9 @@ function openLiveModal(order) {
   const errorEl = document.getElementById("live-error");
 
   const submit = async () => {
-    const code = input.value.trim();
+    // Placeholder-nya nunjukkin contoh pakai "#" (kayak Fiverr/Etsy nampilin order
+    // number ke client) — terima dua-duanya, dengan atau tanpa "#" di depan.
+    const code = input.value.trim().replace(/^#/, "");
     if (!code) return;
     errorEl.style.display = "none";
     submitBtn.textContent = "Checking...";
