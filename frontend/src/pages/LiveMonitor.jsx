@@ -16,8 +16,10 @@
  *   ← BYTES raw JPEG frame
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Maximize2, Monitor, Wifi, WifiOff, Radio, Users } from "lucide-react";
+import { Maximize2, Monitor, Wifi, WifiOff, Radio, Users, Square } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { api } from "../lib/api";
+import { toast } from "sonner";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const resolved    = BACKEND_URL.startsWith("/")
@@ -28,8 +30,9 @@ const WS_BASE = resolved.replace(/^http/, "ws");
 /* ═══════════════════════════════════════════════════════════
    StreamCard — tampilkan frame JPEG dari streamer
 ═══════════════════════════════════════════════════════════ */
-function StreamCard({ id, username, task, avatar, brb, imgRef }) {
+function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStream }) {
   const containerRef = useRef(null);
+  const [ending, setEnding] = useState(false);
 
   const enterFullscreen = (e) => {
     e.stopPropagation();
@@ -38,6 +41,20 @@ function StreamCard({ id, username, task, avatar, brb, imgRef }) {
     if      (el.requestFullscreen)            el.requestFullscreen();
     else if (el.webkitRequestFullscreen)      el.webkitRequestFullscreen();
     else if (el.mozRequestFullScreen)         el.mozRequestFullScreen();
+  };
+
+  const handleEndStream = async (e) => {
+    e.stopPropagation();
+    if (ending) return;
+    if (!window.confirm(`Hentikan live stream ${username} sekarang?`)) return;
+    setEnding(true);
+    try {
+      await onEndStream(id);
+      toast.success(`Stream ${username} dihentikan.`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal menghentikan stream.");
+      setEnding(false);
+    }
   };
 
   return (
@@ -61,6 +78,18 @@ function StreamCard({ id, username, task, avatar, brb, imgRef }) {
       >
         <Maximize2 size={13} />
       </button>
+
+      {/* End Stream — admin/PM saja */}
+      {canEnd && (
+        <button
+          onClick={handleEndStream}
+          disabled={ending}
+          title={`Hentikan stream ${username}`}
+          className="absolute top-2 right-11 flex items-center gap-1 h-7 px-2 rounded-lg bg-rose-600/80 text-white text-[11px] font-semibold opacity-0 group-hover:opacity-100 hover:bg-rose-600 disabled:opacity-60 transition-all duration-150 z-10"
+        >
+          <Square size={11} /> {ending ? "..." : "End Stream"}
+        </button>
+      )}
 
       {/* Bottom bar */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent px-3 py-2.5">
@@ -114,7 +143,8 @@ function StreamCard({ id, username, task, avatar, brb, imgRef }) {
    Main page
 ═══════════════════════════════════════════════════════════ */
 export default function LiveMonitor() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const canEnd = user?.role === "admin" || user?.role === "pm";
 
   const wsRef       = useRef(null);
   const imgRefsMap  = useRef({});   // {streamer_id: React ref}
@@ -246,6 +276,10 @@ export default function LiveMonitor() {
 
   const entries = Object.entries(streamers);
 
+  /* Server bakal broadcast "streamer_left" begitu koneksinya kepotong —
+     state di sini cukup nunggu itu, tidak perlu di-set manual di sini. */
+  const handleEndStream = useCallback((streamerId) => api.post(`/streams/${streamerId}/end`), []);
+
   /* ── Render ── */
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
@@ -309,6 +343,8 @@ export default function LiveMonitor() {
               avatar={info.avatar}
               brb={info.brb ?? false}
               imgRef={getImgRef(id)}
+              canEnd={canEnd}
+              onEndStream={handleEndStream}
             />
           ))}
         </div>
