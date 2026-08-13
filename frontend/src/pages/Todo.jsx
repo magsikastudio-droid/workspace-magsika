@@ -337,8 +337,15 @@ export default function Todo() {
   const handleRemind = useCallback(async (task) => {
     try {
       const res = await api.post(`/tasks/${task.id}/remind`);
-      if (res.data?.ok) toast.success(`🔔 Reminder terkirim ke ${res.data.assignee}`);
-      else toast.info(res.data?.message || "Tidak ada yang perlu diingatkan saat ini.");
+      if (!res.data?.ok) {
+        toast.info(res.data?.message || "Tidak ada yang perlu diingatkan saat ini.");
+      } else if (res.data.warning) {
+        // Reminder terkirim tapi orangnya tidak terhubung — kasih tau jelas,
+        // jangan cuma bilang "sukses" padahal kemungkinan besar tidak sampai.
+        toast.warning(res.data.warning, { duration: 8000 });
+      } else {
+        toast.success(`🔔 Reminder terkirim ke ${res.data.assignee}`);
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || "Gagal kirim reminder.");
     }
@@ -783,17 +790,20 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, presence, on
           <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-white ${bgColor}`}>
             {assignee?.charAt(0)?.toUpperCase() || "?"}
           </div>
-          {/* Titik status Online/Istirahat — biar admin bisa lihat kalau ada
-              yang "Istirahat" kelamaan (dipakai buat kabur dari reminder) */}
+          {/* Titik status — prioritas: desktop app tidak terhubung (abu-abu,
+              paling penting, artinya reminder TIDAK akan pernah sampai ke dia
+              apapun status Online/Istirahat-nya) > Istirahat (kuning) > Online (hijau) */}
           {presence && (
             <span
               className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white ${
-                presence.work_status === "break" ? "bg-amber-400" : "bg-emerald-500"
+                !presence.desktop_connected ? "bg-slate-400" : presence.work_status === "break" ? "bg-amber-400" : "bg-emerald-500"
               }`}
               title={
-                presence.work_status === "break"
+                !presence.desktop_connected
+                  ? "🔌 Desktop app TIDAK terhubung — reminder tidak akan sampai ke laptop-nya"
+                  : presence.work_status === "break"
                   ? `☕ Istirahat${presence.work_status_since ? ` sejak ${new Date(presence.work_status_since).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : ""}`
-                  : "⚡ Online"
+                  : "⚡ Online & terhubung"
               }
             />
           )}
