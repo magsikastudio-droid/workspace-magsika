@@ -3,9 +3,10 @@ import React, { createContext, useContext, useState } from "react";
 const AlarmContext = createContext(null);
 
 export function AlarmProvider({ children }) {
-  const [alarm, setAlarm] = useState(null); // { taskTitle, assignee }
+  const [alarm, setAlarm] = useState(null); // { taskTitle, assignee, kind }
 
-  const triggerAlarm = (taskTitle, assignee) => setAlarm({ taskTitle, assignee });
+  // kind: "review" (default, task_alert) | "not_started" | "not_streaming"
+  const triggerAlarm = (taskTitle, assignee, kind = "review") => setAlarm({ taskTitle, assignee, kind });
   const dismissAlarm = () => setAlarm(null);
 
   return (

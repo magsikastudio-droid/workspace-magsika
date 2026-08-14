@@ -92,12 +92,12 @@ export default function AlarmController() {
     // sering nyampe dari DUA jalur sekaligus (beda beberapa ratus ms), yang
     // bikin alarm+suara kepicu dobel. Dedupe berdasarkan isi pesan yang sama
     // dalam jendela singkat, siapa pun yang nyampe duluan menang.
-    const fire = (title, assignee) => {
-      const key = `${title}|${assignee}`;
+    const fire = (title, assignee, kind = "review") => {
+      const key = `${kind}|${title}|${assignee}`;
       const now = Date.now();
       if (lastFireRef.current.key === key && now - lastFireRef.current.time < 5000) return;
       lastFireRef.current = { key, time: now };
-      triggerAlarm(title, assignee);
+      triggerAlarm(title, assignee, kind);
     };
 
     if (!fcmReady.current) {
@@ -107,7 +107,20 @@ export default function AlarmController() {
 
     // WS realtime (saat app terbuka & server sudah deploy WS)
     const unsubWS = subscribe("task_alert", (msg) => {
-      fire(msg.task_title, msg.assignee);
+      fire(msg.task_title, msg.assignee, "review");
+    });
+
+    // "not_started_alert"/"not_streaming_alert" dulu cuma ditangani desktop
+    // app — kalau orangnya cuma buka dashboard di browser biasa (bukan
+    // desktop app), reminder ini lewat begitu saja tanpa ada yang nangkep.
+    // Sekarang web app juga dengerin, difilter cuma buat orangnya sendiri
+    // (beda dari task_alert yang memang buat semua admin/PM lihat).
+    const myName = user.full_name || user.username;
+    const unsubNotStarted = subscribe("not_started_alert", (msg) => {
+      if (msg.assignee === myName) fire(msg.task_title, msg.assignee, "not_started");
+    });
+    const unsubNotStreaming = subscribe("not_streaming_alert", (msg) => {
+      if (msg.assignee === myName) fire(msg.task_title, msg.assignee, "not_streaming");
     });
 
     // Polling fallback tiap 5 detik
@@ -127,6 +140,8 @@ export default function AlarmController() {
 
     return () => {
       unsubWS();
+      unsubNotStarted();
+      unsubNotStreaming();
       clearInterval(interval);
     };
   }, [user, triggerAlarm]);
