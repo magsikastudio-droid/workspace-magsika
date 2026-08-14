@@ -1,12 +1,38 @@
 import React, { useEffect, useRef } from "react";
 import { useAlarm } from "../context/AlarmContext";
 
-function speakApproval(taskTitle, assignee) {
+// Teks & tampilan beda per jenis alarm — sinkron sama alarm.html di desktop
+// app, biar konsisten mau lewat browser atau desktop app.
+const KIND_CONFIG = {
+  review: {
+    label: "Perlu Review",
+    headline: "Task Menunggu Review!",
+    speak: (name, title) => (name ? `${name} minta approval! ${title}` : `Ada task minta approval! ${title}`),
+    buttonText: "TUTUP",
+    goTo: null,
+  },
+  not_started: {
+    label: "Belum Mulai Kerja",
+    headline: "Ayo Mulai Task Ini!",
+    speak: (name, title) => `Ayo mulai kerjain: ${title}`,
+    buttonText: "KE TO DO →",
+    goTo: "/todo",
+  },
+  not_streaming: {
+    label: "Belum Live Stream",
+    headline: "Timer Jalan, Belum Live Stream!",
+    speak: (name, title) => `Timer jalan tapi belum live stream: ${title}`,
+    buttonText: "KE TO DO →",
+    goTo: "/todo",
+  },
+};
+
+function speakApproval(taskTitle, assignee, kind = "review") {
   // Try backend TTS via global AudioContext first
   const ctx = window._audioCtx;
   const name = (assignee || "").split(" ")[0];
   const title = (taskTitle || "").replace(/\s*—\s*.+$/, "").trim();
-  const text = name ? `${name} minta approval! ${title}` : `Ada task minta approval! ${title}`;
+  const text = (KIND_CONFIG[kind] || KIND_CONFIG.review).speak(name, title);
   if (ctx && ctx.state === "running") {
     const token = localStorage.getItem("admin_dashboard_token");
     fetch("/api/tts", {
@@ -94,7 +120,7 @@ export default function AlarmOverlay() {
     }, 2000);
 
     // Voice announcement
-    speakApproval(alarm.taskTitle, alarm.assignee);
+    speakApproval(alarm.taskTitle, alarm.assignee, alarm.kind);
 
     return () => {
       clearInterval(intervalRef.current);
@@ -105,6 +131,12 @@ export default function AlarmOverlay() {
   }, [alarm]);
 
   if (!alarm) return null;
+
+  const cfg = KIND_CONFIG[alarm.kind] || KIND_CONFIG.review;
+  const handleAction = () => {
+    dismissAlarm();
+    if (cfg.goTo) window.location.href = cfg.goTo;
+  };
 
   return (
     <div
@@ -152,7 +184,7 @@ export default function AlarmOverlay() {
           fontWeight: 700,
         }}
       >
-        Perlu Review
+        {cfg.label}
       </p>
 
       <h1
@@ -163,7 +195,7 @@ export default function AlarmOverlay() {
           lineHeight: 1.3,
         }}
       >
-        Task Menunggu Review!
+        {cfg.headline}
       </h1>
 
       {alarm.assignee && (
@@ -176,7 +208,7 @@ export default function AlarmOverlay() {
       </p>
 
       <button
-        onClick={dismissAlarm}
+        onClick={handleAction}
         style={{
           padding: "18px 56px",
           fontSize: 18,
@@ -190,7 +222,7 @@ export default function AlarmOverlay() {
           letterSpacing: 1,
         }}
       >
-        TUTUP
+        {cfg.buttonText}
       </button>
 
       <style>{`
