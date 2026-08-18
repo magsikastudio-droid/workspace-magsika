@@ -38,6 +38,11 @@ jobs:
             UserKnownHostsFile /dev/null
           EOF
 
+      - name: Download RustDesk client installer (buat "Setup Remote Access" di tray)
+        shell: bash
+        run: |
+          curl -fsSL -o desktop-app/dist/rustdesk-installer.exe "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-x86_64.exe"
+
       - name: Upload installer to VPS
         shell: bash
         run: |

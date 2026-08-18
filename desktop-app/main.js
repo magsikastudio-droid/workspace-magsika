@@ -1,7 +1,9 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, screen, Notification, desktopCapturer } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process");
+const crypto = require("crypto");
+const https = require("https");
 const WebSocket = require("ws");
 const { autoUpdater } = require("electron-updater");
 
@@ -61,6 +63,11 @@ const WEB_URL = process.env.MAGSIKA_WEB_URL || "https://workspace.magsikastudio.
 const WS_URL = BACKEND_URL.replace(/^http/, "ws") + "/ws";
 
 const CONFIG_PATH = path.join(app.getPath("userData"), "session.json");
+const REMOTE_ACCESS_MARKER = path.join(app.getPath("userData"), "remote-access-configured.json");
+const RUSTDESK_HOST = "workspace.magsikastudio.com";
+const RUSTDESK_KEY = "W4jqtZ9xAHzpwD1O0J9WPS+mOxfkvz7dXDMthPe5Ioo=";
+const RUSTDESK_INSTALLER_URL = `${WEB_URL}/downloads/desktop-app/rustdesk-installer.exe`;
+const RUSTDESK_EXE = 'C:\\Program Files\\RustDesk\\rustdesk.exe';
 
 let tray = null;
 let loginWin = null;
@@ -126,6 +133,9 @@ function updateTrayMenu() {
   }
   items.push(
     { label: "Buka Dashboard", click: () => shell.openExternal(WEB_URL) },
+    isRemoteAccessConfigured()
+      ? { label: "🖥️ Remote Access: Aktif ✓", enabled: false }
+      : { label: "🖥️ Setup Remote Access", click: setupRemoteAccess, enabled: !!session },
     { label: `Cek Update (v${app.getVersion()})`, click: checkForUpdates },
     { label: "Login Ulang", click: doLogout, enabled: !!session },
     { type: "separator" },
@@ -133,6 +143,116 @@ function updateTrayMenu() {
   );
   tray.setContextMenu(Menu.buildFromTemplate(items));
   tray.setToolTip(activeRecording ? `Magsika Reminder — 🔴 Merekam: ${activeRecording.taskTitle}` : "Magsika Reminder");
+}
+
+/* ── "Setup Remote Access" — install+config RustDesk lewat tray, sekali
+   klik, tanpa perlu terima file terpisah. Elevasi UAC cuma diminta untuk
+   proses instalasinya doang, bukan seluruh app Magsika Reminder. ────── */
+function isRemoteAccessConfigured() {
+  return fs.existsSync(REMOTE_ACCESS_MARKER);
+}
+
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+    https.get(url, (res) => {
+      if (res.statusCode !== 200) { file.close(); fs.unlink(destPath, () => {}); reject(new Error(`HTTP ${res.statusCode}`)); return; }
+      res.pipe(file);
+      file.on("finish", () => file.close(() => resolve()));
+    }).on("error", (err) => { fs.unlink(destPath, () => {}); reject(err); });
+  });
+}
+
+function runElevated(scriptPath) {
+  return new Promise((resolve, reject) => {
+    const psCmd = `try { Start-Process -FilePath 'cmd.exe' -ArgumentList '/c "${scriptPath}"' -Verb RunAs -Wait -ErrorAction Stop } catch { exit 1 }`;
+    const ps = spawn("powershell.exe", ["-NoProfile", "-Command", psCmd]);
+    ps.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`Setup dibatalkan atau gagal (kode ${code})`))));
+    ps.on("error", reject);
+  });
+}
+
+// Best-effort: RustDesk itu app GUI tanpa console interaktif, tapi kalau
+// stdout-nya di-pipe langsung dari Node (bukan lewat cmd.exe) biasanya masih
+// kebaca. Kalau gagal/kosong, kita fallback minta orangnya lapor manual.
+function tryGetRustDeskId() {
+  return new Promise((resolve) => {
+    execFile(RUSTDESK_EXE, ["--get-id"], { timeout: 5000 }, (err, stdout) => {
+      if (err) { resolve(""); return; }
+      const id = (stdout || "").trim();
+      resolve(/^\d{6,12}$/.test(id) ? id : "");
+    });
+  });
+}
+
+async function reportRemoteAccess(rustdeskId, password) {
+  try {
+    const res = await fetch(`${BACKEND_URL}/me/remote-access`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+      body: JSON.stringify({ rustdesk_id: rustdeskId, rustdesk_password: password }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return true;
+  } catch (e) {
+    console.error("[reportRemoteAccess] gagal lapor ke backend:", e);
+    return false;
+  }
+}
+
+async function setupRemoteAccess() {
+  if (!session) { notify("⚠️ Belum login", "Login dulu sebelum setup remote access."); return; }
+  notify("🖥️ Setup Remote Access dimulai", "Mengunduh RustDesk... sebentar lagi akan minta izin Administrator.");
+
+  const tmpDir = app.getPath("temp");
+  const installerPath = path.join(tmpDir, "magsika-rustdesk-installer.exe");
+  const scriptPath = path.join(tmpDir, "magsika-remote-setup.bat");
+  const password = crypto.randomBytes(16).toString("base64").replace(/[^a-zA-Z0-9]/g, "").slice(0, 16);
+
+  try {
+    await downloadFile(RUSTDESK_INSTALLER_URL, installerPath);
+
+    const script = [
+      "@echo off",
+      `"${installerPath}" --silent-install`,
+      "timeout /t 8 /nobreak",
+      "taskkill /F /IM rustdesk.exe /T >nul 2>&1",
+      "timeout /t 2 /nobreak >nul",
+      `"${RUSTDESK_EXE}" --option custom-rendezvous-server ${RUSTDESK_HOST}`,
+      "timeout /t 1 /nobreak >nul",
+      `"${RUSTDESK_EXE}" --option relay-server ${RUSTDESK_HOST}`,
+      "timeout /t 1 /nobreak >nul",
+      `"${RUSTDESK_EXE}" --option key ${RUSTDESK_KEY}`,
+      "timeout /t 1 /nobreak >nul",
+      `"${RUSTDESK_EXE}" --option approve-mode password`,
+      "timeout /t 1 /nobreak >nul",
+      `"${RUSTDESK_EXE}" --password ${password}`,
+    ].join("\r\n");
+    fs.writeFileSync(scriptPath, script, "utf-8");
+
+    await runElevated(scriptPath); // <- prompt UAC muncul di sini
+
+    await new Promise((r) => setTimeout(r, 3000)); // kasih waktu service settle
+    const rdId = await tryGetRustDeskId();
+
+    fs.writeFileSync(REMOTE_ACCESS_MARKER, JSON.stringify({ configuredAt: new Date().toISOString(), rustdeskId: rdId }));
+    updateTrayMenu();
+
+    if (rdId) {
+      const reported = await reportRemoteAccess(rdId, password);
+      notify(
+        reported ? "✅ Remote Access aktif" : "⚠️ Setup OK, lapor ke server gagal",
+        reported ? `ID: ${rdId} — otomatis terdaftar, admin sudah bisa remote kapan saja.`
+                 : `ID: ${rdId}, kasih tau admin manual (koneksi ke server gagal saat lapor otomatis).`
+      );
+    } else {
+      notify("✅ Setup selesai — 1 langkah lagi", "Buka RustDesk dari Start Menu, lihat ID-nya, kasih tau admin manual (auto-detect ID gagal).");
+      shell.openPath(RUSTDESK_EXE).catch(() => {});
+    }
+  } catch (e) {
+    console.error("[setupRemoteAccess] error:", e);
+    notify("⚠️ Gagal setup remote access", String(e.message || e));
+  }
 }
 
 function doLogout() {

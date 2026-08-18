@@ -3327,6 +3327,23 @@ async def admin_set_user_remote_access(req: AdminSetRemoteAccessRequest, current
     return {"ok": True}
 
 
+class SelfSetRemoteAccessRequest(BaseModel):
+    rustdesk_id: str
+    rustdesk_password: str
+
+@app.post("/me/remote-access")
+async def self_set_remote_access(req: SelfSetRemoteAccessRequest, current_user: dict = Depends(get_current_user)):
+    """Talent/PM: laporan otomatis dari desktop app sendiri setelah tombol
+    'Setup Remote Access' di tray selesai jalan — beda dari endpoint admin di
+    atas, ini dipanggil ORANGNYA SENDIRI (siapapun boleh, cuma buat akunnya
+    sendiri) tanpa perlu admin ketik manual di Manajemen Tim."""
+    await db.users.update_one(
+        {"username": current_user["username"]},
+        {"$set": {"rustdesk_id": req.rustdesk_id.strip(), "rustdesk_password": req.rustdesk_password}},
+    )
+    return {"ok": True}
+
+
 @app.post("/team/{assignee}/remote-connect")
 async def remote_connect(assignee: str, current_user: dict = Depends(get_current_user)):
     """Tombol 'Remote' di To Do — kirim perintah lewat WS ke desktop app milik
