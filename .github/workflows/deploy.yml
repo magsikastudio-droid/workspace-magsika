@@ -209,8 +209,6 @@ jobs:
           # (bukan MITM). Sekali di-generate hbbs, tidak berubah lagi.
           echo "[RustDesk] Public key:"
           cat /var/lib/rustdesk-server/id_ed25519.pub 2>/dev/null || echo "(belum ke-generate, cek lagi setelah hbbs jalan)"
-          # TEMP: sekali ambil aja, biar bisa dibaca lewat browser (dihapus lagi abis ini)
-          cat /var/lib/rustdesk-server/id_ed25519.pub > /root/admin-dashboard/frontend/dist/_rd_key.txt 2>/dev/null || true
           ENDSSH
 
       - name: Restart service
