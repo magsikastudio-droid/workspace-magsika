@@ -2819,6 +2819,8 @@ def format_user(record: dict) -> dict:
         "position": record.get("position", ""),
         "address": record.get("address", ""),
         "bank_account": record.get("bank_account", ""),
+        "rustdesk_id": record.get("rustdesk_id", ""),
+        "rustdesk_password": record.get("rustdesk_password", ""),
     }
 
 
@@ -3303,6 +3305,58 @@ async def admin_set_user_email(req: AdminSetEmailRequest, current_user: dict = D
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail=f"User '{req.username}' tidak ditemukan")
     return {"ok": True, "message": f"Email {req.username} diset ke {new_email} (verified={req.verified})"}
+
+
+class AdminSetRemoteAccessRequest(BaseModel):
+    username: str
+    rustdesk_id: str
+    rustdesk_password: str
+
+@app.post("/admin/set-user-remote-access")
+async def admin_set_user_remote_access(req: AdminSetRemoteAccessRequest, current_user: dict = Depends(get_current_user)):
+    """Admin: simpan ID + password RustDesk PC anggota tim (dari hasil setup
+    script sekali-jalan di PC mereka) — dipakai tombol "Remote" di To Do."""
+    if current_user.get("role") not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    result = await db.users.update_one(
+        {"username": req.username},
+        {"$set": {"rustdesk_id": req.rustdesk_id.strip(), "rustdesk_password": req.rustdesk_password}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail=f"User '{req.username}' tidak ditemukan")
+    return {"ok": True}
+
+
+@app.post("/team/{assignee}/remote-connect")
+async def remote_connect(assignee: str, current_user: dict = Depends(get_current_user)):
+    """Tombol 'Remote' di To Do — kirim perintah lewat WS ke desktop app milik
+    ADMIN YANG KLIK (bukan broadcast ke semua), suruh dia jalanin
+    `rustdesk.exe --connect <id> --password <pw>` sendiri secara lokal.
+    Backend cuma nyalurin, tidak pernah nyimpen/nampilin password di web.
+    `assignee` boleh teks bebas kayak di task (mis. "Ivo") — dicocokkan ke
+    akun yang benar pakai resolver yang sama dengan reminder biasa."""
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    target = await _resolve_user_by_assignee(assignee)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Tidak ketemu akun untuk '{assignee}'")
+    rd_id = target.get("rustdesk_id")
+    rd_pw = target.get("rustdesk_password")
+    display_name = target.get("full_name", assignee)
+    if not rd_id or not rd_pw:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{display_name} belum di-setup remote access-nya. "
+                   f"Set ID + password RustDesk-nya dulu di Manajemen Tim.",
+        )
+    await manager.broadcast({
+        "type": "remote_connect",
+        "requested_by": current_user["username"],
+        "rustdesk_id": rd_id,
+        "rustdesk_password": rd_pw,
+        "target_name": display_name,
+    })
+    return {"ok": True, "target_name": target.get("full_name", username)}
 
 
 @app.post("/telegram/send")

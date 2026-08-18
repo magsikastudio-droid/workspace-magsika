@@ -7,7 +7,7 @@ import {
   Save, RefreshCw, Plus, X, Check, Pencil, Trash2,
   UserPlus, Mail, ShieldCheck, Clock, User, Phone, MapPin,
   CreditCard, Calendar, Briefcase, ChevronDown, ChevronUp,
-  Sun, Moon, Send,
+  Sun, Moon, Send, Monitor,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -262,6 +262,9 @@ function UserRow({ u, onApprove, onUpdate, onDelete, onRefresh }) {
   const [emailEdit, setEmailEdit] = useState(false);
   const [newEmail, setNewEmail] = useState(u.email || "");
   const [savingEmail, setSavingEmail] = useState(false);
+  const [remoteEdit, setRemoteEdit] = useState(false);
+  const [remoteForm, setRemoteForm] = useState({ id: u.rustdesk_id || "", password: u.rustdesk_password || "" });
+  const [savingRemote, setSavingRemote] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
@@ -293,6 +296,28 @@ function UserRow({ u, onApprove, onUpdate, onDelete, onRefresh }) {
     }
   };
 
+  const handleSaveRemote = async () => {
+    if (!remoteForm.id.trim() || !remoteForm.password.trim()) {
+      toast.error("ID dan password RustDesk wajib diisi");
+      return;
+    }
+    setSavingRemote(true);
+    try {
+      await api.post("/admin/set-user-remote-access", {
+        username: u.username,
+        rustdesk_id: remoteForm.id.trim(),
+        rustdesk_password: remoteForm.password,
+      });
+      toast.success(`Remote access ${u.username} disimpan ✅`);
+      setRemoteEdit(false);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal simpan remote access");
+    } finally {
+      setSavingRemote(false);
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3">
@@ -321,11 +346,15 @@ function UserRow({ u, onApprove, onUpdate, onDelete, onRefresh }) {
               <Check size={15} />
             </button>
           )}
-          <button onClick={() => { setEmailEdit((p) => !p); setEditing(false); }} title="Set Email"
+          <button onClick={() => { setEmailEdit((p) => !p); setEditing(false); setRemoteEdit(false); }} title="Set Email"
             className="rounded-lg p-1.5 text-slate-400 hover:bg-violet-50 hover:text-violet-500 transition">
             <Mail size={14} />
           </button>
-          <button onClick={() => { setEditing((p) => !p); setEmailEdit(false); }} title="Edit"
+          <button onClick={() => { setRemoteEdit((p) => !p); setEditing(false); setEmailEdit(false); }} title="Set Remote Access (RustDesk)"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-sky-50 hover:text-sky-500 transition">
+            <Monitor size={14} />
+          </button>
+          <button onClick={() => { setEditing((p) => !p); setEmailEdit(false); setRemoteEdit(false); }} title="Edit"
             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 transition">
             <Pencil size={14} />
           </button>
@@ -373,6 +402,30 @@ function UserRow({ u, onApprove, onUpdate, onDelete, onRefresh }) {
             </button>
             <button onClick={() => setEmailEdit(false)}
               className="rounded-xl px-3 py-1.5 text-sm text-slate-500 hover:bg-violet-100 transition">Batal</button>
+          </div>
+        </div>
+      )}
+
+      {remoteEdit && (
+        <div className="border-t border-sky-100 bg-sky-50 px-4 py-3">
+          <p className="text-xs font-semibold text-sky-700 mb-2">
+            Remote Access (RustDesk) — hasil dari setup script yang dijalankan di PC {u.full_name || u.username}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <input value={remoteForm.id} onChange={(e) => setRemoteForm((p) => ({ ...p, id: e.target.value }))}
+              placeholder="ID RustDesk (mis. 315071138)"
+              className="flex-1 min-w-[160px] rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-sky-400" />
+            <input value={remoteForm.password} onChange={(e) => setRemoteForm((p) => ({ ...p, password: e.target.value }))}
+              placeholder="Password unattended access"
+              className="flex-1 min-w-[160px] rounded-xl border border-sky-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-sky-400" />
+          </div>
+          <div className="mt-2 flex justify-end gap-2">
+            <button onClick={handleSaveRemote} disabled={savingRemote}
+              className="rounded-xl bg-sky-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-60 transition">
+              {savingRemote ? "..." : "Simpan"}
+            </button>
+            <button onClick={() => setRemoteEdit(false)}
+              className="rounded-xl px-3 py-1.5 text-sm text-slate-500 hover:bg-sky-100 transition">Batal</button>
           </div>
         </div>
       )}

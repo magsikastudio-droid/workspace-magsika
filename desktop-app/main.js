@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, screen, Notification, desktopCapturer } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { spawn } = require("child_process");
 const WebSocket = require("ws");
 const { autoUpdater } = require("electron-updater");
 
@@ -185,6 +186,31 @@ function handleWSMessage(msg) {
   const myName = session.user.full_name || session.user.username;
   if (ALARM_TYPES.has(msg.type) && msg.assignee === myName) {
     showAlarm(msg);
+  } else if (msg.type === "remote_connect" && msg.requested_by === session.user.username) {
+    // Tombol "Remote" di web diklik OLEH KITA SENDIRI — broadcast global,
+    // makanya filter by requested_by biar desktop app admin lain tidak ikut nyala.
+    launchRustDeskConnect(msg.rustdesk_id, msg.rustdesk_password, msg.target_name);
+  }
+}
+
+/* ── tombol "Remote" di web → jalanin RustDesk lokal, connect otomatis ── */
+const RUSTDESK_EXE_CANDIDATES = [
+  "C:\\Program Files\\RustDesk\\rustdesk.exe",
+  "C:\\Program Files (x86)\\RustDesk\\rustdesk.exe",
+];
+
+function launchRustDeskConnect(id, password, targetName) {
+  const rdExe = RUSTDESK_EXE_CANDIDATES.find((p) => fs.existsSync(p));
+  if (!rdExe) {
+    notify("⚠️ RustDesk tidak ketemu", "Install RustDesk dulu di laptop ini (lihat rustdesk-setup).");
+    return;
+  }
+  try {
+    spawn(rdExe, ["--connect", id, "--password", password], { detached: true, stdio: "ignore" }).unref();
+    notify("🖥️ Membuka RustDesk", `Connect ke PC ${targetName || id}...`);
+  } catch (e) {
+    console.error("[remote_connect] gagal spawn rustdesk:", e);
+    notify("⚠️ Gagal buka RustDesk", String(e));
   }
 }
 
