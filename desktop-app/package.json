@@ -21,7 +21,8 @@
     "productName": "Magsika Reminder",
     "files": [
       "**/*",
-      "!README.md"
+      "!README.md",
+      "!rustdesk-setup/**/*"
     ],
     "win": {
       "target": "nsis",
@@ -30,7 +31,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "include": "build/installer.nsh"
     },
     "publish": {
       "provider": "generic",
