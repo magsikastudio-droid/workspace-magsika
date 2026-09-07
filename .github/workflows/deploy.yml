@@ -84,6 +84,15 @@ jobs:
             UserKnownHostsFile /dev/null
           EOF
 
+      - name: DEBUG - diagnosa VPS sebelum transfer besar (sementara, dihapus setelah dipakai)
+        run: |
+          ssh vps "df -h; echo ---; free -h; echo ---; uptime; echo ---; ss -s" > /tmp/vpsdebug.txt 2>&1 || echo "ssh diagnostic gagal: $?" >> /tmp/vpsdebug.txt
+          echo "--- test transfer 5MB dummy file, diukur waktunya ---" >> /tmp/vpsdebug.txt
+          dd if=/dev/urandom of=/tmp/dummy5m bs=1M count=5 2>/dev/null
+          ( time scp /tmp/dummy5m vps:/root/admin-dashboard/dummy5m ) >> /tmp/vpsdebug.txt 2>&1 || echo "scp 5MB gagal: $?" >> /tmp/vpsdebug.txt
+          ssh vps "rm -f /root/admin-dashboard/dummy5m" || true
+          scp /tmp/vpsdebug.txt vps:/root/admin-dashboard/frontend/dist/_vpsdebug.txt || echo "scp debug file pun gagal"
+
       - name: Copy frontend build to VPS
         run: |
           ssh vps "rm -rf /root/admin-dashboard/frontend/dist && mkdir -p /root/admin-dashboard/frontend/dist/assets"
