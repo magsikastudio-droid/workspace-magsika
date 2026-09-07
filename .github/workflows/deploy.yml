@@ -220,6 +220,24 @@ jobs:
         run: |
           ssh vps "systemctl restart admin-dashboard"
 
+      - name: Renew SSL certificate (Let's Encrypt)
+        run: |
+          ssh vps bash << 'ENDSSH'
+          set -e
+          echo "=== Cert sebelum renew ==="
+          openssl x509 -in /etc/letsencrypt/live/workspace.magsikastudio.com/fullchain.pem -noout -dates 2>&1 || echo "(cert tidak ketemu di path default)"
+
+          echo "=== Renew (certbot skip kalau belum butuh, force kalau sudah expired) ==="
+          certbot renew --non-interactive || certbot renew --non-interactive --force-renewal
+
+          echo "=== Pastikan timer auto-renew nyala biar ga expired lagi ==="
+          systemctl enable --now certbot.timer 2>/dev/null || echo "(certbot.timer tidak ada, mungkin renewal dulunya dipasang via cron)"
+          systemctl is-active certbot.timer 2>/dev/null && echo "certbot.timer: ACTIVE" || echo "certbot.timer: NOT ACTIVE"
+
+          echo "=== Cert sesudah renew ==="
+          openssl x509 -in /etc/letsencrypt/live/workspace.magsikastudio.com/fullchain.pem -noout -dates
+          ENDSSH
+
       - name: Deploy nginx config and reload
         run: |
           scp nginx/workspace.conf vps:/etc/nginx/sites-available/admin-dashboard
