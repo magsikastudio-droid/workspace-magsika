@@ -26,6 +26,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { useAuth } from "./AuthContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { useOpenMic } from "../hooks/useOpenMic";
 
 const StreamContext = createContext(null);
 
@@ -72,6 +73,18 @@ export function StreamProvider({ children }) {
   const [currentTask,   setCurrentTask]   = useState("");
   const [iceServers,    setIceServers]    = useState(STUN);
   const [pendingResume, setPendingResume] = useState(null);
+
+  /* Open Mic (audio 2-arah, push-to-talk) — cuma aktif selama streaming,
+     biar talent yang lagi kerja bisa langsung ditanya admin lewat Live
+     Monitor tanpa delay, dan sebaliknya talent bisa nanya balik. */
+  const openMic = useOpenMic({
+    role: "streamer",
+    token,
+    username: user?.name || user?.full_name || user?.username || "Tim",
+    task: currentTask,
+    iceServers,
+    enabled: streaming,
+  });
 
   const wsRef           = useRef(null);
   const streamRef       = useRef(null);
@@ -386,14 +399,20 @@ export function StreamProvider({ children }) {
     streamRef.current?.getTracks().forEach(t => t.stop());
   }, [_stopFrameTimer]);
 
+  const remoteMicAudioRef = useRef(null);
+  useEffect(() => { openMic.attachRemoteAudio(remoteMicAudioRef.current); }, [openMic]);
+
   return (
     <StreamContext.Provider value={{
       streaming, loading, currentTask, iceServers,
       pendingResume,
       startStream, connectStreamWithMedia, resumeStream, stopStream,
       sendBRB, updateTask, dismissResume,
+      micActive: openMic.micActive, talking: openMic.talking,
+      startTalking: openMic.startTalking, stopTalking: openMic.stopTalking,
     }}>
       {children}
+      <audio ref={remoteMicAudioRef} autoPlay style={{ display: "none" }} />
     </StreamContext.Provider>
   );
 }

@@ -16,10 +16,11 @@
  *   ← BYTES raw JPEG frame
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Maximize2, Monitor, Wifi, WifiOff, Radio, Users, Square } from "lucide-react";
+import { Maximize2, Monitor, Wifi, WifiOff, Radio, Users, Square, Mic, MicOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import { useOpenMic } from "../hooks/useOpenMic";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const resolved    = BACKEND_URL.startsWith("/")
@@ -30,7 +31,7 @@ const WS_BASE = resolved.replace(/^http/, "ws");
 /* ═══════════════════════════════════════════════════════════
    StreamCard — tampilkan frame JPEG dari streamer
 ═══════════════════════════════════════════════════════════ */
-function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStream }) {
+function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStream, micReady, micActive, talking, onToggleMic, onStartTalk, onStopTalk }) {
   const containerRef = useRef(null);
   const [ending, setEnding] = useState(false);
 
@@ -79,6 +80,19 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStre
         <Maximize2 size={13} />
       </button>
 
+      {/* Open Mic — connect/disconnect toggle */}
+      {micReady && (
+        <button
+          onClick={onToggleMic}
+          title={micActive ? "Putuskan Open Mic" : "Sambungkan Open Mic (2 arah, langsung)"}
+          className={`absolute top-2 ${canEnd ? "right-[74px]" : "right-11"} flex h-7 w-7 items-center justify-center rounded-lg text-white transition-all duration-150 z-10 ${
+            micActive ? "bg-emerald-600/90 opacity-100" : "bg-black/50 opacity-0 group-hover:opacity-100 hover:bg-black/80"
+          }`}
+        >
+          {micActive ? <Mic size={13} /> : <MicOff size={13} />}
+        </button>
+      )}
+
       {/* End Stream — admin/PM saja */}
       {canEnd && (
         <button
@@ -108,10 +122,27 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStre
               {task && <p className="text-white/55 text-[10px] leading-tight truncate">{task}</p>}
             </div>
           </div>
-          {/* LIVE badge */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-            <span className="text-white/70 text-[10px] font-semibold">LIVE</span>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Push-to-talk — tekan & tahan, cuma muncul kalau mic sudah tersambung */}
+            {micActive && (
+              <button
+                onMouseDown={onStartTalk}
+                onMouseUp={onStopTalk}
+                onMouseLeave={onStopTalk}
+                onTouchStart={(e) => { e.preventDefault(); onStartTalk(); }}
+                onTouchEnd={(e) => { e.preventDefault(); onStopTalk(); }}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide transition select-none ${
+                  talking ? "bg-emerald-500 text-white scale-105" : "bg-white/15 text-white/80 hover:bg-white/25"
+                }`}
+              >
+                <Mic size={12} /> {talking ? "Bicara..." : "Tahan Bicara"}
+              </button>
+            )}
+            {/* LIVE badge */}
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+              <span className="text-white/70 text-[10px] font-semibold">LIVE</span>
+            </div>
           </div>
         </div>
       </div>
@@ -145,6 +176,41 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStre
 export default function LiveMonitor() {
   const { token, user } = useAuth();
   const canEnd = user?.role === "admin" || user?.role === "pm";
+
+  const [iceServers, setIceServers] = useState(null);
+  useEffect(() => {
+    if (!token) return;
+    api.get("/turn-credentials").then((res) => {
+      if (res.data?.urls) {
+        setIceServers([
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: res.data.urls, username: res.data.username, credential: res.data.credential },
+        ]);
+      }
+    }).catch(() => {});
+  }, [token]);
+
+  const openMic = useOpenMic({
+    role: "viewer", token,
+    username: user?.name || user?.full_name || user?.username || "Admin",
+    iceServers,
+  });
+  const [micTargetUsername, setMicTargetUsername] = useState(null);
+  const remoteAudioRef = useRef(null);
+  useEffect(() => { openMic.attachRemoteAudio(remoteAudioRef.current); }, [openMic]);
+
+  const handleToggleMic = useCallback((username) => {
+    if (micTargetUsername === username) {
+      openMic.disconnect();
+      setMicTargetUsername(null);
+      return;
+    }
+    const target = openMic.streamers.find((s) => s.username === username);
+    if (!target) { toast.error("Belum ada koneksi mic buat orang ini — tunggu sebentar lalu coba lagi."); return; }
+    if (micTargetUsername) openMic.disconnect();
+    openMic.connectToStreamer(target.id);
+    setMicTargetUsername(username);
+  }, [openMic, micTargetUsername]);
 
   const wsRef       = useRef(null);
   const imgRefsMap  = useRef({});   // {streamer_id: React ref}
@@ -334,21 +400,31 @@ export default function LiveMonitor() {
           entries.length <= 4  ? "grid-cols-2" :
                                   "grid-cols-3"
         }`}>
-          {entries.map(([id, info]) => (
-            <StreamCard
-              key={id}
-              id={id}
-              username={info.username}
-              task={info.task}
-              avatar={info.avatar}
-              brb={info.brb ?? false}
-              imgRef={getImgRef(id)}
-              canEnd={canEnd}
-              onEndStream={handleEndStream}
-            />
-          ))}
+          {entries.map(([id, info]) => {
+            const isMicTarget = micTargetUsername === info.username;
+            return (
+              <StreamCard
+                key={id}
+                id={id}
+                username={info.username}
+                task={info.task}
+                avatar={info.avatar}
+                brb={info.brb ?? false}
+                imgRef={getImgRef(id)}
+                canEnd={canEnd}
+                onEndStream={handleEndStream}
+                micReady={openMic.wsConnected}
+                micActive={isMicTarget && openMic.micActive}
+                talking={isMicTarget && openMic.talking}
+                onToggleMic={() => handleToggleMic(info.username)}
+                onStartTalk={openMic.startTalking}
+                onStopTalk={openMic.stopTalking}
+              />
+            );
+          })}
         </div>
       )}
+      <audio ref={remoteAudioRef} autoPlay style={{ display: "none" }} />
     </div>
   );
 }
