@@ -121,7 +121,7 @@ function App() {
                               <Route path="/rencana" element={<Navigate to="/rencana/teknis" replace />} />
                               <Route path="/slip-gaji" element={<RoleGuard allowedRoles={["admin","pm"]}><SlipGaji /></RoleGuard>} />
                               <Route path="/tim-database" element={<RoleGuard allowedRoles={["admin","pm"]}><TimDatabase /></RoleGuard>} />
-                              <Route path="/live" element={<RoleGuard allowedRoles={["admin","pm"]}><LiveMonitor /></RoleGuard>} />
+                              <Route path="/live" element={<RoleGuard allowedRoles={["admin","pm","talent"]}><LiveMonitor /></RoleGuard>} />
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Layout>

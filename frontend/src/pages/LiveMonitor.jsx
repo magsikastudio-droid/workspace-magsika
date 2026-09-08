@@ -32,7 +32,7 @@ const WS_BASE = resolved.replace(/^http/, "ws");
 /* ═══════════════════════════════════════════════════════════
    StreamCard — tampilkan frame JPEG dari streamer
 ═══════════════════════════════════════════════════════════ */
-function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStream, micReady, micActive, talking, onToggleMic, onStartTalk, onStopTalk }) {
+function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEndStream, micReady, micActive, talking, onToggleMic, onStartTalk, onStopTalk }) {
   const containerRef = useRef(null);
   const [ending, setEnding] = useState(false);
 
@@ -81,22 +81,23 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStre
         <Maximize2 size={13} />
       </button>
 
-      {/* Open Mic — connect/disconnect toggle. Selalu kelihatan (bukan
-          hover-only) biar gampang ketemu — beda dari fullscreen/end-stream
-          yang aksi sekunder. */}
-      <button
-        onClick={onToggleMic}
-        disabled={!micReady}
-        title={!micReady ? "Menyambungkan ke server mic..." : micActive ? "Putuskan Open Mic" : "Sambungkan Open Mic (2 arah, langsung)"}
-        className={`absolute top-2 ${canEnd ? "right-[74px]" : "right-11"} flex h-7 w-7 items-center justify-center rounded-lg text-white transition-all duration-150 z-10 disabled:opacity-40 ${
-          micActive ? "bg-emerald-600/90" : "bg-black/50 hover:bg-black/80"
-        }`}
-      >
-        {micActive ? <Mic size={13} /> : <MicOff size={13} />}
-      </button>
+      {/* Open Mic — cuma admin yang bisa kontrol, sama kayak End Stream.
+          Selalu kelihatan (bukan hover-only) biar gampang ketemu. */}
+      {canControl && (
+        <button
+          onClick={onToggleMic}
+          disabled={!micReady}
+          title={!micReady ? "Menyambungkan ke server mic..." : micActive ? "Putuskan Open Mic" : "Sambungkan Open Mic (2 arah, langsung)"}
+          className={`absolute top-2 right-[74px] flex h-7 w-7 items-center justify-center rounded-lg text-white transition-all duration-150 z-10 disabled:opacity-40 ${
+            micActive ? "bg-emerald-600/90" : "bg-black/50 hover:bg-black/80"
+          }`}
+        >
+          {micActive ? <Mic size={13} /> : <MicOff size={13} />}
+        </button>
+      )}
 
       {/* End Stream — admin/PM saja */}
-      {canEnd && (
+      {canControl && (
         <button
           onClick={handleEndStream}
           disabled={ending}
@@ -177,7 +178,7 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStre
 ═══════════════════════════════════════════════════════════ */
 export default function LiveMonitor() {
   const { token, user } = useAuth();
-  const canEnd = user?.role === "admin" || user?.role === "pm";
+  const canControl = user?.role === "admin";
 
   const [iceServers, setIceServers] = useState(null);
   useEffect(() => {
@@ -393,7 +394,7 @@ export default function LiveMonitor() {
           }`}>
             <Mic size={11} /> {openMic.wsConnected ? "Open Mic siap" : "Open Mic..."}
           </div>
-          {canEnd && (
+          {canControl && (
             <button
               onClick={myStreaming ? stopStream : () => startStream("Live dari Admin")}
               disabled={myStreamLoading}
@@ -440,7 +441,7 @@ export default function LiveMonitor() {
                 avatar={info.avatar}
                 brb={info.brb ?? false}
                 imgRef={getImgRef(id)}
-                canEnd={canEnd}
+                canControl={canControl}
                 onEndStream={handleEndStream}
                 micReady={openMic.wsConnected}
                 micActive={isMicTarget && openMic.micActive}
