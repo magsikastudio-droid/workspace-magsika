@@ -37,6 +37,8 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
   const [audioBlocked, setAudioBlocked] = useState(false); // autoplay browser diblokir, butuh klik manual
   const [connState, setConnState] = useState(""); // status asli WebRTC (checking/connected/failed/dst) - buat ditampilin di UI, gak perlu buka console
   const [gotRemoteTrack, setGotRemoteTrack] = useState(false); // ontrack beneran kepanggil atau belum
+  const [audioStats, setAudioStats] = useState(null); // {bytesSent, bytesReceived, packetsReceived} dari getStats() - bukti PASTI data suara ngalir atau enggak, lepas dari soal speaker/output device
+  const statsIntervalRef = useRef(null);
 
   const wsRef = useRef(null);
   const pcRef = useRef(null);
@@ -102,12 +104,37 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
       // duluan sebelum ICE beneran connect.
       if (pc.connectionState === "connected") {
         setMicActive(true);
+        _startStatsPolling(pc);
       } else if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
         setMicActive(false);
+        _stopStatsPolling();
       }
     };
     pcRef.current = pc;
     return pc;
+  }, []);
+
+  /* ── getStats() tiap 1 detik — bukti PASTI byte suara ngalir atau
+     enggak, lepas dari soal speaker/output device/volume. Kalau
+     bytesReceived tetap 0 terus padahal lawan bicara lagi nekan "Tahan
+     Bicara", berarti masalahnya di pengiriman data, bukan di pemutaran
+     suara. ── */
+  const _startStatsPolling = useCallback((pc) => {
+    _stopStatsPolling();
+    statsIntervalRef.current = setInterval(async () => {
+      try {
+        const stats = await pc.getStats();
+        let bytesSent = 0, bytesReceived = 0, packetsReceived = 0, packetsSent = 0;
+        stats.forEach((r) => {
+          if (r.type === "outbound-rtp" && r.kind === "audio") { bytesSent += r.bytesSent || 0; packetsSent += r.packetsSent || 0; }
+          if (r.type === "inbound-rtp" && r.kind === "audio") { bytesReceived += r.bytesReceived || 0; packetsReceived += r.packetsReceived || 0; }
+        });
+        setAudioStats({ bytesSent, bytesReceived, packetsReceived, packetsSent });
+      } catch (e) { /* pc mungkin udah ketutup */ }
+    }, 1000);
+  }, []);
+  const _stopStatsPolling = useCallback(() => {
+    if (statsIntervalRef.current) { clearInterval(statsIntervalRef.current); statsIntervalRef.current = null; }
   }, []);
 
   /* ── ICE candidate bisa nyampe duluan sebelum remote description ke-set
@@ -161,6 +188,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
      'sender already exists' kalau ada offer dobel / klik dobel / reconnect
      ke target lain sementara koneksi lama masih nyangkut. ── */
   const _resetPeerConnection = useCallback(() => {
+    _stopStatsPolling();
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
@@ -168,7 +196,8 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     pendingIceRef.current = [];
     setConnState("");
     setGotRemoteTrack(false);
-  }, []);
+    setAudioStats(null);
+  }, [_stopStatsPolling]);
 
   /* ── viewer: mulai ngobrol sama satu streamer (bikin offer) ── */
   const connectToStreamer = useCallback(async (targetCid) => {
@@ -206,6 +235,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     if (notifyPeer && peerCidRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "hangup", to: peerCidRef.current }));
     }
+    _stopStatsPolling();
     stopTalking();
     pcRef.current?.close();
     pcRef.current = null;
@@ -217,7 +247,8 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     setAudioBlocked(false);
     setConnState("");
     setGotRemoteTrack(false);
-  }, [stopTalking]);
+    setAudioStats(null);
+  }, [stopTalking, _stopStatsPolling]);
 
   /* ── koneksi signaling /ws/rtc ── */
   useEffect(() => {
@@ -296,7 +327,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
   }, [token, role, username, enabled]);
 
   return {
-    wsConnected, streamers, micActive, talking, audioBlocked, connState, gotRemoteTrack,
+    wsConnected, streamers, micActive, talking, audioBlocked, connState, gotRemoteTrack, audioStats,
     connectToStreamer, startTalking, stopTalking, disconnect,
     attachRemoteAudio, unlockAudio,
   };
