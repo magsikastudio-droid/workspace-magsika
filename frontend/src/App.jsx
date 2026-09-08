@@ -35,6 +35,7 @@ import DailyReport from "./pages/DailyReport";
 import SlipGaji from "./pages/SlipGaji";
 import TimDatabase from "./pages/TimDatabase";
 import LiveMonitor from "./pages/LiveMonitor";
+import DebugOpenMic from "./pages/DebugOpenMic";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "./context/AuthContext";
 
@@ -122,6 +123,7 @@ function App() {
                               <Route path="/slip-gaji" element={<RoleGuard allowedRoles={["admin","pm"]}><SlipGaji /></RoleGuard>} />
                               <Route path="/tim-database" element={<RoleGuard allowedRoles={["admin","pm"]}><TimDatabase /></RoleGuard>} />
                               <Route path="/live" element={<RoleGuard allowedRoles={["admin","pm","talent"]}><LiveMonitor /></RoleGuard>} />
+                              <Route path="/debug-openmic" element={<RoleGuard allowedRoles={["admin","pm","talent"]}><DebugOpenMic /></RoleGuard>} />
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Layout>
