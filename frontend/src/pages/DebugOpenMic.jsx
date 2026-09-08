@@ -11,6 +11,7 @@ export default function DebugOpenMic() {
   const [log, setLog] = useState([]);
   const [running, setRunning] = useState(false);
   const audioRef = useRef(null);
+  const loopbackCleanupRef = useRef(null);
 
   const addLog = (msg, ok = null) => {
     const prefix = ok === true ? "✅" : ok === false ? "❌" : "•";
@@ -18,6 +19,8 @@ export default function DebugOpenMic() {
   };
 
   const runLoopbackTest = async () => {
+    loopbackCleanupRef.current?.(); // matiin sesi loopback sebelumnya kalau masih hidup
+    loopbackCleanupRef.current = null;
     setLog([]);
     setRunning(true);
     let micTrack = null;
@@ -82,14 +85,13 @@ export default function DebugOpenMic() {
       await new Promise((r) => setTimeout(r, 500));
       micTrack.enabled = true;
       addLog("track.enabled = true (unmute) — coba ngomong sekarang, harusnya kedengeran lewat speaker (loopback)", true);
+      addLog("Tes selesai — koneksi loopback TETAP HIDUP (gak auto-mati), coba ngomong kapan aja. Klik tombol ini lagi buat mulai ulang (otomatis matiin yang lama).");
+      loopbackCleanupRef.current = () => { pc1?.close(); pc2?.close(); micTrack?.stop(); };
     } catch (err) {
       addLog(`ERROR: ${err.name} — ${err.message}`, false);
+      pc1?.close(); pc2?.close(); micTrack?.stop();
     } finally {
       setRunning(false);
-      setTimeout(() => {
-        pc1?.close(); pc2?.close();
-        micTrack?.stop();
-      }, 15000);
     }
   };
 
