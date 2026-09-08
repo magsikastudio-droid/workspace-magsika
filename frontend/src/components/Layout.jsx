@@ -64,7 +64,7 @@ const NAV_SECTIONS = [
       { to: "/todo",          label: "To Do",         icon: CheckSquare,  roles: ["admin", "pm", "talent"] },
       { to: "/daily-report",  label: "Daily Report",  icon: BookOpen,     roles: ["admin", "pm", "talent"] },
       { to: "/performance",   label: "Performance",   icon: TrendingUp,   roles: ["admin", "pm", "talent"] },
-      { to: "/live",          label: "Live Monitor",  icon: Monitor,      roles: ["admin", "pm"] },
+      { to: "/live",          label: "Live Monitor",  icon: Monitor,      roles: ["admin", "pm", "talent"] },
     ],
   },
   {

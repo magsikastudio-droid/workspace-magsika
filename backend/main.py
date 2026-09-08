@@ -2598,12 +2598,13 @@ async def remind_task(task_id: str, current_user: dict = Depends(get_current_use
 
 @app.post("/streams/{streamer_id}/end")
 async def end_stream(streamer_id: str, current_user: dict = Depends(get_current_user)):
-    """Tombol 'End Stream' di Live Monitor (admin/PM) — paksa berhentiin live
+    """Tombol 'End Stream' di Live Monitor (admin only — PM/talent cuma bisa
+    lihat, gak bisa kontrol stream orang lain) — paksa berhentiin live
     stream talent. Cukup nutup koneksi WS streamer-nya; cleanup (pop dari
     frame_relay.streamers, broadcast 'streamer_left', dst) sudah otomatis
     ditangani blok finally di screen_relay begitu WebSocketDisconnect
     ke-trigger — sengaja tidak diduplikasi di sini biar tidak race."""
-    if current_user.get("role") not in ["admin", "pm"]:
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden")
     info = frame_relay.streamers.get(streamer_id)
     if not info:
