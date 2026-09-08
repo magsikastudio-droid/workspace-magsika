@@ -161,8 +161,6 @@ export default function Todo() {
   const [editTask, setEditTask] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
-  const [layoutTasks, setLayoutTasks] = useState([]);
-  const [layoutLoading, setLayoutLoading] = useState(false);
   const [confirmDone, setConfirmDone] = useState(null);
   const [needDailyUpdate, setNeedDailyUpdate] = useState(null);
   const [detailTaskId, setDetailTaskId] = useState(null);
@@ -192,12 +190,6 @@ export default function Todo() {
     const id = setInterval(fetchPresence, 30000);
     return () => clearInterval(id);
   }, [isAdminOrPM]);
-
-  useEffect(() => {
-    if (!user) return;
-    setLayoutLoading(true);
-    api.get("/layout-tasks").then((r) => setLayoutTasks(r.data?.layout_tasks || [])).catch(() => {}).finally(() => setLayoutLoading(false));
-  }, [user]);
 
   const visibleTasks = useMemo(() => {
     const raw = tasks.filter((t) => t.date === date);
@@ -276,13 +268,6 @@ export default function Todo() {
     finally { setGenerating(false); }
   };
 
-  const handleLayoutStatusChange = async (id, newStatus) => {
-    try {
-      const res = await api.put(`/layout-tasks/${id}`, { status: newStatus });
-      setLayoutTasks((prev) => prev.map((t) => t.id === id ? { ...t, ...res.data } : t));
-    } catch { toast.error("Gagal update status layout task"); }
-  };
-
   /* ── add task ──────────── */
   const handleCreateTask = async (e) => {
     e.preventDefault();
@@ -355,7 +340,14 @@ export default function Todo() {
      (kalau belum kirim preview hari ini ke topik Update Progress, backend
      nolak dan kita tampilin pop out perintah kirim, bukan langsung submit) ── */
   const handleMarkDone = useCallback(async (task) => {
-    if (isAdminOrPM) {
+    // PM tidak boleh approve task-nya sendiri — statusnya sama kayak
+    // talent biasa (submit ke review, admin lain yang approve). PM tetap
+    // bisa approve langsung task ORANG LAIN kayak biasa.
+    const myName = user?.full_name || user?.username;
+    const isOwnTask = task.assignee === myName;
+    const canSelfApprove = role === "admin" || (isAdminOrPM && !isOwnTask);
+
+    if (canSelfApprove) {
       setConfirmDone(task);
       return;
     }
@@ -369,7 +361,7 @@ export default function Todo() {
         toast.error(err?.response?.data?.detail || "Gagal submit task.");
       }
     }
-  }, [isAdminOrPM, handleStatus]);
+  }, [isAdminOrPM, role, user, handleStatus]);
 
   /* ── admin/PM: ingatkan manual — fallback kalau desktop app lagi bug/mati ── */
   const handleRemind = useCallback(async (task) => {
@@ -593,29 +585,22 @@ export default function Todo() {
           onDetail={(t) => setDetailTaskId(t.id)} onDelete={handleDelete}
         />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <TaskGroup
-            title="Tim Internal" icon="👥" groups={grouped.tim} assigneeType="tim"
-            orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
-            presenceMap={presenceMap}
-            onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind} onRemote={handleRemote}
-            onApprove={handleApprove} onReject={handleReject}
-            onStatus={handleStatus} onDelete={handleDelete}
-            onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
-            onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
-          />
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <TaskGroup
+              title="Tim Internal" icon="👥" groups={grouped.tim} assigneeType="tim"
+              orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
+              presenceMap={presenceMap}
+              onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind} onRemote={handleRemote}
+              onApprove={handleApprove} onReject={handleReject}
+              onStatus={handleStatus} onDelete={handleDelete}
+              onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
+              onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
+            />
+            <TimSummaryChecklist groups={grouped.tim} />
+          </div>
           <FreelanceChecklist groups={grouped.freelance} isAdminOrPM={isAdminOrPM} onStatus={handleStatus} />
-        </div>
-      )}
-
-      {/* Layout Design section */}
-      {(isAdminOrPM || layoutTasks.some((t) => t.talent === (user?.full_name || user?.username))) && (
-        <LayoutTaskSection
-          tasks={layoutTasks}
-          loading={layoutLoading}
-          isAdminOrPM={isAdminOrPM}
-          onStatusChange={handleLayoutStatusChange}
-        />
+        </>
       )}
 
       {showGenerateConfirm && (
@@ -721,6 +706,53 @@ function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onRemind, on
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ─── TimSummaryChecklist ───────────────────────────────────────────
+   Ringkasan simpel semua task Tim Internal hari ini — read-only, cuma
+   buat sekilas lihat siapa yang udah selesai tanpa perlu scroll card
+   satu-satu. Approve/reject tetap lewat TaskGroup di kiri, ini bukan
+   pengganti alurnya. ── */
+function TimSummaryChecklist({ groups }) {
+  const flat = useMemo(
+    () => Object.values(groups).flat().sort((a, b) => (a.order_num ?? 999) - (b.order_num ?? 999)),
+    [groups]
+  );
+  const doneCount = flat.filter((t) => t.status === "done").length;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+        <span className="text-lg">✅</span>
+        <h3 className="text-sm font-bold text-slate-700">Checklist Hari Ini</h3>
+        <span className="ml-auto text-xs font-semibold text-slate-400">{doneCount}/{flat.length}</span>
+      </div>
+      {flat.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-slate-400">Tidak ada task tim internal hari ini.</p>
+      ) : (
+        <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
+          {flat.map((task) => {
+            const isDone = task.status === "done";
+            return (
+              <div key={task.id} className="flex items-center gap-3 px-4 py-2.5">
+                <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
+                  isDone ? "border-emerald-500 bg-emerald-500" : "border-slate-300"
+                }`}>
+                  {isDone && <Check size={12} className="text-white" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-medium truncate ${isDone ? "line-through text-slate-400" : "text-slate-700"}`}>
+                    {displayTitle(task)}
+                  </p>
+                  <p className="text-xs text-slate-400">{task.assignee}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1552,82 +1584,6 @@ function UnhandledSection({ orders, isAdminOrPM, onAddTask }) {
               </div>
             ))}
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── LayoutTaskSection ─────────────────────────────────────────── */
-const LAYOUT_STATUS_META = {
-  "Asseting":      { bg: "bg-slate-100",   text: "text-slate-700",   dot: "bg-slate-400"   },
-  "Layouting":     { bg: "bg-sky-100",     text: "text-sky-700",     dot: "bg-sky-500"     },
-  "Video":         { bg: "bg-violet-100",  text: "text-violet-700",  dot: "bg-violet-500"  },
-  "Ready Publish": { bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-500"   },
-  "Done":          { bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
-};
-const LAYOUT_STATUS_OPTS = ["Asseting", "Layouting", "Video", "Ready Publish", "Done"];
-
-function LayoutTaskSection({ tasks, loading, isAdminOrPM, onStatusChange }) {
-  const active = tasks.filter((t) => t.status !== "Done");
-  const done = tasks.filter((t) => t.status === "Done");
-  const [showDone, setShowDone] = useState(false);
-  const displayed = showDone ? tasks : active;
-
-  return (
-    <div className="rounded-2xl border border-violet-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-violet-100 px-5 py-4">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">🎨</span>
-          <div>
-            <p className="font-bold text-slate-900">Layout Design</p>
-            <p className="text-xs text-slate-400">{active.length} aktif · {done.length} selesai</p>
-          </div>
-        </div>
-        {done.length > 0 && (
-          <button onClick={() => setShowDone((v) => !v)} className="text-xs text-slate-400 hover:text-slate-600">
-            {showDone ? "Sembunyikan Done" : `Lihat ${done.length} Done`}
-          </button>
-        )}
-      </div>
-      {loading ? (
-        <div className="py-8 text-center text-sm text-slate-400">Memuat...</div>
-      ) : displayed.length === 0 ? (
-        <div className="py-8 text-center text-sm text-slate-400">Tidak ada layout task aktif.</div>
-      ) : (
-        <div className="divide-y divide-slate-50">
-          {displayed.map((task) => {
-            const sm = LAYOUT_STATUS_META[task.status] || LAYOUT_STATUS_META["Asseting"];
-            const isOverdue = task.deadline && task.deadline < new Date().toISOString().slice(0, 10) && task.status !== "Done";
-            return (
-              <div key={task.id} className={`flex flex-wrap items-center gap-3 px-5 py-3 ${task.status === "Done" ? "opacity-60" : ""}`}>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${sm.bg} ${sm.text}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${sm.dot}`} />{task.status}
-                    </span>
-                    {isOverdue && <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-1.5 py-0.5 rounded-full">Overdue</span>}
-                    <p className="text-sm font-semibold text-slate-900 truncate">{task.project}</p>
-                    {task.folder_code && <span className="text-[10px] text-indigo-500 font-mono">{task.folder_code}</span>}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-2 flex-wrap">
-                    {task.market && <span className="text-[10px] text-slate-400">{task.market}</span>}
-                    {task.talent && <span className="text-[10px] font-semibold text-slate-600">· {task.talent}</span>}
-                    {task.deadline && <span className={`text-[10px] font-mono ${isOverdue ? "text-rose-500 font-semibold" : "text-slate-400"}`}>📅 {task.deadline}</span>}
-                  </div>
-                </div>
-                {isAdminOrPM && (
-                  <select
-                    value={task.status}
-                    onChange={(e) => onStatusChange(task.id, e.target.value)}
-                    className={`rounded-lg border-0 px-2 py-1 text-xs font-semibold outline-none cursor-pointer ${sm.bg} ${sm.text}`}
-                  >
-                    {LAYOUT_STATUS_OPTS.map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                )}
-              </div>
-            );
-          })}
         </div>
       )}
     </div>

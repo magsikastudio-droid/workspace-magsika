@@ -32,7 +32,6 @@ import Notifications from "./pages/Notifications";
 import RencanaStrategis from "./pages/RencanaStrategis";
 import TeamMemberPage from "./pages/TeamMemberPage";
 import DailyReport from "./pages/DailyReport";
-import OrderLayout from "./pages/OrderLayout";
 import SlipGaji from "./pages/SlipGaji";
 import TimDatabase from "./pages/TimDatabase";
 import LiveMonitor from "./pages/LiveMonitor";
@@ -106,7 +105,6 @@ function App() {
                               <Route path="/dashboard" element={<HomeDashboard />} />
                               <Route path="/daily-chat" element={<RoleGuard allowedRoles={["admin","pm"]}><DailyChat /></RoleGuard>} />
                               <Route path="/orders" element={<RoleGuard allowedRoles={["admin","pm"]}><Orders /></RoleGuard>} />
-                              <Route path="/order-layout" element={<RoleGuard allowedRoles={["admin","pm","talent"]}><OrderLayout /></RoleGuard>} />
                               <Route path="/invoice" element={<RoleGuard allowedRoles={["admin","pm"]}><Invoice /></RoleGuard>} />
                               <Route path="/earnings" element={<RoleGuard allowedRoles={["admin","pm"]}><Earnings /></RoleGuard>} />
                               <Route path="/freelance" element={<RoleGuard allowedRoles={["admin","pm"]}><Freelance /></RoleGuard>} />

@@ -2369,11 +2369,12 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
     if not payload:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
 
-    # Talent mau submit ke review → wajib udah kirim preview hari ini ke
-    # topik "Update Progress" Telegram (dicek otomatis lewat bot, lihat
-    # /telegram/webhook) dengan kode update harian yang cocok buat task ini.
-    # Admin/PM gak kena gerbang ini (mereka lewat TelegramConfirmModal manual).
-    if payload.get("status") == "menunggu_review" and current_user.get("role") not in ["admin", "pm"]:
+    # Talent (dan PM yang submit task-nya SENDIRI, PM gak boleh approve
+    # task sendiri) mau submit ke review → wajib udah kirim preview hari
+    # ini ke topik "Update Progress" Telegram (dicek otomatis lewat bot,
+    # lihat /telegram/webhook) dengan kode update harian yang cocok buat
+    # task ini. Cuma admin yang gak kena gerbang ini (lewat TelegramConfirmModal manual).
+    if payload.get("status") == "menunggu_review" and current_user.get("role") != "admin":
         jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
         today_code = jkt_now.strftime("%y%m%d")
         confirmed = await db.daily_updates.find_one({"task_id": task_id, "date_code": today_code})

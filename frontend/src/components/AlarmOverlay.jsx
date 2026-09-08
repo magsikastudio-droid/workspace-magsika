@@ -110,7 +110,8 @@ export default function AlarmOverlay() {
       } catch {}
     })();
 
-    // Alarm sound berulang
+    // Alarm sound berulang — dibatasi 1 menit biar tidak berisik terus-terusan,
+    // overlay-nya sendiri tetap kebuka sampai orangnya klik tombolnya.
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     audioCtxRef.current = ctx;
     playAlarmSound(ctx);
@@ -118,12 +119,17 @@ export default function AlarmOverlay() {
       playAlarmSound(ctx);
       if (navigator.vibrate) navigator.vibrate([600, 200, 600]);
     }, 2000);
+    const stopSoundTimeout = setTimeout(() => {
+      clearInterval(intervalRef.current);
+      navigator.vibrate?.(0);
+    }, 60000);
 
     // Voice announcement
     speakApproval(alarm.taskTitle, alarm.assignee, alarm.kind);
 
     return () => {
       clearInterval(intervalRef.current);
+      clearTimeout(stopSoundTimeout);
       audioCtxRef.current?.close();
       navigator.vibrate?.(0);
       wakeLockRef.current?.release();
