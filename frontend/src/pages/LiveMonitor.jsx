@@ -72,41 +72,45 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEnd
         style={{ display: "block" }}
       />
 
-      {/* Fullscreen */}
-      <button
-        onClick={enterFullscreen}
-        title="Fullscreen"
-        className="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-lg bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-all duration-150 z-10"
-      >
-        <Maximize2 size={13} />
-      </button>
+      {/* Kontrol pojok kanan atas — flex row biar otomatis gak numpuk
+          (End Stream lebih lebar dari ikon persegi biasa). */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+        {/* End Stream — admin only */}
+        {canControl && (
+          <button
+            onClick={handleEndStream}
+            disabled={ending}
+            title={`Hentikan stream ${username}`}
+            className="flex items-center gap-1 h-7 px-2 rounded-lg bg-rose-600/80 text-white text-[11px] font-semibold opacity-0 group-hover:opacity-100 hover:bg-rose-600 disabled:opacity-60 transition-all duration-150 shrink-0"
+          >
+            <Square size={11} /> {ending ? "..." : "End Stream"}
+          </button>
+        )}
 
-      {/* Open Mic — cuma admin yang bisa kontrol, sama kayak End Stream.
-          Selalu kelihatan (bukan hover-only) biar gampang ketemu. */}
-      {canControl && (
-        <button
-          onClick={onToggleMic}
-          disabled={!micReady}
-          title={!micReady ? "Menyambungkan ke server mic..." : micActive ? "Putuskan Open Mic" : "Sambungkan Open Mic (2 arah, langsung)"}
-          className={`absolute top-2 right-[74px] flex h-7 w-7 items-center justify-center rounded-lg text-white transition-all duration-150 z-10 disabled:opacity-40 ${
-            micActive ? "bg-emerald-600/90" : "bg-black/50 hover:bg-black/80"
-          }`}
-        >
-          {micActive ? <Mic size={13} /> : <MicOff size={13} />}
-        </button>
-      )}
+        {/* Open Mic — cuma admin yang bisa kontrol. Selalu kelihatan
+            (bukan hover-only) biar gampang ketemu. */}
+        {canControl && (
+          <button
+            onClick={onToggleMic}
+            disabled={!micReady}
+            title={!micReady ? "Menyambungkan ke server mic..." : micActive ? "Putuskan Open Mic" : "Sambungkan Open Mic (2 arah, langsung)"}
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white transition-all duration-150 disabled:opacity-40 ${
+              micActive ? "bg-emerald-600/90" : "bg-black/50 hover:bg-black/80"
+            }`}
+          >
+            {micActive ? <Mic size={13} /> : <MicOff size={13} />}
+          </button>
+        )}
 
-      {/* End Stream — admin/PM saja */}
-      {canControl && (
+        {/* Fullscreen */}
         <button
-          onClick={handleEndStream}
-          disabled={ending}
-          title={`Hentikan stream ${username}`}
-          className="absolute top-2 right-11 flex items-center gap-1 h-7 px-2 rounded-lg bg-rose-600/80 text-white text-[11px] font-semibold opacity-0 group-hover:opacity-100 hover:bg-rose-600 disabled:opacity-60 transition-all duration-150 z-10"
+          onClick={enterFullscreen}
+          title="Fullscreen"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-black/80 transition-all duration-150"
         >
-          <Square size={11} /> {ending ? "..." : "End Stream"}
+          <Maximize2 size={13} />
         </button>
-      )}
+      </div>
 
       {/* Bottom bar */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent px-3 py-2.5">
