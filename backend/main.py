@@ -499,8 +499,19 @@ scheduler = AsyncIOScheduler() if SCHEDULER_AVAILABLE else None
 # memory — kalau server restart, grace period-nya cuma mulai hitung ulang dari 0.
 _idle_since: Dict[str, datetime] = {}
 _last_start_reminder: Dict[str, datetime] = {}
-NOT_STARTED_GRACE_MINUTES = 3
-NOT_STARTED_REPEAT_MINUTES = 3
+
+# Interval reminder "belum mulai kerja" / "belum live stream" — diatur superadmin
+# lewat /settings/reminder-interval (dulunya hardcode 3 menit). Dipakai dinamis
+# (bukan konstanta) biar perubahan settingan langsung kepakai tanpa restart server.
+_reminder_interval_cache = {"minutes": 3}
+
+async def _load_reminder_interval_cache():
+    try:
+        doc = await db.settings.find_one({"key": "reminder_interval"})
+        if doc and isinstance(doc.get("minutes"), (int, float)) and doc["minutes"] > 0:
+            _reminder_interval_cache["minutes"] = doc["minutes"]
+    except Exception:
+        pass
 
 
 async def _resolve_user_by_assignee(name: str) -> Optional[dict]:
@@ -585,11 +596,11 @@ async def check_not_started_tasks():
         still_idle.add(assignee)
         started_idle_at = _idle_since.setdefault(assignee, jkt_now)
         idle_minutes = (jkt_now - started_idle_at).total_seconds() / 60
-        if idle_minutes < NOT_STARTED_GRACE_MINUTES:
+        if idle_minutes < _reminder_interval_cache["minutes"]:
             continue
 
         last_sent = _last_start_reminder.get(assignee)
-        if last_sent and (jkt_now - last_sent).total_seconds() < NOT_STARTED_REPEAT_MINUTES * 60:
+        if last_sent and (jkt_now - last_sent).total_seconds() < _reminder_interval_cache["minutes"] * 60:
             continue  # sudah diingatkan baru-baru ini, jangan spam tiap menit
 
         next_task = sorted(pending, key=lambda t: t.get("order_num") if t.get("order_num") is not None else 999)[0]
@@ -640,8 +651,6 @@ async def check_not_started_tasks():
 
 _stream_gap_since: Dict[str, datetime] = {}
 _last_stream_reminder: Dict[str, datetime] = {}
-NOT_STREAMING_GRACE_MINUTES = 3
-NOT_STREAMING_REPEAT_MINUTES = 3
 
 
 async def check_not_streaming_tasks():
@@ -682,11 +691,11 @@ async def check_not_streaming_tasks():
         still_gap.add(assignee)
         started_gap_at = _stream_gap_since.setdefault(assignee, jkt_now)
         gap_minutes = (jkt_now - started_gap_at).total_seconds() / 60
-        if gap_minutes < NOT_STREAMING_GRACE_MINUTES:
+        if gap_minutes < _reminder_interval_cache["minutes"]:
             continue
 
         last_sent = _last_stream_reminder.get(assignee)
-        if last_sent and (jkt_now - last_sent).total_seconds() < NOT_STREAMING_REPEAT_MINUTES * 60:
+        if last_sent and (jkt_now - last_sent).total_seconds() < _reminder_interval_cache["minutes"] * 60:
             continue
 
         task_id = str(t.get("_id", ""))
@@ -941,6 +950,7 @@ async def on_startup():
     # ────────────────────────────────────────────────────────────────
 
     await _load_work_hours_cache()
+    await _load_reminder_interval_cache()
 
     if scheduler:
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
@@ -2447,6 +2457,20 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
     return {"task": format_task(updated)}
 
 
+@app.get("/tasks/daily-update-status-bulk")
+async def get_daily_update_status_bulk(ids: str, current_user: dict = Depends(get_current_user)):
+    """Versi bulk buat checklist freelance di To Do — hindari N request
+    terpisah per task. `ids` dipisah koma."""
+    task_ids = [i for i in ids.split(",") if i]
+    if not task_ids:
+        return {}
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_code = jkt_now.strftime("%y%m%d")
+    docs = await db.daily_updates.find({"task_id": {"$in": task_ids}, "date_code": today_code}).to_list(len(task_ids))
+    confirmed_ids = {d["task_id"] for d in docs}
+    return {tid: (tid in confirmed_ids) for tid in task_ids}
+
+
 @app.get("/tasks/{task_id}/daily-update-status")
 async def get_daily_update_status(task_id: str, current_user: dict = Depends(get_current_user)):
     """Dipakai frontend buat nampilin status 'sudah/belum kirim update hari
@@ -3301,6 +3325,31 @@ async def update_work_hours(data: WorkHoursUpdate, current_user: dict = Depends(
         await db.settings.update_one({"key": "work_hours"}, {"$set": {"key": "work_hours", **payload}}, upsert=True)
         await _load_work_hours_cache()
         return {"ok": True, **payload}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ReminderIntervalUpdate(BaseModel):
+    minutes: int
+
+@app.get("/settings/reminder-interval")
+async def get_reminder_interval(current_user: dict = Depends(get_current_user)):
+    return dict(_reminder_interval_cache)
+
+@app.put("/settings/reminder-interval")
+async def update_reminder_interval(data: ReminderIntervalUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not (1 <= data.minutes <= 60):
+        raise HTTPException(status_code=400, detail="Interval harus antara 1-60 menit")
+    try:
+        await db.settings.update_one(
+            {"key": "reminder_interval"},
+            {"$set": {"key": "reminder_interval", "minutes": data.minutes}},
+            upsert=True,
+        )
+        await _load_reminder_interval_cache()
+        return {"ok": True, "minutes": data.minutes}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
