@@ -4,7 +4,7 @@ import { useStream } from "../context/StreamContext";
 
 /* Tombol stream di sidebar — UI wrapper tipis dari StreamContext */
 export default function StreamButton({ collapsed = false }) {
-  const { streaming, loading, startStream, stopStream, micActive, talking, startTalking, stopTalking, audioBlocked, unlockAudio, connState, audioStats } = useStream();
+  const { streaming, loading, startStream, stopStream, micActive, talking, startTalking, stopTalking, audioBlocked, unlockAudio, connState, audioStats, localLevel, remoteLevel } = useStream();
 
   /* ── Floating indicator di tengah atas saat streaming ──
      Open Mic: begitu admin sambungin dari Live Monitor, tombol "Tahan
@@ -26,8 +26,18 @@ export default function StreamButton({ collapsed = false }) {
         </div>
       )}
       {micActive && audioStats && (
-        <div className="rounded-full bg-black/70 px-3 py-1.5 text-[9px] font-mono text-white leading-tight">
-          📤{audioStats.bytesSent}B 📥{audioStats.bytesReceived}B
+        <div className="rounded-full bg-black/70 px-3 py-1.5 text-[9px] font-mono text-white leading-tight flex items-center gap-2">
+          <span>📤{audioStats.bytesSent}B 📥{audioStats.bytesReceived}B</span>
+          {/* Meteran suara masuk dari admin — kalau bergerak pas admin
+              ngomong, suaranya PASTI nyampe, tinggal soal speaker kamu. */}
+          <div className="h-1.5 w-10 overflow-hidden rounded-full bg-white/20">
+            <div className="h-full bg-emerald-400 transition-all" style={{ width: `${remoteLevel}%` }} />
+          </div>
+        </div>
+      )}
+      {talking && localLevel > 0 && (
+        <div className="rounded-full bg-emerald-900/80 px-3 py-1 text-[9px] font-mono text-emerald-200">
+          🎙️ mic kamu: {localLevel > 5 ? "ada suara terdeteksi" : "hening"}
         </div>
       )}
       {micActive && audioBlocked && (
