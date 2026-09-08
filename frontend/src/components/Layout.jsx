@@ -56,7 +56,7 @@ const NAV_SECTIONS = [
   {
     label: "Main Menu",
     items: [
-      { to: "/dashboard",    label: "Dashboard",    icon: LayoutDashboard, roles: ["admin"] },
+      { to: "/dashboard",    label: "Dashboard",    icon: LayoutDashboard, roles: ["admin", "pm", "talent"] },
       { to: "/daily-chat",   label: "Daily Chat",   icon: MessageSquare,   roles: ["admin"] },
       { to: "/orders",       label: "Orders",       icon: ClipboardList,   roles: ["admin"] },
       { to: "/order-layout", label: "Order Layout",  icon: LayoutGrid,      roles: ["admin", "pm", "talent"] },
