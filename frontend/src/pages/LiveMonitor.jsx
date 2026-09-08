@@ -87,20 +87,19 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEnd
           </button>
         )}
 
-        {/* Open Mic — cuma admin yang bisa kontrol. Selalu kelihatan
-            (bukan hover-only) biar gampang ketemu. */}
-        {canControl && (
-          <button
-            onClick={onToggleMic}
-            disabled={!micReady}
-            title={!micReady ? "Menyambungkan ke server mic..." : micActive ? "Putuskan Open Mic" : "Sambungkan Open Mic (2 arah, langsung)"}
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white transition-all duration-150 disabled:opacity-40 ${
-              micActive ? "bg-emerald-600/90" : "bg-black/50 hover:bg-black/80"
-            }`}
-          >
-            {micActive ? <Mic size={13} /> : <MicOff size={13} />}
-          </button>
-        )}
+        {/* Open Mic — SIAPA AJA yang bisa lihat Live Monitor boleh mulai
+            ngobrol (beda dari End Stream/Share Screen yang admin only).
+            Selalu kelihatan (bukan hover-only) biar gampang ketemu. */}
+        <button
+          onClick={onToggleMic}
+          disabled={!micReady}
+          title={!micReady ? "Menyambungkan ke server mic..." : micActive ? "Putuskan Open Mic" : "Sambungkan Open Mic (2 arah, langsung)"}
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white transition-all duration-150 disabled:opacity-40 ${
+            micActive ? "bg-emerald-600/90" : "bg-black/50 hover:bg-black/80"
+          }`}
+        >
+          {micActive ? <Mic size={13} /> : <MicOff size={13} />}
+        </button>
 
         {/* Fullscreen */}
         <button
