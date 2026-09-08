@@ -86,46 +86,6 @@ jobs:
             UserKnownHostsFile /dev/null
           EOF
 
-      - name: DEBUG - diagnosa VPS via git commit, bukan scp ke VPS (temp)
-        run: |
-          set +e
-          {
-            echo "== waktu mulai: $(date -u) =="
-
-            echo "== 1) SSH connect polos (timeout 10s) =="
-            timeout 10 ssh -o ConnectTimeout=8 vps "echo OK-connected" 2>&1
-            echo "exit code: $?"
-
-            echo "== 2) df/free/uptime (timeout 12s) =="
-            timeout 12 ssh -o ConnectTimeout=8 vps "df -h; echo ---; free -h; echo ---; uptime" 2>&1
-            echo "exit code: $?"
-
-            echo "== 3) scp file 1KB (timeout 15s) =="
-            echo "tes kecil" > /tmp/tiny.txt
-            time timeout 15 scp -o ConnectTimeout=8 /tmp/tiny.txt vps:/root/admin-dashboard/tiny.txt 2>&1
-            echo "exit code: $?"
-
-            echo "== 4) scp file 5MB (timeout 40s) =="
-            dd if=/dev/urandom of=/tmp/dummy5m bs=1M count=5 2>/dev/null
-            time timeout 40 scp -o ConnectTimeout=8 /tmp/dummy5m vps:/root/admin-dashboard/dummy5m 2>&1
-            echo "exit code: $?"
-
-            echo "== 5) cleanup =="
-            timeout 10 ssh -o ConnectTimeout=8 vps "rm -f /root/admin-dashboard/tiny.txt /root/admin-dashboard/dummy5m" 2>&1
-            echo "exit code: $?"
-
-            echo "== waktu selesai: $(date -u) =="
-          } > vpsdebug-result.txt 2>&1
-          cat vpsdebug-result.txt
-
-      - name: DEBUG - commit hasil diagnosa ke repo (temp, [skip ci])
-        run: |
-          git config user.name "debug-bot"
-          git config user.email "debug-bot@users.noreply.github.com"
-          git add vpsdebug-result.txt
-          git commit -m "debug: hasil diagnosa VPS [skip ci]" || echo "nothing to commit"
-          git push || echo "push gagal (mungkin GITHUB_TOKEN read-only)"
-
       - name: Copy frontend build to VPS
         run: |
           ssh vps "rm -rf /root/admin-dashboard/frontend/dist && mkdir -p /root/admin-dashboard/frontend/dist/assets"
