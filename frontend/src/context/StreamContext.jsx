@@ -411,6 +411,7 @@ export function StreamProvider({ children }) {
       micActive: openMic.micActive, talking: openMic.talking,
       startTalking: openMic.startTalking, stopTalking: openMic.stopTalking,
       audioBlocked: openMic.audioBlocked, unlockAudio: openMic.unlockAudio,
+      connState: openMic.connState,
     }}>
       {children}
       <audio ref={remoteMicAudioRef} autoPlay style={{ display: "none" }} />

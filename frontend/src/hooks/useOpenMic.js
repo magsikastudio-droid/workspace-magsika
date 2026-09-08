@@ -32,9 +32,11 @@ const STUN = [
 export function useOpenMic({ role, token, username, task = "", iceServers, enabled = true }) {
   const [wsConnected, setWsConnected] = useState(false);
   const [streamers, setStreamers] = useState([]); // viewer only: [{cid, username, task}]
-  const [micActive, setMicActive] = useState(false); // koneksi audio ke lawan bicara sudah terbentuk
+  const [micActive, setMicActive] = useState(false); // koneksi audio ke lawan bicara BENERAN "connected" (bukan cuma sinyal ketuker)
   const [talking, setTalking] = useState(false); // lagi push-to-talk aktif
   const [audioBlocked, setAudioBlocked] = useState(false); // autoplay browser diblokir, butuh klik manual
+  const [connState, setConnState] = useState(""); // status asli WebRTC (checking/connected/failed/dst) - buat ditampilin di UI, gak perlu buka console
+  const [gotRemoteTrack, setGotRemoteTrack] = useState(false); // ontrack beneran kepanggil atau belum
 
   const wsRef = useRef(null);
   const pcRef = useRef(null);
@@ -67,6 +69,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
       }
     };
     pc.ontrack = (e) => {
+      setGotRemoteTrack(true);
       if (remoteAudioElRef.current) {
         remoteAudioElRef.current.srcObject = e.streams[0];
         remoteAudioElRef.current.play()
@@ -82,8 +85,10 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     };
     pc.oniceconnectionstatechange = () => {
       console.log("[OpenMic] iceConnectionState:", pc.iceConnectionState);
+      setConnState(pc.iceConnectionState);
       if (pc.iceConnectionState === "failed") {
-        toast.error("Open Mic gagal konek (kemungkinan jaringan/firewall memblokir) — coba lagi.");
+        toast.error("Open Mic gagal konek (ICE failed — kemungkinan jaringan/firewall memblokir) — coba lagi.");
+        setMicActive(false);
       }
     };
     pc.onicecandidateerror = (e) => {
@@ -91,7 +96,13 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     };
     pc.onconnectionstatechange = () => {
       console.log("[OpenMic] connectionState:", pc.connectionState);
-      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
+      // micActive BENERAN nyala di sini — bukan pas offer/answer selesai
+      // ditukar (itu cuma sinyal, belum tentu media path-nya jadi). Ini
+      // yang bikin bug 'ikon hijau tapi bisu' - status ke-set optimis
+      // duluan sebelum ICE beneran connect.
+      if (pc.connectionState === "connected") {
+        setMicActive(true);
+      } else if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
         setMicActive(false);
       }
     };
@@ -155,6 +166,8 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
       pcRef.current = null;
     }
     pendingIceRef.current = [];
+    setConnState("");
+    setGotRemoteTrack(false);
   }, []);
 
   /* ── viewer: mulai ngobrol sama satu streamer (bikin offer) ── */
@@ -202,6 +215,8 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     pendingIceRef.current = [];
     setMicActive(false);
     setAudioBlocked(false);
+    setConnState("");
+    setGotRemoteTrack(false);
   }, [stopTalking]);
 
   /* ── koneksi signaling /ws/rtc ── */
@@ -243,7 +258,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           ws.send(JSON.stringify({ type: "answer", to: msg.from, sdp: answer }));
-          setMicActive(true);
+          setConnState("negotiating"); // sinyal ketuker, nunggu ICE beneran connect (lihat onconnectionstatechange)
         } catch (err) {
           console.error("[OpenMic] gagal jawab offer:", err);
           toast.error("Gagal terima koneksi Open Mic: " + (err.message || err.name));
@@ -253,7 +268,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
           try {
             await pcRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp));
             await _flushPendingIce();
-            setMicActive(true);
+            setConnState("negotiating"); // sinyal ketuker, nunggu ICE beneran connect
           } catch (err) {
             console.error("[OpenMic] gagal proses answer:", err);
             toast.error("Gagal menyambungkan Open Mic: " + (err.message || err.name));
@@ -281,7 +296,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
   }, [token, role, username, enabled]);
 
   return {
-    wsConnected, streamers, micActive, talking, audioBlocked,
+    wsConnected, streamers, micActive, talking, audioBlocked, connState, gotRemoteTrack,
     connectToStreamer, startTalking, stopTalking, disconnect,
     attachRemoteAudio, unlockAudio,
   };
