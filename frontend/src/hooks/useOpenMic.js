@@ -169,7 +169,13 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     if (localTrackRef.current) { localTrackRef.current.enabled = false; setTalking(false); }
   }, []);
 
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback((notifyPeer = true) => {
+    // Kasih tau lawan bicara LANGSUNG lewat signaling (bukan nunggu ICE
+    // timeout yang bisa lama/gak konsisten) - biar sisi sana juga langsung
+    // beres-beres, gak nyangkut connection lama pas nyoba sambung ulang.
+    if (notifyPeer && peerCidRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "hangup", to: peerCidRef.current }));
+    }
     stopTalking();
     pcRef.current?.close();
     pcRef.current = null;
@@ -237,6 +243,11 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
         }
       } else if (msg.type === "ice") {
         if (msg.candidate) await _addIceCandidate(msg.candidate);
+      } else if (msg.type === "hangup") {
+        // Lawan bicara matiin mic-nya — beres-beres langsung di sini juga,
+        // jangan nunggu ICE timeout (bisa lama/gak konsisten & bikin
+        // koneksi berikutnya nyangkut ke state lama).
+        if (peerCidRef.current === msg.from) disconnect(false);
       }
     };
 

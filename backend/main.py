@@ -1421,12 +1421,12 @@ async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
                     })
 
             # ── WebRTC relay ──────────────────────────────────────
-            elif t in ("offer", "answer", "ice"):
+            elif t in ("offer", "answer", "ice", "hangup"):
                 target = data.get("to")
                 relay  = {"type": t, "from": cid}
                 if t == "ice":
                     relay["candidate"] = data.get("candidate")
-                else:
+                elif t != "hangup":
                     relay["sdp"] = data.get("sdp")
                 await rtc.send(target, relay)
 
