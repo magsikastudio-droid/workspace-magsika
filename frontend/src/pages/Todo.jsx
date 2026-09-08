@@ -604,16 +604,7 @@ export default function Todo() {
             onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
             onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
           />
-          <TaskGroup
-            title="Freelance" icon="🎨" groups={grouped.freelance} assigneeType="freelance"
-            orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
-            presenceMap={presenceMap}
-            onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind} onRemote={handleRemote}
-            onApprove={handleApprove} onReject={handleReject}
-            onStatus={handleStatus} onDelete={handleDelete}
-            onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
-            onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
-          />
+          <FreelanceChecklist groups={grouped.freelance} isAdminOrPM={isAdminOrPM} onStatus={handleStatus} />
         </div>
       )}
 
@@ -730,6 +721,84 @@ function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onRemind, on
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ─── FreelanceChecklist ────────────────────────────────────────────
+   Freelancer gak login ke workspace, jadi semua tombol (Mulai/Ingatkan/
+   Remote/dll) di TaskGroup biasa cuma makan tempat tanpa guna buat mereka.
+   Ini gantinya: list simpel, checkbox otomatis nyala kalau bot Telegram
+   udah nangkep update hari ini, dan admin/PM tinggal klik buat approve
+   (toggle status done) — satu-satunya aksi yang mereka perlu. ── */
+function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
+  const flat = useMemo(() => Object.values(groups).flat(), [groups]);
+  const idsKey = flat.map((t) => t.id).join(",");
+  const [confirmedMap, setConfirmedMap] = useState({});
+
+  useEffect(() => {
+    if (!idsKey) { setConfirmedMap({}); return; }
+    api.get(`/tasks/daily-update-status-bulk?ids=${idsKey}`)
+      .then((r) => setConfirmedMap(r.data || {}))
+      .catch(() => {});
+  }, [idsKey]);
+
+  const handleToggle = async (task) => {
+    if (!isAdminOrPM) return;
+    const isDone = task.status === "done";
+    if (!isDone && !confirmedMap[task.id]) {
+      toast.error("Belum ada update dari Telegram buat task ini hari ini.");
+      return;
+    }
+    try {
+      await onStatus(task, isDone ? "pending" : "done");
+    } catch {
+      toast.error("Gagal update status.");
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+        <span className="text-lg">🎨</span>
+        <h3 className="text-sm font-bold text-slate-700">Freelance</h3>
+        <span className="ml-auto text-xs text-slate-400">{flat.length} task</span>
+      </div>
+      {flat.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-slate-400">Tidak ada task freelance hari ini.</p>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {flat.map((task) => {
+            const isDone = task.status === "done";
+            const confirmed = !!confirmedMap[task.id];
+            return (
+              <div key={task.id} className="flex items-center gap-3 px-4 py-3">
+                <button
+                  onClick={() => handleToggle(task)}
+                  disabled={!isAdminOrPM}
+                  title={isDone ? "Batalkan approve" : confirmed ? "Tandai selesai" : "Belum ada update Telegram"}
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition ${
+                    isDone ? "border-emerald-500 bg-emerald-500" : confirmed ? "border-emerald-400 bg-emerald-50" : "border-slate-300"
+                  } ${isAdminOrPM ? "cursor-pointer" : "cursor-default"}`}
+                >
+                  {isDone && <Check size={12} className="text-white" />}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-medium truncate ${isDone ? "line-through text-slate-400" : "text-slate-700"}`}>
+                    {displayTitle(task)}
+                  </p>
+                  <p className="text-xs text-slate-400">{task.assignee}</p>
+                </div>
+                {!isDone && confirmed && (
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                    Update masuk
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

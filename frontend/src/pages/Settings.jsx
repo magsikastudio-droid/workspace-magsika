@@ -7,7 +7,7 @@ import {
   Save, RefreshCw, Plus, X, Check, Pencil, Trash2,
   UserPlus, Mail, ShieldCheck, Clock, User, Phone, MapPin,
   CreditCard, Calendar, Briefcase, ChevronDown, ChevronUp,
-  Sun, Moon, Send, Monitor,
+  Sun, Moon, Send, Monitor, Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -512,6 +512,8 @@ export default function SettingsPage() {
   const [savingDeadline, setSavingDeadline] = useState(false);
   const [workHours, setWorkHours] = useState({ start: "09:00", end: "17:00", breakStart: "11:30", breakEnd: "13:00" });
   const [savingWorkHours, setSavingWorkHours] = useState(false);
+  const [reminderInterval, setReminderInterval] = useState(3);
+  const [savingReminderInterval, setSavingReminderInterval] = useState(false);
 
   const [users, setUsers] = useState([]);
   const [whitelist, setWhitelist] = useState([]);
@@ -551,6 +553,9 @@ export default function SettingsPage() {
           breakStart: `${pad2(d.break_start_hour)}:${pad2(d.break_start_minute)}`,
           breakEnd: `${pad2(d.break_end_hour)}:${pad2(d.break_end_minute)}`,
         });
+      }).catch(() => {});
+      api.get("/settings/reminder-interval").then((res) => {
+        setReminderInterval(res.data.minutes ?? 3);
       }).catch(() => {});
     }
     if (isAdminOrPM) {
@@ -981,6 +986,45 @@ export default function SettingsPage() {
               >
                 <Save size={14} /> {savingWorkHours ? "Menyimpan..." : "Simpan"}
               </button>
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <Bell size={18} className="text-violet-500" />
+                <h2 className="text-lg font-semibold">Interval Reminder</h2>
+              </div>
+              <p className="text-sm text-slate-500 mb-5">
+                Tim yang belum klik "Mulai" atau belum live streaming diingatkan tiap segini menit (juga jarak antar-pengingat berikutnya kalau masih belum juga).
+              </p>
+              <div className="flex items-end gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">Setiap (menit)</label>
+                  <input
+                    type="number" min={1} max={60} value={reminderInterval}
+                    onChange={(e) => setReminderInterval(Number(e.target.value))}
+                    className="w-28 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400"
+                  />
+                </div>
+                <button
+                  disabled={savingReminderInterval}
+                  onClick={async () => {
+                    if (!Number.isInteger(reminderInterval) || reminderInterval < 1 || reminderInterval > 60) {
+                      toast.error("Interval harus 1-60 menit"); return;
+                    }
+                    setSavingReminderInterval(true);
+                    try {
+                      await api.put("/settings/reminder-interval", { minutes: reminderInterval });
+                      toast.success(`Interval reminder disimpan: tiap ${reminderInterval} menit`);
+                    } catch { toast.error("Gagal menyimpan"); }
+                    finally { setSavingReminderInterval(false); }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition"
+                >
+                  <Save size={14} /> {savingReminderInterval ? "Menyimpan..." : "Simpan"}
+                </button>
+              </div>
             </div>
           )}
 
