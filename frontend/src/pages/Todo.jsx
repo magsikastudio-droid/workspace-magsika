@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   CheckCircle2, ClipboardList, GripVertical, Kanban, Loader2, Pause, Pencil, Play,
   Plus, Search, Send, X, Zap, Clock, CheckCheck, AlarmClock, Target, Bell, Monitor,
+  Copy, Check,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
@@ -14,6 +15,16 @@ import { toast } from "sonner";
 const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+/* Kode update harian buat penamaan file yang dikirim tim ke Telegram:
+   [TTBBHH] - [NAMA PROJECT] — format Tahun-Bulan-Hari 2 digit + nama task,
+   tim tinggal tambahin nomor gambar sendiri di belakang (01, 02, dst). */
+const dailyUpdateCode = (projectName) => {
+  const d = new Date();
+  const yy = String(d.getFullYear()).slice(-2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yy}${mm}${dd} - ${(projectName || "").toUpperCase()}`;
 };
 const shiftDate = (dateStr, days) => {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -1127,6 +1138,18 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
       .catch(() => setOrderTotal(null));
   }, [task.order_id]);
 
+  const [codeCopied, setCodeCopied] = useState(false);
+  const dailyCode = dailyUpdateCode(task.title);
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(dailyCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch {
+      toast.error("Gagal copy, salin manual aja ya.");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[300] overflow-y-auto bg-slate-950/50 backdrop-blur-sm" onClick={onClose}>
       <div className="flex min-h-full items-center justify-center px-4 py-6">
@@ -1184,6 +1207,25 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
               <p className="text-xs text-indigo-500 font-mono">{linkedOrder.folder_code || linkedOrder.client}</p>
             </div>
           )}
+
+          {/* Kode update harian — dipakai buat nama file yang dikirim ke Telegram */}
+          <div className="rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-emerald-500">Kode Update Harian</p>
+            <div className="flex items-center gap-2">
+              <p className="flex-1 min-w-0 text-sm font-mono font-semibold text-emerald-800 break-all">{dailyCode}</p>
+              <button
+                onClick={handleCopyCode}
+                className="shrink-0 flex items-center gap-1 rounded-lg bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-200"
+              >
+                {codeCopied ? <Check size={12} /> : <Copy size={12} />}
+                {codeCopied ? "Tersalin" : "Copy"}
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-emerald-600">
+              Pakai buat nama file yang dikirim ke Telegram, tambahin nomor gambar di belakang. Contoh:{" "}
+              <span className="font-mono font-semibold">{dailyCode} 01.png</span>
+            </p>
+          </div>
 
           <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
             <div className="flex items-center gap-3">

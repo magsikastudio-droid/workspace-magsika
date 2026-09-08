@@ -8,7 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { useAlarm } from "../context/AlarmContext";
 import { toast } from "sonner";
 
-async function setupFCM(onAlert) {
+async function setupFCM(onAlert, isAdminOrPM) {
   console.log("[FCM] isNativePlatform:", Capacitor.isNativePlatform());
   if (!Capacitor.isNativePlatform()) return;
   try {
@@ -44,7 +44,7 @@ async function setupFCM(onAlert) {
       // Always play a local notification sound when app is in foreground
       showLocalNotification(title, body);
       if (d.type === "task_alert") {
-        onAlert(d.task_title || "Task menunggu review", d.assignee || "");
+        if (isAdminOrPM) onAlert(d.task_title || "Task menunggu review", d.assignee || "");
       } else if (d.type === "announcement") {
         toast.info(title, { description: body });
       } else if (d.type === "schedule_event") {
@@ -60,7 +60,7 @@ async function setupFCM(onAlert) {
 
     PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
       const d = action.notification.data || {};
-      if (d.type === "task_alert") {
+      if (d.type === "task_alert" && isAdminOrPM) {
         const title = d.task_title || "Task menunggu review";
         const assignee = d.assignee || "";
         // Trigger local fullScreenIntent notification so screen wakes on lock screen tap
@@ -100,14 +100,19 @@ export default function AlarmController() {
       triggerAlarm(title, assignee, kind);
     };
 
+    // "review" cuma buat admin/PM — talent yang baru kirim task-nya sendiri
+    // ke review harusnya cuma balik ke halaman To Do biasa, bukan ketiban
+    // alarm full-screen yang sebenernya ditujukan buat admin.
+    const isAdminOrPM = user.role === "admin" || user.role === "pm";
+
     if (!fcmReady.current) {
       fcmReady.current = true;
-      setupFCM(fire);
+      setupFCM(fire, isAdminOrPM);
     }
 
     // WS realtime (saat app terbuka & server sudah deploy WS)
     const unsubWS = subscribe("task_alert", (msg) => {
-      fire(msg.task_title, msg.assignee, "review");
+      if (isAdminOrPM) fire(msg.task_title, msg.assignee, "review");
     });
 
     // "not_started_alert"/"not_streaming_alert" dulu cuma ditangani desktop
