@@ -877,7 +877,7 @@ async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
         result = await db.tasks.update_one(
             {"order_id": order_id_str, "date": today},          # 1 task per order per day
             {"$setOnInsert": {
-                "title": f"{order.get('project', '')} — {last_assignee}",
+                "title": order.get("project", ""),
                 "assignee": last_assignee,
                 "assignee_type": last_type,
                 "status": "pending",
@@ -3871,6 +3871,24 @@ async def telegram_webhook(update: Dict[str, Any]):
                 "task_title": t.get("title", ""),
                 "date_code": date_code,
             })
+
+        # Kasih reaksi ✅ di pesannya sendiri di Telegram, biar tim langsung
+        # tau file-nya kebaca tanpa perlu buka dashboard.
+        message_id = msg.get("message_id")
+        if TELEGRAM_BOT_TOKEN and message_id:
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10) as client:
+                    await client.post(
+                        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setMessageReaction",
+                        json={
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "reaction": [{"type": "emoji", "emoji": "✅"}],
+                        },
+                    )
+            except Exception as e:
+                print(f"[Telegram webhook] gagal kasih reaksi: {e}")
     except Exception as e:
         print(f"[Telegram webhook] error: {e}")
     return {"ok": True}

@@ -18,6 +18,20 @@ const todayStr = () => {
 };
 const TELEGRAM_TOPIC_LINK = "https://t.me/c/3611845591/2";
 
+/* Task lama (sebelum auto-generate berhenti nempelin nama tim ke title)
+   masih nyimpen "Nama Project — Nama Tim" di title-nya — assignee udah ada
+   field sendiri & udah kelompokin per-orang di UI, jadi ini cuma nge-strip
+   akhiran itu pas ditampilin biar card-nya bersih (data di DB gak diubah). */
+const displayTitle = (task) => {
+  const title = task.title || "";
+  const assignee = (task.assignee || "").trim();
+  if (!assignee) return title;
+  const esc = assignee.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const suffix = new RegExp(`\\s*[—-]\\s*${esc}\\s*$`, "i");
+  const stripped = title.replace(suffix, "").trim();
+  return stripped || title;
+};
+
 /* Kode update harian buat penamaan file yang dikirim tim ke Telegram:
    [TTBBHH] - [NAMA PROJECT] — format Tahun-Bulan-Hari 2 digit + nama task,
    tim tinggal tambahin nomor gambar sendiri di belakang (01, 02, dst). */
@@ -944,7 +958,7 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemin
                 <p className={`text-sm font-semibold break-words min-w-0 ${
                   isDone || isFailed ? "line-through text-slate-400" : "text-slate-900"
                 }`}>
-                  {task.title}
+                  {displayTitle(task)}
                 </p>
               </div>
               {/* Live stream badge */}
@@ -1187,7 +1201,7 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
               <span className={`h-1.5 w-1.5 rounded-full ${sm.dot}`} /> {sm.label}
             </span>
             <h2 className={`mt-2 text-base font-bold leading-snug break-words ${task.status === "done" ? "line-through text-slate-400" : "text-slate-900"}`}>
-              {task.title}
+              {displayTitle(task)}
             </h2>
             <p className="mt-0.5 text-xs text-slate-400">{task.assignee} · {task.date}</p>
           </div>
@@ -1327,7 +1341,7 @@ function TelegramConfirmModal({ task, onConfirm, onCancel }) {
             Sudah kirim file ke <span className="font-bold text-sky-600">Telegram group</span> untuk:
           </p>
           <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="font-semibold text-slate-900 text-sm">{task.title}</p>
+            <p className="font-semibold text-slate-900 text-sm">{displayTitle(task)}</p>
             {task.notes && <p className="mt-0.5 text-xs text-slate-400 font-mono break-words">{task.notes}</p>}
           </div>
           <p className="mt-3 text-xs text-slate-400">Task hanya bisa ditandai selesai setelah file dikirim ke Telegram.</p>
@@ -1379,7 +1393,7 @@ function NeedDailyUpdateModal({ task, onClose }) {
             Belum ada file dari kamu yang kebaca di topik <span className="font-bold text-orange-600">Update Progress</span> hari ini untuk:
           </p>
           <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="font-semibold text-slate-900 text-sm">{task.title}</p>
+            <p className="font-semibold text-slate-900 text-sm">{displayTitle(task)}</p>
           </div>
           <p className="mt-3 mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Kirim dengan nama file</p>
           <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
