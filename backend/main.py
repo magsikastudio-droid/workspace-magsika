@@ -2430,6 +2430,14 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
             )
         except Exception:
             pass
+    elif new_status == "in_revision":
+        # Dipakai buat statistik "riwayat approval" di dashboard talent —
+        # berapa kali task-nya dibalikin admin buat revisi vs langsung approve.
+        try:
+            await db.tasks.update_one({"_id": object_id}, {"$inc": {"revision_count": 1}})
+            updated["revision_count"] = (updated.get("revision_count") or 0) + 1
+        except Exception:
+            pass
 
     # Auto-update status order dari keyword judul task saat mulai dikerjakan
     if new_status == "in progress":
@@ -3536,6 +3544,76 @@ async def list_announcements(current_user: dict = Depends(get_current_user)):
         return {"announcements": [format_announcement(r) for r in records]}
     except Exception:
         return {"announcements": []}
+
+
+_DAY_LABELS_ID = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"]
+
+
+@app.get("/me/dashboard")
+async def get_my_dashboard(current_user: dict = Depends(get_current_user)):
+    """Halaman awal talent — ringkasan performa pribadi mereka sendiri (bukan
+    data seluruh tim kayak /tasks/summary), dipakai TalentDashboard.jsx."""
+    full_name = current_user.get("full_name") or current_user.get("username", "")
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    today = jkt_now.strftime("%Y-%m-%d")
+    days = [(jkt_now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
+
+    try:
+        week_tasks = await db.tasks.find({"assignee": full_name, "date": {"$in": days}}).to_list(2000)
+    except Exception:
+        week_tasks = []
+
+    day_map = {d: {"done": 0, "time_seconds": 0} for d in days}
+    for t in week_tasks:
+        d = t.get("date")
+        if d in day_map:
+            day_map[d]["time_seconds"] += t.get("time_elapsed", 0) or 0
+            if t.get("status") == "done":
+                day_map[d]["done"] += 1
+
+    week = []
+    for d in days:
+        dt = datetime.strptime(d, "%Y-%m-%d")
+        week.append({"date": d, "label": _DAY_LABELS_ID[dt.weekday()], **day_map[d]})
+
+    today_tasks = [t for t in week_tasks if t.get("date") == today]
+    today_summary = {
+        "pending": sum(1 for t in today_tasks if t.get("status") == "pending"),
+        "in_progress": sum(1 for t in today_tasks if t.get("status") == "in progress"),
+        "review": sum(1 for t in today_tasks if t.get("status") == "menunggu_review"),
+        "done": sum(1 for t in today_tasks if t.get("status") == "done"),
+        "failed": sum(1 for t in today_tasks if t.get("status") == "failed"),
+    }
+    week_summary = {
+        "done": sum(1 for t in week_tasks if t.get("status") == "done"),
+        "pending": sum(1 for t in week_tasks if t.get("status") in ("pending", "in progress")),
+        "late": sum(1 for t in week_tasks if t.get("status") == "failed"),
+    }
+
+    month_prefix = jkt_now.strftime("%Y-%m")
+    try:
+        month_tasks = await db.tasks.find(
+            {"assignee": full_name, "date": {"$regex": f"^{month_prefix}"}, "status": "done"}
+        ).to_list(2000)
+    except Exception:
+        month_tasks = []
+    revised = sum(1 for t in month_tasks if (t.get("revision_count") or 0) > 0)
+    direct = len(month_tasks) - revised
+
+    try:
+        ann_records = await db.announcements.find().sort("created_at", -1).to_list(5)
+        announcements = [format_announcement(a) for a in ann_records]
+    except Exception:
+        announcements = []
+
+    return {
+        "full_name": full_name,
+        "week": week,
+        "today": today_summary,
+        "week_summary": week_summary,
+        "approval": {"direct": direct, "revised": revised},
+        "announcements": announcements,
+    }
 
 
 @app.post("/announcements")

@@ -16,6 +16,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
+import TalentDashboard from "./pages/TalentDashboard";
 import Board from "./pages/Board";
 import DailyChat from "./pages/DailyChat";
 import Invoice from "./pages/Invoice";
@@ -37,6 +38,13 @@ import TimDatabase from "./pages/TimDatabase";
 import LiveMonitor from "./pages/LiveMonitor";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "./context/AuthContext";
+
+function HomeDashboard() {
+  const { user } = useAuth();
+  const role = (user?.role || "talent").toLowerCase();
+  const isAdminOrPM = role === "admin" || role === "pm" || user?.is_superadmin;
+  return isAdminOrPM ? <Dashboard /> : <TalentDashboard />;
+}
 
 function RoleGuard({ allowedRoles, children }) {
   const { user } = useAuth();
@@ -95,7 +103,7 @@ function App() {
                           <Layout>
                             <Routes>
                               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                              <Route path="/dashboard" element={<RoleGuard allowedRoles={["admin","pm"]}><Dashboard /></RoleGuard>} />
+                              <Route path="/dashboard" element={<HomeDashboard />} />
                               <Route path="/daily-chat" element={<RoleGuard allowedRoles={["admin","pm"]}><DailyChat /></RoleGuard>} />
                               <Route path="/orders" element={<RoleGuard allowedRoles={["admin","pm"]}><Orders /></RoleGuard>} />
                               <Route path="/order-layout" element={<RoleGuard allowedRoles={["admin","pm","talent"]}><OrderLayout /></RoleGuard>} />
