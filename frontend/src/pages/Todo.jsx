@@ -1172,7 +1172,7 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
   }, [task.order_id]);
 
   const [codeCopied, setCodeCopied] = useState(false);
-  const dailyCode = dailyUpdateCode(task.title);
+  const dailyCode = dailyUpdateCode(displayTitle(task));
   const [dailyUpdateConfirmed, setDailyUpdateConfirmed] = useState(null); // null = loading
   useEffect(() => {
     let alive = true;
@@ -1365,7 +1365,7 @@ function TelegramConfirmModal({ task, onConfirm, onCancel }) {
    TelegramConfirmModal (yang honor-system buat admin/PM), ini beneran ke-
    gate otomatis dari backend (lihat db.daily_updates). ── */
 function NeedDailyUpdateModal({ task, onClose }) {
-  const dailyCode = dailyUpdateCode(task.title);
+  const dailyCode = dailyUpdateCode(displayTitle(task));
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     try {

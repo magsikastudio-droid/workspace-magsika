@@ -3799,6 +3799,19 @@ async def send_fcm(task_title: str, assignee: str):
 _DAILY_CODE_RE = re.compile(r"^\s*(\d{6})\s*-\s*(.+?)(?:\s+\d{1,3})?(?:\.\w+)?\s*$")
 
 
+def _strip_assignee_suffix(title: str, assignee: str) -> str:
+    """Task lama masih nyimpen 'Nama Project — Nama Tim' di title-nya (lihat
+    displayTitle() di Todo.jsx, versi Python-nya) — dipakai biar pencocokan
+    kode update Telegram tetap kena walau title di DB masih format lama."""
+    title = (title or "").strip()
+    assignee = (assignee or "").strip()
+    if not assignee:
+        return title
+    pattern = re.compile(r"\s*[—-]\s*" + re.escape(assignee) + r"\s*$", re.IGNORECASE)
+    stripped = pattern.sub("", title).strip()
+    return stripped or title
+
+
 def _parse_daily_update_text(text: str):
     if not text:
         return None
@@ -3843,7 +3856,10 @@ async def telegram_webhook(update: Dict[str, Any]):
         project_name_norm = project_name.strip().upper()
 
         active_tasks = await db.tasks.find({"status": {"$nin": ["done", "failed"]}}).to_list(1000)
-        hits = [t for t in active_tasks if (t.get("title") or "").strip().upper() == project_name_norm]
+        hits = [
+            t for t in active_tasks
+            if _strip_assignee_suffix(t.get("title", ""), t.get("assignee", "")).strip().upper() == project_name_norm
+        ]
         if not hits:
             return {"ok": True}
 
