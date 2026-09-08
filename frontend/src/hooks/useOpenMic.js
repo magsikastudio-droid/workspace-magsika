@@ -129,12 +129,24 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     }
   }, []);
 
+  /* ── tutup koneksi lama kalau ada sebelum bikin yang baru — mencegah
+     'sender already exists' kalau ada offer dobel / klik dobel / reconnect
+     ke target lain sementara koneksi lama masih nyangkut. ── */
+  const _resetPeerConnection = useCallback(() => {
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+    pendingIceRef.current = [];
+  }, []);
+
   /* ── viewer: mulai ngobrol sama satu streamer (bikin offer) ── */
   const connectToStreamer = useCallback(async (targetCid) => {
     if (role !== "viewer") return false;
     const track = await _getLocalMic();
     if (!track) return false;
     try {
+      _resetPeerConnection();
       peerCidRef.current = targetCid;
       const pc = _ensurePeerConnection();
       pc.addTrack(track);
@@ -147,7 +159,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
       toast.error("Gagal menyambungkan Open Mic: " + (e.message || e.name));
       return false;
     }
-  }, [role, _getLocalMic, _ensurePeerConnection]);
+  }, [role, _getLocalMic, _ensurePeerConnection, _resetPeerConnection]);
 
   /* ── push-to-talk ── */
   const startTalking = useCallback(() => {
@@ -197,6 +209,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
       } else if (msg.type === "offer") {
         // streamer sisi terima — auto-jawab, mic diminta on-demand
         try {
+          _resetPeerConnection(); // jaga-jaga ada offer dobel/reconnect
           const track = await _getLocalMic();
           peerCidRef.current = msg.from;
           const pc = _ensurePeerConnection();
