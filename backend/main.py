@@ -1861,7 +1861,14 @@ async def get_turn_credentials(current_user: dict = Depends(get_current_user)):
         hmac_lib.new(secret.encode(), username.encode(), hashlib.sha1).digest()
     ).decode()
     return {
-        "urls": ["turn:workspace.magsikastudio.com:3478"],
+        # UDP (default) DULUAN, TCP sebagai fallback — beberapa jaringan
+        # blokir rentang UDP relay port coturn (49152-50000) tapi izinin
+        # TCP di port kontrol yang sama (3478), jadi browser otomatis coba
+        # semua opsi ini dan pakai yang beneran nyambung.
+        "urls": [
+            "turn:workspace.magsikastudio.com:3478",
+            "turn:workspace.magsikastudio.com:3478?transport=tcp",
+        ],
         "username": username,
         "credential": credential,
     }
