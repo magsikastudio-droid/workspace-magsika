@@ -41,6 +41,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
   const remoteAudioElRef = useRef(null);
   const myCidRef = useRef(null);
   const peerCidRef = useRef(null);
+  const pendingIceRef = useRef([]); // ICE candidate yang nyampe sebelum remote description ke-set
 
   const iceServersRef = useRef(iceServers || STUN);
   useEffect(() => { iceServersRef.current = iceServers && iceServers.length ? iceServers : STUN; }, [iceServers]);
@@ -62,13 +63,45 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
         remoteAudioElRef.current.play().catch(() => {});
       }
     };
+    pc.oniceconnectionstatechange = () => {
+      console.log("[OpenMic] iceConnectionState:", pc.iceConnectionState);
+      if (pc.iceConnectionState === "failed") {
+        toast.error("Open Mic gagal konek (kemungkinan jaringan/firewall memblokir) — coba lagi.");
+      }
+    };
+    pc.onicecandidateerror = (e) => {
+      console.warn("[OpenMic] ICE candidate error:", e.errorCode, e.errorText, e.url);
+    };
     pc.onconnectionstatechange = () => {
+      console.log("[OpenMic] connectionState:", pc.connectionState);
       if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
         setMicActive(false);
       }
     };
     pcRef.current = pc;
     return pc;
+  }, []);
+
+  /* ── ICE candidate bisa nyampe duluan sebelum remote description ke-set
+     (race condition klasik WebRTC) — ditampung dulu, di-apply belakangan. */
+  const _addIceCandidate = useCallback(async (candidate) => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    if (!pc.remoteDescription) {
+      pendingIceRef.current.push(candidate);
+      return;
+    }
+    try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) { console.warn("[OpenMic] addIceCandidate gagal:", e); }
+  }, []);
+
+  const _flushPendingIce = useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    const pending = pendingIceRef.current;
+    pendingIceRef.current = [];
+    for (const c of pending) {
+      try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) { console.warn("[OpenMic] addIceCandidate (flush) gagal:", e); }
+    }
   }, []);
 
   const _getLocalMic = useCallback(async () => {
@@ -131,6 +164,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     localTrackRef.current?.stop();
     localTrackRef.current = null;
     peerCidRef.current = null;
+    pendingIceRef.current = [];
     setMicActive(false);
   }, [stopTalking]);
 
@@ -162,24 +196,34 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
         if (peerCidRef.current === msg.id) disconnect();
       } else if (msg.type === "offer") {
         // streamer sisi terima — auto-jawab, mic diminta on-demand
-        const track = await _getLocalMic();
-        peerCidRef.current = msg.from;
-        const pc = _ensurePeerConnection();
-        if (track) pc.addTrack(track);
-        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: "answer", to: msg.from, sdp: answer }));
-        setMicActive(true);
+        try {
+          const track = await _getLocalMic();
+          peerCidRef.current = msg.from;
+          const pc = _ensurePeerConnection();
+          if (track) pc.addTrack(track);
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+          await _flushPendingIce();
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(JSON.stringify({ type: "answer", to: msg.from, sdp: answer }));
+          setMicActive(true);
+        } catch (err) {
+          console.error("[OpenMic] gagal jawab offer:", err);
+          toast.error("Gagal terima koneksi Open Mic: " + (err.message || err.name));
+        }
       } else if (msg.type === "answer") {
         if (pcRef.current) {
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-          setMicActive(true);
+          try {
+            await pcRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+            await _flushPendingIce();
+            setMicActive(true);
+          } catch (err) {
+            console.error("[OpenMic] gagal proses answer:", err);
+            toast.error("Gagal menyambungkan Open Mic: " + (err.message || err.name));
+          }
         }
       } else if (msg.type === "ice") {
-        if (pcRef.current && msg.candidate) {
-          try { await pcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
-        }
+        if (msg.candidate) await _addIceCandidate(msg.candidate);
       }
     };
 
