@@ -1,19 +1,37 @@
 import React from "react";
-import { Radio, Square } from "lucide-react";
+import { Radio, Square, Mic } from "lucide-react";
 import { useStream } from "../context/StreamContext";
 
 /* Tombol stream di sidebar — UI wrapper tipis dari StreamContext */
 export default function StreamButton({ collapsed = false }) {
-  const { streaming, loading, startStream, stopStream } = useStream();
+  const { streaming, loading, startStream, stopStream, micActive, talking, startTalking, stopTalking } = useStream();
 
-  /* ── Floating indicator di tengah atas saat streaming ── */
+  /* ── Floating indicator di tengah atas saat streaming ──
+     Open Mic: begitu admin sambungin dari Live Monitor, tombol "Tahan
+     Bicara" muncul di sini — tekan-tahan buat ngomong ke admin, lepas
+     buat diam lagi. Tidak ada delay: koneksi audio sudah kebentuk dari
+     awal, tombol ini cuma toggle mute/unmute track lokal. */
   const indicator = streaming ? (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[999] pointer-events-none">
-      <div className="flex items-center gap-2 bg-rose-600 text-white text-xs font-bold px-4 py-2 rounded-full shadow-xl">
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[999] flex items-center gap-2">
+      <div className="pointer-events-none flex items-center gap-2 bg-rose-600 text-white text-xs font-bold px-4 py-2 rounded-full shadow-xl">
         <span className="w-2 h-2 rounded-full bg-white animate-ping" />
         <span className="w-2 h-2 rounded-full bg-white absolute" />
         SEDANG STREAMING
       </div>
+      {micActive && (
+        <button
+          onMouseDown={startTalking}
+          onMouseUp={stopTalking}
+          onMouseLeave={stopTalking}
+          onTouchStart={(e) => { e.preventDefault(); startTalking(); }}
+          onTouchEnd={(e) => { e.preventDefault(); stopTalking(); }}
+          className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold shadow-xl select-none transition ${
+            talking ? "bg-emerald-500 text-white scale-105" : "bg-white text-emerald-600 hover:bg-emerald-50"
+          }`}
+        >
+          <Mic size={13} /> {talking ? "Bicara..." : "Tahan Bicara ke Admin"}
+        </button>
+      )}
     </div>
   ) : null;
 
