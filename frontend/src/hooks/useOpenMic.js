@@ -16,6 +16,7 @@
  *                 auto-jawab begitu ada yang mau ngobrol.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const resolved = BACKEND_URL.startsWith("/")
@@ -72,6 +73,10 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
 
   const _getLocalMic = useCallback(async () => {
     if (localTrackRef.current) return localTrackRef.current;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error("Browser ini tidak dukung akses microphone.");
+      return null;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const track = stream.getAudioTracks()[0];
@@ -79,22 +84,36 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
       localTrackRef.current = track;
       return track;
     } catch (e) {
-      console.error("[OpenMic] mic permission ditolak:", e);
+      console.error("[OpenMic] mic gagal diakses:", e);
+      if (e.name === "NotAllowedError" || e.name === "SecurityError") {
+        toast.error("Izin microphone ditolak — klik ikon 🔒/kamera di address bar, izinkan Microphone, lalu coba lagi.");
+      } else if (e.name === "NotFoundError") {
+        toast.error("Tidak ketemu microphone di perangkat ini.");
+      } else {
+        toast.error("Gagal akses microphone: " + (e.message || e.name));
+      }
       return null;
     }
   }, []);
 
   /* ── viewer: mulai ngobrol sama satu streamer (bikin offer) ── */
   const connectToStreamer = useCallback(async (targetCid) => {
-    if (role !== "viewer") return;
+    if (role !== "viewer") return false;
     const track = await _getLocalMic();
-    if (!track) return;
-    peerCidRef.current = targetCid;
-    const pc = _ensurePeerConnection();
-    pc.addTrack(track);
-    const offer = await pc.createOffer({ offerToReceiveAudio: true });
-    await pc.setLocalDescription(offer);
-    wsRef.current?.send(JSON.stringify({ type: "offer", to: targetCid, sdp: offer }));
+    if (!track) return false;
+    try {
+      peerCidRef.current = targetCid;
+      const pc = _ensurePeerConnection();
+      pc.addTrack(track);
+      const offer = await pc.createOffer({ offerToReceiveAudio: true });
+      await pc.setLocalDescription(offer);
+      wsRef.current?.send(JSON.stringify({ type: "offer", to: targetCid, sdp: offer }));
+      return true;
+    } catch (e) {
+      console.error("[OpenMic] gagal bikin koneksi:", e);
+      toast.error("Gagal menyambungkan Open Mic: " + (e.message || e.name));
+      return false;
+    }
   }, [role, _getLocalMic, _ensurePeerConnection]);
 
   /* ── push-to-talk ── */

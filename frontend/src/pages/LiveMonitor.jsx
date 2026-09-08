@@ -205,17 +205,20 @@ export default function LiveMonitor() {
   const remoteAudioRef = useRef(null);
   useEffect(() => { openMic.attachRemoteAudio(remoteAudioRef.current); }, [openMic]);
 
-  const handleToggleMic = useCallback((username) => {
+  const handleToggleMic = useCallback(async (username) => {
     if (micTargetUsername === username) {
       openMic.disconnect();
       setMicTargetUsername(null);
       return;
     }
     const target = openMic.streamers.find((s) => s.username === username);
-    if (!target) { toast.error("Belum ada koneksi mic buat orang ini — tunggu sebentar lalu coba lagi."); return; }
+    if (!target) {
+      toast.error(`Belum ada sinyal Open Mic dari ${username} — minta dia refresh halaman workspace-nya dulu (perlu versi terbaru).`);
+      return;
+    }
     if (micTargetUsername) openMic.disconnect();
-    openMic.connectToStreamer(target.id);
-    setMicTargetUsername(username);
+    const ok = await openMic.connectToStreamer(target.id);
+    if (ok) setMicTargetUsername(username);
   }, [openMic, micTargetUsername]);
 
   const wsRef       = useRef(null);
