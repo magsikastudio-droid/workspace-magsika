@@ -5,7 +5,7 @@ import {
   CheckSquare, FileText, TrendingUp, Users, DollarSign,
   Settings as SettingsIcon, LogOut, Search, Menu, X,
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
-  Send, Loader2, LayoutGrid, Receipt, Database, ExternalLink, Monitor,
+  Send, Loader2, Receipt, Database, ExternalLink, Monitor,
 } from "lucide-react";
 import PresenceToggle from "./PresenceToggle";
 import { useAuth } from "../context/AuthContext";
@@ -59,8 +59,7 @@ const NAV_SECTIONS = [
       { to: "/dashboard",    label: "Dashboard",    icon: LayoutDashboard, roles: ["admin", "pm", "talent"] },
       { to: "/daily-chat",   label: "Daily Chat",   icon: MessageSquare,   roles: ["admin"] },
       { to: "/orders",       label: "Orders",       icon: ClipboardList,   roles: ["admin"] },
-      { to: "/order-layout", label: "Order Layout",  icon: LayoutGrid,      roles: ["admin", "pm", "talent"] },
-      { to: "https://queue.magsikastudio.com", label: "Public Queue", icon: ExternalLink, roles: ["admin", "pm", "talent"], external: true },
+      { to: "https://queue.magsikastudio.com", label: "Public Queue", icon: ExternalLink, roles: ["admin", "pm"], external: true },
       { to: "/board",        label: "Board",        icon: Kanban,          roles: ["admin", "pm", "talent"] },
       { to: "/todo",          label: "To Do",         icon: CheckSquare,  roles: ["admin", "pm", "talent"] },
       { to: "/daily-report",  label: "Daily Report",  icon: BookOpen,     roles: ["admin", "pm", "talent"] },

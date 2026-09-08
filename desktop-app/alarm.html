@@ -134,9 +134,13 @@
   playBeep();
   speak();
   const beepInterval = setInterval(playBeep, 4000);
+  // Suara berhenti sendiri setelah 1 menit biar tidak berisik terus — layar
+  // alarm-nya tetap kebuka sampai orangnya klik tombol.
+  const stopBeepTimeout = setTimeout(() => clearInterval(beepInterval), 60000);
 
   document.getElementById("ackBtn").addEventListener("click", () => {
     clearInterval(beepInterval);
+    clearTimeout(stopBeepTimeout);
     speechSynthesis.cancel();
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     const action = !taskId ? "open-dashboard" : cfg.action; // tanpa task_id, tidak ada yang bisa di-PATCH

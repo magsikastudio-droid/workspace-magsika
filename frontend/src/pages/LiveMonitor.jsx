@@ -21,6 +21,7 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
 import { useOpenMic } from "../hooks/useOpenMic";
+import { useStream } from "../context/StreamContext";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const resolved    = BACKEND_URL.startsWith("/")
@@ -80,18 +81,19 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canEnd, onEndStre
         <Maximize2 size={13} />
       </button>
 
-      {/* Open Mic — connect/disconnect toggle */}
-      {micReady && (
-        <button
-          onClick={onToggleMic}
-          title={micActive ? "Putuskan Open Mic" : "Sambungkan Open Mic (2 arah, langsung)"}
-          className={`absolute top-2 ${canEnd ? "right-[74px]" : "right-11"} flex h-7 w-7 items-center justify-center rounded-lg text-white transition-all duration-150 z-10 ${
-            micActive ? "bg-emerald-600/90 opacity-100" : "bg-black/50 opacity-0 group-hover:opacity-100 hover:bg-black/80"
-          }`}
-        >
-          {micActive ? <Mic size={13} /> : <MicOff size={13} />}
-        </button>
-      )}
+      {/* Open Mic — connect/disconnect toggle. Selalu kelihatan (bukan
+          hover-only) biar gampang ketemu — beda dari fullscreen/end-stream
+          yang aksi sekunder. */}
+      <button
+        onClick={onToggleMic}
+        disabled={!micReady}
+        title={!micReady ? "Menyambungkan ke server mic..." : micActive ? "Putuskan Open Mic" : "Sambungkan Open Mic (2 arah, langsung)"}
+        className={`absolute top-2 ${canEnd ? "right-[74px]" : "right-11"} flex h-7 w-7 items-center justify-center rounded-lg text-white transition-all duration-150 z-10 disabled:opacity-40 ${
+          micActive ? "bg-emerald-600/90" : "bg-black/50 hover:bg-black/80"
+        }`}
+      >
+        {micActive ? <Mic size={13} /> : <MicOff size={13} />}
+      </button>
 
       {/* End Stream — admin/PM saja */}
       {canEnd && (
@@ -195,6 +197,10 @@ export default function LiveMonitor() {
     username: user?.name || user?.full_name || user?.username || "Admin",
     iceServers,
   });
+
+  // Admin/PM bisa share layar sendiri juga (misal buat nunjukin sesuatu ke
+  // tim) — pakai jalur streaming yang sama kayak talent (Frame Relay).
+  const { streaming: myStreaming, loading: myStreamLoading, startStream, stopStream } = useStream();
   const [micTargetUsername, setMicTargetUsername] = useState(null);
   const remoteAudioRef = useRef(null);
   useEffect(() => { openMic.attachRemoteAudio(remoteAudioRef.current); }, [openMic]);
@@ -377,6 +383,26 @@ export default function LiveMonitor() {
           <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-slate-700 bg-slate-800/50 text-slate-400">
             <Users size={11} /> {entries.length} streaming
           </div>
+          <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${
+            openMic.wsConnected
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+              : "border-slate-700 bg-slate-800 text-slate-500"
+          }`}>
+            <Mic size={11} /> {openMic.wsConnected ? "Open Mic siap" : "Open Mic..."}
+          </div>
+          {canEnd && (
+            <button
+              onClick={myStreaming ? stopStream : () => startStream("Live dari Admin")}
+              disabled={myStreamLoading}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border font-semibold transition disabled:opacity-60 ${
+                myStreaming
+                  ? "border-rose-500/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
+                  : "border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
+              }`}
+            >
+              <Radio size={11} /> {myStreamLoading ? "Memilih layar..." : myStreaming ? "Hentikan Share Screen" : "Share Screen"}
+            </button>
+          )}
         </div>
       </div>
 
