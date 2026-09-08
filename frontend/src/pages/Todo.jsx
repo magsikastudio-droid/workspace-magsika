@@ -16,6 +16,8 @@ const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const TELEGRAM_TOPIC_LINK = "https://t.me/c/3611845591/2";
+
 /* Kode update harian buat penamaan file yang dikirim tim ke Telegram:
    [TTBBHH] - [NAMA PROJECT] — format Tahun-Bulan-Hari 2 digit + nama task,
    tim tinggal tambahin nomor gambar sendiri di belakang (01, 02, dst). */
@@ -148,6 +150,7 @@ export default function Todo() {
   const [layoutTasks, setLayoutTasks] = useState([]);
   const [layoutLoading, setLayoutLoading] = useState(false);
   const [confirmDone, setConfirmDone] = useState(null);
+  const [needDailyUpdate, setNeedDailyUpdate] = useState(null);
   const [detailTaskId, setDetailTaskId] = useState(null);
   const [taskInput, setTaskInput] = useState({
     title: "", assignee: "", assignee_type: "tim", status: "pending", date: todayStr(), notes: "",
@@ -334,13 +337,23 @@ export default function Todo() {
     }
   }, [updateTask, streaming, connectStreamWithMedia, sendBRB]);
 
-  /* ── tombol Done: admin/PM → konfirmasi Telegram, talent → menunggu review ── */
-  const handleMarkDone = useCallback((task) => {
+  /* ── tombol Done: admin/PM → konfirmasi Telegram, talent → menunggu review
+     (kalau belum kirim preview hari ini ke topik Update Progress, backend
+     nolak dan kita tampilin pop out perintah kirim, bukan langsung submit) ── */
+  const handleMarkDone = useCallback(async (task) => {
     if (isAdminOrPM) {
       setConfirmDone(task);
-    } else {
-      handleStatus(task, "menunggu_review");
+      return;
+    }
+    try {
+      await handleStatus(task, "menunggu_review");
       toast.success("File dikirim untuk review admin.");
+    } catch (err) {
+      if (err?.response?.data?.detail === "belum_kirim_update_harian") {
+        setNeedDailyUpdate(task);
+      } else {
+        toast.error(err?.response?.data?.detail || "Gagal submit task.");
+      }
     }
   }, [isAdminOrPM, handleStatus]);
 
@@ -653,6 +666,12 @@ export default function Todo() {
           task={confirmDone}
           onConfirm={handleConfirmDone}
           onCancel={() => setConfirmDone(null)}
+        />
+      )}
+      {needDailyUpdate && (
+        <NeedDailyUpdateModal
+          task={needDailyUpdate}
+          onClose={() => setNeedDailyUpdate(null)}
         />
       )}
       {liveDetailTask && (
@@ -1140,6 +1159,14 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
 
   const [codeCopied, setCodeCopied] = useState(false);
   const dailyCode = dailyUpdateCode(task.title);
+  const [dailyUpdateConfirmed, setDailyUpdateConfirmed] = useState(null); // null = loading
+  useEffect(() => {
+    let alive = true;
+    api.get(`/tasks/${task.id}/daily-update-status`)
+      .then((r) => { if (alive) setDailyUpdateConfirmed(!!r.data?.confirmed); })
+      .catch(() => { if (alive) setDailyUpdateConfirmed(null); });
+    return () => { alive = false; };
+  }, [task.id]);
   const handleCopyCode = async () => {
     try {
       await navigator.clipboard.writeText(dailyCode);
@@ -1210,8 +1237,20 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
 
           {/* Kode update harian — dipakai buat nama file yang dikirim ke Telegram */}
           <div className="rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-3">
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-emerald-500">Kode Update Harian</p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Kode Update Harian</p>
+              {dailyUpdateConfirmed === true && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                  <Check size={10} /> Sudah dikirim
+                </span>
+              )}
+              {dailyUpdateConfirmed === false && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                  Belum dikirim
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex items-center gap-2">
               <p className="flex-1 min-w-0 text-sm font-mono font-semibold text-emerald-800 break-all">{dailyCode}</p>
               <button
                 onClick={handleCopyCode}
@@ -1299,6 +1338,64 @@ function TelegramConfirmModal({ task, onConfirm, onCancel }) {
           </a>
           <button onClick={onConfirm} className="flex-1 rounded-2xl bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-600 transition">
             ✓ Sudah kirim
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── NeedDailyUpdateModal ──────────────────────────────────────────
+   Muncul kalau talent coba submit task ke review padahal belum ada file
+   yang kebaca bot Telegram di topik "Update Progress" hari ini — beda dari
+   TelegramConfirmModal (yang honor-system buat admin/PM), ini beneran ke-
+   gate otomatis dari backend (lihat db.daily_updates). ── */
+function NeedDailyUpdateModal({ task, onClose }) {
+  const dailyCode = dailyUpdateCode(task.title);
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(dailyCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm px-4">
+      <div className="w-full max-w-sm rounded-3xl bg-white shadow-2xl overflow-hidden">
+        <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
+              <Send size={20} className="text-white" />
+            </div>
+            <div>
+              <p className="font-bold text-white text-base">Belum Ada Update Hari Ini</p>
+              <p className="text-xs text-orange-100">Kirim preview dulu sebelum submit</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-5">
+          <p className="text-sm text-slate-700 leading-relaxed">
+            Belum ada file dari kamu yang kebaca di topik <span className="font-bold text-orange-600">Update Progress</span> hari ini untuk:
+          </p>
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="font-semibold text-slate-900 text-sm">{task.title}</p>
+          </div>
+          <p className="mt-3 mb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Kirim dengan nama file</p>
+          <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="flex-1 min-w-0 text-sm font-mono font-semibold text-amber-800 break-all">{dailyCode}</p>
+            <button onClick={handleCopy} className="shrink-0 flex items-center gap-1 rounded-lg bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-200">
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+              {copied ? "Tersalin" : "Copy"}
+            </button>
+          </div>
+        </div>
+        <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+          <a href={TELEGRAM_TOPIC_LINK} target="_blank" rel="noopener noreferrer" className="flex-1 rounded-2xl bg-sky-500 py-2.5 text-sm font-bold text-white hover:bg-sky-600 transition text-center">
+            Buka Telegram
+          </a>
+          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 transition">
+            Tutup
           </button>
         </div>
       </div>
