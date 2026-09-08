@@ -38,7 +38,11 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
   const [connState, setConnState] = useState(""); // status asli WebRTC (checking/connected/failed/dst) - buat ditampilin di UI, gak perlu buka console
   const [gotRemoteTrack, setGotRemoteTrack] = useState(false); // ontrack beneran kepanggil atau belum
   const [audioStats, setAudioStats] = useState(null); // {bytesSent, bytesReceived, packetsReceived} dari getStats() - bukti PASTI data suara ngalir atau enggak, lepas dari soal speaker/output device
+  const [localLevel, setLocalLevel] = useState(0); // 0-100, energi suara mic SENDIRI (Web Audio AnalyserNode)
+  const [remoteLevel, setRemoteLevel] = useState(0); // 0-100, energi suara YANG DITERIMA - lepas dari soal speaker/output device, ini baca stream mentahnya langsung
   const statsIntervalRef = useRef(null);
+  const localMeterRef = useRef(null); // { ctx, raf }
+  const remoteMeterRef = useRef(null);
 
   const wsRef = useRef(null);
   const pcRef = useRef(null);
@@ -47,6 +51,40 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
   const myCidRef = useRef(null);
   const peerCidRef = useRef(null);
   const pendingIceRef = useRef([]); // ICE candidate yang nyampe sebelum remote description ke-set
+
+  /* ── Meteran level suara pakai Web Audio API — baca energi suara ASLI
+     dari MediaStream, lepas total dari soal speaker/output device/volume
+     sistem. Kalau ini bergerak pas ngomong, suaranya PASTI nyampe secara
+     data; kalau tetap gak kedengeran, baru soal speaker/audio output. ── */
+  const _startLevelMeter = useCallback((stream, setLevel, meterRef) => {
+    _stopLevelMeter(meterRef);
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+        const rms = Math.sqrt(sum / data.length);
+        setLevel(Math.min(100, Math.round(rms * 300)));
+        meterRef.current.raf = requestAnimationFrame(tick);
+      };
+      meterRef.current = { ctx, raf: requestAnimationFrame(tick) };
+    } catch (e) {
+      console.warn("[OpenMic] level meter gagal dibikin:", e);
+    }
+  }, []);
+  const _stopLevelMeter = useCallback((meterRef) => {
+    if (meterRef.current) {
+      cancelAnimationFrame(meterRef.current.raf);
+      meterRef.current.ctx?.close().catch(() => {});
+      meterRef.current = null;
+    }
+  }, []);
 
   const iceServersRef = useRef(iceServers || STUN);
   useEffect(() => { iceServersRef.current = iceServers && iceServers.length ? iceServers : STUN; }, [iceServers]);
@@ -72,6 +110,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     };
     pc.ontrack = (e) => {
       setGotRemoteTrack(true);
+      _startLevelMeter(e.streams[0], setRemoteLevel, remoteMeterRef);
       if (remoteAudioElRef.current) {
         remoteAudioElRef.current.srcObject = e.streams[0];
         remoteAudioElRef.current.play()
@@ -170,6 +209,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
       const track = stream.getAudioTracks()[0];
       track.enabled = false; // mute dari awal — push-to-talk yang nyalain
       localTrackRef.current = track;
+      _startLevelMeter(stream, setLocalLevel, localMeterRef);
       return track;
     } catch (e) {
       console.error("[OpenMic] mic gagal diakses:", e);
@@ -182,13 +222,15 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
       }
       return null;
     }
-  }, []);
+  }, [_startLevelMeter]);
 
   /* ── tutup koneksi lama kalau ada sebelum bikin yang baru — mencegah
      'sender already exists' kalau ada offer dobel / klik dobel / reconnect
      ke target lain sementara koneksi lama masih nyangkut. ── */
   const _resetPeerConnection = useCallback(() => {
     _stopStatsPolling();
+    _stopLevelMeter(remoteMeterRef); // stream lama dari pc yang mau ditutup, mic sendiri tetap hidup
+    setRemoteLevel(0);
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
@@ -197,7 +239,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     setConnState("");
     setGotRemoteTrack(false);
     setAudioStats(null);
-  }, [_stopStatsPolling]);
+  }, [_stopStatsPolling, _stopLevelMeter]);
 
   /* ── viewer: mulai ngobrol sama satu streamer (bikin offer) ── */
   const connectToStreamer = useCallback(async (targetCid) => {
@@ -236,6 +278,8 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
       wsRef.current.send(JSON.stringify({ type: "hangup", to: peerCidRef.current }));
     }
     _stopStatsPolling();
+    _stopLevelMeter(localMeterRef);
+    _stopLevelMeter(remoteMeterRef);
     stopTalking();
     pcRef.current?.close();
     pcRef.current = null;
@@ -248,7 +292,9 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     setConnState("");
     setGotRemoteTrack(false);
     setAudioStats(null);
-  }, [stopTalking, _stopStatsPolling]);
+    setLocalLevel(0);
+    setRemoteLevel(0);
+  }, [stopTalking, _stopStatsPolling, _stopLevelMeter]);
 
   /* ── koneksi signaling /ws/rtc ── */
   useEffect(() => {
@@ -328,6 +374,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
 
   return {
     wsConnected, streamers, micActive, talking, audioBlocked, connState, gotRemoteTrack, audioStats,
+    localLevel, remoteLevel,
     connectToStreamer, startTalking, stopTalking, disconnect,
     attachRemoteAudio, unlockAudio,
   };

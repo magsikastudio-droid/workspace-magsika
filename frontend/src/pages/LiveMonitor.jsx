@@ -32,7 +32,7 @@ const WS_BASE = resolved.replace(/^http/, "ws");
 /* ═══════════════════════════════════════════════════════════
    StreamCard — tampilkan frame JPEG dari streamer
 ═══════════════════════════════════════════════════════════ */
-function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEndStream, micReady, micActive, talking, audioBlocked, connState, audioStats, onToggleMic, onStartTalk, onStopTalk, onUnlockAudio }) {
+function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEndStream, micReady, micActive, talking, audioBlocked, connState, audioStats, remoteLevel, onToggleMic, onStartTalk, onStopTalk, onUnlockAudio }) {
   const containerRef = useRef(null);
   const [ending, setEnding] = useState(false);
 
@@ -125,9 +125,18 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEnd
           yang sama pas lawan bicara lagi tekan "Tahan Bicara", masalahnya
           di pengiriman data, bukan di pemutaran suara. */}
       {micActive && audioStats && (
-        <div className="absolute top-11 right-2 z-10 rounded-md bg-black/70 px-2 py-1 text-[9px] font-mono text-white leading-tight">
+        <div className="absolute top-11 right-2 z-10 rounded-md bg-black/70 px-2 py-1.5 text-[9px] font-mono text-white leading-tight w-32">
           <div>📤 kirim: {audioStats.bytesSent}B</div>
           <div>📥 terima: {audioStats.bytesReceived}B ({audioStats.packetsReceived}pkt)</div>
+          {/* Meteran energi suara ASLI — lepas dari soal speaker/output
+              device. Kalau ini bergerak pas ngomong, suaranya PASTI nyampe
+              secara data; kalau tetap gak kedengeran, soal speaker. */}
+          <div className="mt-1.5 flex items-center gap-1">
+            <span className="w-10 shrink-0">Masuk:</span>
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/20">
+              <div className="h-full bg-emerald-400 transition-all" style={{ width: `${remoteLevel}%` }} />
+            </div>
+          </div>
         </div>
       )}
 
@@ -482,6 +491,7 @@ export default function LiveMonitor() {
                 audioBlocked={isMicTarget && openMic.audioBlocked}
                 connState={isMicTarget ? openMic.connState : ""}
                 audioStats={isMicTarget ? openMic.audioStats : null}
+                remoteLevel={isMicTarget ? openMic.remoteLevel : 0}
                 onToggleMic={() => handleToggleMic(info.username)}
                 onStartTalk={openMic.startTalking}
                 onStopTalk={openMic.stopTalking}
