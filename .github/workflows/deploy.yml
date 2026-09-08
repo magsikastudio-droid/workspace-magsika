@@ -126,10 +126,6 @@ jobs:
         run: |
           ssh vps "/root/admin-dashboard/backend/.venv/bin/pip install -r /root/admin-dashboard/backend/requirements.txt -q"
 
-      - name: SECURITY - rotate TURN secret (sekali, ke-expose gak sengaja di commit debug sebelumnya)
-        run: |
-          ssh vps "rm -f /root/admin-dashboard/.turn_secret" && echo "TURN secret lama dihapus, akan di-generate ulang di step berikutnya"
-
       - name: Setup TURN server (coturn) on VPS
         run: |
           ssh vps bash << 'ENDSSH'
