@@ -2461,6 +2461,20 @@ async def get_daily_update_status(task_id: str, current_user: dict = Depends(get
     }
 
 
+@app.delete("/tasks/{task_id}/daily-update-confirmation")
+async def revoke_daily_update_confirmation(task_id: str, current_user: dict = Depends(get_current_user)):
+    """Admin/PM manual batalkan konfirmasi update harian — misal ketauan
+    filenya udah dihapus lagi di Telegram (bot gak bisa tau ini otomatis,
+    Telegram gak ngasih event pesan dihapus buat bot di grup biasa)."""
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_code = jkt_now.strftime("%y%m%d")
+    await db.daily_updates.delete_one({"task_id": task_id, "date_code": today_code})
+    await broadcast_all({"type": "daily_update_confirmed", "task_id": task_id, "revoked": True})
+    return {"ok": True}
+
+
 @app.delete("/tasks/{task_id}")
 async def delete_task(task_id: str, current_user: dict = Depends(get_current_user)):
     object_id = to_object_id(task_id)
@@ -3895,14 +3909,18 @@ async def telegram_webhook(update: Dict[str, Any]):
             try:
                 import httpx
                 async with httpx.AsyncClient(timeout=10) as client:
-                    await client.post(
+                    resp = await client.post(
                         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setMessageReaction",
                         json={
-                            "chat_id": chat_id,
+                            "chat_id": int(chat_id),
                             "message_id": message_id,
                             "reaction": [{"type": "emoji", "emoji": "✅"}],
                         },
                     )
+                    if resp.status_code != 200:
+                        print(f"[Telegram webhook] reaksi ditolak Telegram ({resp.status_code}): {resp.text}")
+                    else:
+                        print(f"[Telegram webhook] reaksi terkirim OK buat message_id={message_id}")
             except Exception as e:
                 print(f"[Telegram webhook] gagal kasih reaksi: {e}")
     except Exception as e:

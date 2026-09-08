@@ -1181,6 +1181,20 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
       .catch(() => { if (alive) setDailyUpdateConfirmed(null); });
     return () => { alive = false; };
   }, [task.id]);
+  const [revoking, setRevoking] = useState(false);
+  const handleRevokeConfirmation = async () => {
+    if (!confirm("Batalkan konfirmasi update hari ini? Task jadi 'belum update' lagi — pakai ini kalau ketauan filenya sudah dihapus di Telegram.")) return;
+    setRevoking(true);
+    try {
+      await api.delete(`/tasks/${task.id}/daily-update-confirmation`);
+      setDailyUpdateConfirmed(false);
+      toast.success("Konfirmasi update hari ini dibatalkan.");
+    } catch {
+      toast.error("Gagal membatalkan konfirmasi.");
+    } finally {
+      setRevoking(false);
+    }
+  };
   const handleCopyCode = async () => {
     try {
       await navigator.clipboard.writeText(dailyCode);
@@ -1278,6 +1292,15 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
               Pakai buat nama file yang dikirim ke Telegram, tambahin nomor gambar di belakang. Contoh:{" "}
               <span className="font-mono font-semibold">{dailyCode} 01.png</span>
             </p>
+            {isAdminOrPM && dailyUpdateConfirmed === true && (
+              <button
+                onClick={handleRevokeConfirmation}
+                disabled={revoking}
+                className="mt-2 text-[11px] font-semibold text-rose-500 hover:text-rose-600 hover:underline disabled:opacity-50"
+              >
+                {revoking ? "Membatalkan..." : "Batalkan konfirmasi (misal filenya sudah dihapus di Telegram)"}
+              </button>
+            )}
           </div>
 
           <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
