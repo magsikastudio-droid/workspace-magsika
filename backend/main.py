@@ -3708,8 +3708,16 @@ async def send_fcm(task_title: str, assignee: str):
     if not FCM_AVAILABLE:
         return
     try:
+        # "Task menunggu review" cuma relevan buat admin/PM — talent yang
+        # baru kirim task-nya sendiri (atau talent lain) gak perlu ketiban
+        # alarm ini di HP/app mereka.
+        admin_pm_usernames = {
+            u["username"] async for u in db.users.find(
+                {"role": {"$in": ["admin", "pm"]}}, {"username": 1}
+            )
+        }
         tokens_docs = await db.fcm_tokens.find().to_list(500)
-        tokens = [d["token"] for d in tokens_docs if d.get("token")]
+        tokens = [d["token"] for d in tokens_docs if d.get("token") and d.get("username") in admin_pm_usernames]
         if not tokens:
             print("[FCM] No tokens found")
             return
