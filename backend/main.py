@@ -3915,7 +3915,7 @@ async def telegram_webhook(update: Dict[str, Any]):
                         json={
                             "chat_id": int(chat_id),
                             "message_id": message_id,
-                            "reaction": [{"type": "emoji", "emoji": "✅"}],
+                            "reaction": [{"type": "emoji", "emoji": "👍"}],
                         },
                     )
                     if resp.status_code != 200:
