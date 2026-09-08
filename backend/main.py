@@ -3874,6 +3874,7 @@ async def telegram_webhook(update: Dict[str, Any]):
             t for t in active_tasks
             if _strip_assignee_suffix(t.get("title", ""), t.get("assignee", "")).strip().upper() == project_name_norm
         ]
+        print(f"[Telegram webhook] parsed date={date_code} project='{project_name_norm}' -> {len(hits)} task cocok", flush=True)
         if not hits:
             return {"ok": True}
 
@@ -3918,13 +3919,13 @@ async def telegram_webhook(update: Dict[str, Any]):
                         },
                     )
                     if resp.status_code != 200:
-                        print(f"[Telegram webhook] reaksi ditolak Telegram ({resp.status_code}): {resp.text}")
+                        print(f"[Telegram webhook] reaksi ditolak Telegram ({resp.status_code}): {resp.text}", flush=True)
                     else:
-                        print(f"[Telegram webhook] reaksi terkirim OK buat message_id={message_id}")
+                        print(f"[Telegram webhook] reaksi terkirim OK buat message_id={message_id}", flush=True)
             except Exception as e:
-                print(f"[Telegram webhook] gagal kasih reaksi: {e}")
+                print(f"[Telegram webhook] gagal kasih reaksi: {e}", flush=True)
     except Exception as e:
-        print(f"[Telegram webhook] error: {e}")
+        print(f"[Telegram webhook] error: {e}", flush=True)
     return {"ok": True}
 
 
