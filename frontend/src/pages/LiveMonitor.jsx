@@ -32,7 +32,7 @@ const WS_BASE = resolved.replace(/^http/, "ws");
 /* ═══════════════════════════════════════════════════════════
    StreamCard — tampilkan frame JPEG dari streamer
 ═══════════════════════════════════════════════════════════ */
-function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEndStream, micReady, micActive, talking, audioBlocked, connState, onToggleMic, onStartTalk, onStopTalk, onUnlockAudio }) {
+function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEndStream, micReady, micActive, talking, audioBlocked, connState, audioStats, onToggleMic, onStartTalk, onStopTalk, onUnlockAudio }) {
   const containerRef = useRef(null);
   const [ending, setEnding] = useState(false);
 
@@ -118,6 +118,16 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEnd
           connState === "failed" ? "bg-rose-600 text-white" : "bg-amber-500/90 text-white"
         }`}>
           mic: {connState}
+        </div>
+      )}
+      {/* Bukti PASTI data suara ngalir atau enggak (getStats) — lepas dari
+          soal speaker/output device. Kalau bytesReceived stuck di angka
+          yang sama pas lawan bicara lagi tekan "Tahan Bicara", masalahnya
+          di pengiriman data, bukan di pemutaran suara. */}
+      {micActive && audioStats && (
+        <div className="absolute top-11 right-2 z-10 rounded-md bg-black/70 px-2 py-1 text-[9px] font-mono text-white leading-tight">
+          <div>📤 kirim: {audioStats.bytesSent}B</div>
+          <div>📥 terima: {audioStats.bytesReceived}B ({audioStats.packetsReceived}pkt)</div>
         </div>
       )}
 
@@ -471,6 +481,7 @@ export default function LiveMonitor() {
                 talking={isMicTarget && openMic.talking}
                 audioBlocked={isMicTarget && openMic.audioBlocked}
                 connState={isMicTarget ? openMic.connState : ""}
+                audioStats={isMicTarget ? openMic.audioStats : null}
                 onToggleMic={() => handleToggleMic(info.username)}
                 onStartTalk={openMic.startTalking}
                 onStopTalk={openMic.stopTalking}
