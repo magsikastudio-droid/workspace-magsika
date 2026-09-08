@@ -32,7 +32,7 @@ const WS_BASE = resolved.replace(/^http/, "ws");
 /* ═══════════════════════════════════════════════════════════
    StreamCard — tampilkan frame JPEG dari streamer
 ═══════════════════════════════════════════════════════════ */
-function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEndStream, micReady, micActive, talking, onToggleMic, onStartTalk, onStopTalk }) {
+function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEndStream, micReady, micActive, talking, audioBlocked, onToggleMic, onStartTalk, onStopTalk, onUnlockAudio }) {
   const containerRef = useRef(null);
   const [ending, setEnding] = useState(false);
 
@@ -129,6 +129,16 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEnd
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Autoplay suara diblokir browser — koneksi sukses tapi gak
+                bunyi sampai diklik manual. */}
+            {micActive && audioBlocked && (
+              <button
+                onClick={onUnlockAudio}
+                className="flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-white animate-pulse hover:bg-amber-600"
+              >
+                🔊 Aktifkan Suara
+              </button>
+            )}
             {/* Push-to-talk — tekan & tahan, cuma muncul kalau mic sudah tersambung */}
             {micActive && (
               <button
@@ -449,9 +459,11 @@ export default function LiveMonitor() {
                 micReady={openMic.wsConnected}
                 micActive={isMicTarget && openMic.micActive}
                 talking={isMicTarget && openMic.talking}
+                audioBlocked={isMicTarget && openMic.audioBlocked}
                 onToggleMic={() => handleToggleMic(info.username)}
                 onStartTalk={openMic.startTalking}
                 onStopTalk={openMic.stopTalking}
+                onUnlockAudio={openMic.unlockAudio}
               />
             );
           })}

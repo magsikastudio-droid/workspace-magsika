@@ -4,7 +4,7 @@ import { useStream } from "../context/StreamContext";
 
 /* Tombol stream di sidebar — UI wrapper tipis dari StreamContext */
 export default function StreamButton({ collapsed = false }) {
-  const { streaming, loading, startStream, stopStream, micActive, talking, startTalking, stopTalking } = useStream();
+  const { streaming, loading, startStream, stopStream, micActive, talking, startTalking, stopTalking, audioBlocked, unlockAudio } = useStream();
 
   /* ── Floating indicator di tengah atas saat streaming ──
      Open Mic: begitu admin sambungin dari Live Monitor, tombol "Tahan
@@ -18,6 +18,14 @@ export default function StreamButton({ collapsed = false }) {
         <span className="w-2 h-2 rounded-full bg-white absolute" />
         SEDANG STREAMING
       </div>
+      {micActive && audioBlocked && (
+        <button
+          onClick={unlockAudio}
+          className="flex items-center gap-1.5 rounded-full bg-amber-500 px-4 py-2 text-xs font-bold shadow-xl text-white animate-pulse hover:bg-amber-600"
+        >
+          🔊 Aktifkan Suara
+        </button>
+      )}
       {micActive && (
         <button
           onMouseDown={startTalking}

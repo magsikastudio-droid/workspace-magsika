@@ -34,6 +34,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
   const [streamers, setStreamers] = useState([]); // viewer only: [{cid, username, task}]
   const [micActive, setMicActive] = useState(false); // koneksi audio ke lawan bicara sudah terbentuk
   const [talking, setTalking] = useState(false); // lagi push-to-talk aktif
+  const [audioBlocked, setAudioBlocked] = useState(false); // autoplay browser diblokir, butuh klik manual
 
   const wsRef = useRef(null);
   const pcRef = useRef(null);
@@ -49,6 +50,14 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
   /* ── audio element buat playback suara lawan bicara ── */
   const attachRemoteAudio = useCallback((el) => { remoteAudioElRef.current = el; }, []);
 
+  /* ── Dipanggil dari tombol "Aktifkan Suara" kalau autoplay diblokir —
+     play() dari dalam click handler asli SELALU diizinkan browser. ── */
+  const unlockAudio = useCallback(() => {
+    remoteAudioElRef.current?.play()
+      .then(() => setAudioBlocked(false))
+      .catch((err) => console.warn("[OpenMic] unlockAudio masih gagal:", err));
+  }, []);
+
   const _ensurePeerConnection = useCallback(() => {
     if (pcRef.current) return pcRef.current;
     const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
@@ -60,7 +69,15 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     pc.ontrack = (e) => {
       if (remoteAudioElRef.current) {
         remoteAudioElRef.current.srcObject = e.streams[0];
-        remoteAudioElRef.current.play().catch(() => {});
+        remoteAudioElRef.current.play()
+          .then(() => setAudioBlocked(false))
+          .catch((err) => {
+            // Browser (Chrome dkk) sering diam-diam blokir autoplay audio yang
+            // dipicu dari event WebRTC (bukan klik langsung) — koneksinya
+            // sukses tapi suaranya gak pernah bunyi. Kasih tombol manual.
+            console.warn("[OpenMic] autoplay diblokir:", err.name, err.message);
+            setAudioBlocked(true);
+          });
       }
     };
     pc.oniceconnectionstatechange = () => {
@@ -184,6 +201,7 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
     peerCidRef.current = null;
     pendingIceRef.current = [];
     setMicActive(false);
+    setAudioBlocked(false);
   }, [stopTalking]);
 
   /* ── koneksi signaling /ws/rtc ── */
@@ -263,8 +281,8 @@ export function useOpenMic({ role, token, username, task = "", iceServers, enabl
   }, [token, role, username, enabled]);
 
   return {
-    wsConnected, streamers, micActive, talking,
+    wsConnected, streamers, micActive, talking, audioBlocked,
     connectToStreamer, startTalking, stopTalking, disconnect,
-    attachRemoteAudio,
+    attachRemoteAudio, unlockAudio,
   };
 }
