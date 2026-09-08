@@ -107,7 +107,7 @@ jobs:
           ssh vps bash << 'ENVSSH'
           ENV=/root/admin-dashboard/backend/.env
           touch "$ENV"
-          for KEY in ANTHROPIC_API_KEY GMAIL_USER GMAIL_APP_PASSWORD GMAIL_FROM SMTP_USER SMTP_PASS SMTP_HOST SMTP_PORT SMTP_FROM; do
+          for KEY in ANTHROPIC_API_KEY GMAIL_USER GMAIL_APP_PASSWORD GMAIL_FROM SMTP_USER SMTP_PASS SMTP_HOST SMTP_PORT SMTP_FROM TELEGRAM_BOT_TOKEN; do
             sed -i "/^${KEY}=/d" "$ENV"
           done
           ENVSSH
@@ -120,6 +120,7 @@ jobs:
           ssh vps "echo 'SMTP_FROM=noreply@magsikastudio.com' >> /root/admin-dashboard/backend/.env"
           ssh vps "echo 'SMTP_USER=${{ secrets.SMTP_USER }}' >> /root/admin-dashboard/backend/.env"
           ssh vps "echo 'SMTP_PASS=${{ secrets.SMTP_PASS }}' >> /root/admin-dashboard/backend/.env"
+          ssh vps "echo 'TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}' >> /root/admin-dashboard/backend/.env"
 
       - name: Install Python dependencies on VPS
         run: |

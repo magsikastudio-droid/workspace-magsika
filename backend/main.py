@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import json
 import base64
 import uuid
@@ -60,6 +61,16 @@ except Exception as _e:
 
 BACKEND_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+# ─── Telegram bot: konfirmasi otomatis "kode update harian" ───────────────────
+# Bot baca pesan di topik "Update Progress" grup Telegram tim, cocokin nama
+# file/caption-nya ke format kode update harian (YYMMDD - NAMA TASK), lalu
+# nandain task itu sebagai "sudah kirim update hari ini" di DB — dipakai buat
+# gerbang sebelum talent bisa submit task ke review.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_GROUP_CHAT_ID = os.getenv("TELEGRAM_GROUP_CHAT_ID", "-1003611845591")
+TELEGRAM_UPDATE_TOPIC_ID = os.getenv("TELEGRAM_UPDATE_TOPIC_ID", "2")
+TELEGRAM_TOPIC_LINK = "https://t.me/c/3611845591/2"
 
 def _call_ai(prompt: str, max_tokens: int = 800) -> str:
     if not ANTHROPIC_API_KEY:
@@ -2347,6 +2358,18 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
     payload = task.dict(exclude_unset=True)
     if not payload:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
+
+    # Talent mau submit ke review → wajib udah kirim preview hari ini ke
+    # topik "Update Progress" Telegram (dicek otomatis lewat bot, lihat
+    # /telegram/webhook) dengan kode update harian yang cocok buat task ini.
+    # Admin/PM gak kena gerbang ini (mereka lewat TelegramConfirmModal manual).
+    if payload.get("status") == "menunggu_review" and current_user.get("role") not in ["admin", "pm"]:
+        jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+        today_code = jkt_now.strftime("%y%m%d")
+        confirmed = await db.daily_updates.find_one({"task_id": task_id, "date_code": today_code})
+        if not confirmed:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="belum_kirim_update_harian")
+
     object_id = to_object_id(task_id)
     try:
         await db.tasks.update_one({"_id": object_id}, {"$set": payload})
@@ -2422,6 +2445,20 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
 
     await broadcast_all({"type": "tasks_updated"})
     return {"task": format_task(updated)}
+
+
+@app.get("/tasks/{task_id}/daily-update-status")
+async def get_daily_update_status(task_id: str, current_user: dict = Depends(get_current_user)):
+    """Dipakai frontend buat nampilin status 'sudah/belum kirim update hari
+    ini' di modal task, sebelum talent coba submit ke review."""
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_code = jkt_now.strftime("%y%m%d")
+    doc = await db.daily_updates.find_one({"task_id": task_id, "date_code": today_code})
+    return {
+        "confirmed": bool(doc),
+        "date_code": today_code,
+        "filenames": (doc or {}).get("filenames", []),
+    }
 
 
 @app.delete("/tasks/{task_id}")
@@ -3750,6 +3787,93 @@ async def send_fcm(task_title: str, assignee: str):
         print(f"[FCM] Sent {success}/{len(tokens)}")
     except Exception as e:
         print(f"[FCM] Send error: {e}")
+
+
+# ─── Telegram bot webhook — konfirmasi otomatis kode update harian ───────────
+# Kode update harian formatnya "YYMMDD - NAMA TASK" (lihat dailyUpdateCode di
+# Todo.jsx) — tim kirim file/preview ke topik "Update Progress" pakai nama
+# file/caption itu, bot ini yang baca tiap pesan masuk lewat webhook Telegram,
+# cocokin ke task aktif yang judulnya sama, terus nandain "sudah update hari
+# ini" di db.daily_updates. Dipakai buat gerbang submit-ke-review di
+# PATCH /tasks/{id} (lihat update_task).
+_DAILY_CODE_RE = re.compile(r"^\s*(\d{6})\s*-\s*(.+?)(?:\s+\d{1,3})?(?:\.\w+)?\s*$")
+
+
+def _parse_daily_update_text(text: str):
+    if not text:
+        return None
+    m = _DAILY_CODE_RE.match(text.strip())
+    if not m:
+        return None
+    date_code = m.group(1)
+    project_name = m.group(2).strip()
+    if not project_name:
+        return None
+    return date_code, project_name
+
+
+@app.post("/telegram/webhook")
+async def telegram_webhook(update: Dict[str, Any]):
+    """Endpoint publik dipanggil Telegram tiap ada pesan baru (di-set sekali
+    lewat Bot API setWebhook). Tidak butuh auth user — validasi cukup dari
+    cocok/tidaknya chat_id & topic_id sama punya kita."""
+    try:
+        msg = update.get("message") or update.get("channel_post") or {}
+        if not msg:
+            return {"ok": True}
+
+        chat_id = str(msg.get("chat", {}).get("id", ""))
+        if TELEGRAM_GROUP_CHAT_ID and chat_id != TELEGRAM_GROUP_CHAT_ID:
+            return {"ok": True}
+
+        thread_id = str(msg.get("message_thread_id", "")) if msg.get("message_thread_id") is not None else ""
+        if TELEGRAM_UPDATE_TOPIC_ID and thread_id != TELEGRAM_UPDATE_TOPIC_ID:
+            return {"ok": True}
+
+        # Nama file kalau dikirim sebagai Document (utuh nama aslinya), atau
+        # caption/teks polos kalau dikirim sebagai Photo/Video (Telegram
+        # rename file media terkompresi, jadi nama aslinya cuma nyimpen di caption).
+        filename = ((msg.get("document") or {}).get("file_name") or "").strip()
+        candidate_text = filename or (msg.get("caption") or "") or (msg.get("text") or "")
+
+        parsed = _parse_daily_update_text(candidate_text)
+        if not parsed:
+            return {"ok": True}
+        date_code, project_name = parsed
+        project_name_norm = project_name.strip().upper()
+
+        active_tasks = await db.tasks.find({"status": {"$nin": ["done", "failed"]}}).to_list(1000)
+        hits = [t for t in active_tasks if (t.get("title") or "").strip().upper() == project_name_norm]
+        if not hits:
+            return {"ok": True}
+
+        sender = msg.get("from", {})
+        sender_name = sender.get("username") or sender.get("first_name") or "unknown"
+
+        for t in hits:
+            task_id = str(t["_id"])
+            await db.daily_updates.update_one(
+                {"task_id": task_id, "date_code": date_code},
+                {
+                    "$set": {
+                        "task_id": task_id,
+                        "date_code": date_code,
+                        "confirmed_at": datetime.now(timezone.utc).isoformat(),
+                        "sender": sender_name,
+                    },
+                    "$addToSet": {"filenames": candidate_text},
+                },
+                upsert=True,
+            )
+            await broadcast_all({
+                "type": "daily_update_confirmed",
+                "task_id": task_id,
+                "task_title": t.get("title", ""),
+                "date_code": date_code,
+            })
+    except Exception as e:
+        print(f"[Telegram webhook] error: {e}")
+    return {"ok": True}
 
 
 async def send_fcm_to_username(username: str, title: str, body: str, data: dict = None):
