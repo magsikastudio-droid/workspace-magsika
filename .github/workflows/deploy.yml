@@ -241,6 +241,18 @@ jobs:
           openssl x509 -in /etc/letsencrypt/live/workspace.magsikastudio.com/fullchain.pem -noout -dates
           ENDSSH
 
+      - name: DEBUG - cek log reaksi bot Telegram v2 (temp)
+        run: |
+          {
+            ssh vps "journalctl -u admin-dashboard --no-pager -n 5000 | grep -i 'telegram webhook' | tail -100"
+          } > telegram-debug.txt 2>&1 || true
+          cat telegram-debug.txt
+          git config user.name "debug-bot"
+          git config user.email "debug-bot@users.noreply.github.com"
+          git add telegram-debug.txt
+          git commit -m "debug: log reaksi bot Telegram v2 [skip ci]" || echo "nothing to commit"
+          git push || echo "push gagal"
+
       - name: Deploy nginx config and reload
         run: |
           scp nginx/workspace.conf vps:/etc/nginx/sites-available/admin-dashboard
