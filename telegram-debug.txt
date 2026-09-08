@@ -1,4 +1,0 @@
-Warning: Permanently added '103.247.11.124' (ED25519) to the list of known hosts.
-Sep 08 13:22:42 debian uvicorn[25373]: [Telegram webhook] parsed date=260908 project='VTUBER DRAKIAVEL11:40' -> 0 task cocok
-Sep 08 13:22:50 debian uvicorn[25373]: [Telegram webhook] parsed date=260908 project='VTUBER DRAKIAVEL' -> 1 task cocok
-Sep 08 13:22:51 debian uvicorn[25373]: [Telegram webhook] reaksi ditolak Telegram (400): {"ok":false,"error_code":400,"description":"Bad Request: REACTION_INVALID"}
