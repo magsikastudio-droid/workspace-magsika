@@ -32,7 +32,7 @@ const WS_BASE = resolved.replace(/^http/, "ws");
 /* ═══════════════════════════════════════════════════════════
    StreamCard — tampilkan frame JPEG dari streamer
 ═══════════════════════════════════════════════════════════ */
-function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEndStream, micReady, micActive, talking, audioBlocked, onToggleMic, onStartTalk, onStopTalk, onUnlockAudio }) {
+function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEndStream, micReady, micActive, talking, audioBlocked, connState, onToggleMic, onStartTalk, onStopTalk, onUnlockAudio }) {
   const containerRef = useRef(null);
   const [ending, setEnding] = useState(false);
 
@@ -110,6 +110,16 @@ function StreamCard({ id, username, task, avatar, brb, imgRef, canControl, onEnd
           <Maximize2 size={13} />
         </button>
       </div>
+
+      {/* Status koneksi asli WebRTC — biar kelihatan langsung di layar, gak
+          perlu buka console buat tau lagi 'checking'/gagal di mana. */}
+      {connState && !micActive && (
+        <div className={`absolute top-11 right-2 z-10 rounded-md px-2 py-0.5 text-[9px] font-mono font-semibold ${
+          connState === "failed" ? "bg-rose-600 text-white" : "bg-amber-500/90 text-white"
+        }`}>
+          mic: {connState}
+        </div>
+      )}
 
       {/* Bottom bar */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent px-3 py-2.5">
@@ -460,6 +470,7 @@ export default function LiveMonitor() {
                 micActive={isMicTarget && openMic.micActive}
                 talking={isMicTarget && openMic.talking}
                 audioBlocked={isMicTarget && openMic.audioBlocked}
+                connState={isMicTarget ? openMic.connState : ""}
                 onToggleMic={() => handleToggleMic(info.username)}
                 onStartTalk={openMic.startTalking}
                 onStopTalk={openMic.stopTalking}
