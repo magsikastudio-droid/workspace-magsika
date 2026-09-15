@@ -241,6 +241,16 @@ jobs:
           openssl x509 -in /etc/letsencrypt/live/workspace.magsikastudio.com/fullchain.pem -noout -dates
           ENDSSH
 
+      - name: DEBUG - cek log setup webhook Telegram, aman (gak print token) (temp)
+        run: |
+          ssh vps "journalctl -u admin-dashboard --no-pager -n 200 | grep -i '\[Telegram\]'" > telegram-webhook-debug.txt 2>&1 || true
+          cat telegram-webhook-debug.txt
+          git config user.name "debug-bot"
+          git config user.email "debug-bot@users.noreply.github.com"
+          git add telegram-webhook-debug.txt
+          git commit -m "debug: log setup webhook telegram (aman, no secret) [skip ci]" || echo "nothing to commit"
+          git push || echo "push gagal"
+
       - name: Deploy nginx config and reload
         run: |
           scp nginx/workspace.conf vps:/etc/nginx/sites-available/admin-dashboard
