@@ -147,7 +147,7 @@ const getElapsed = (task, now) => {
 /* ─── main page ─────────────────────────────────────────────────── */
 export default function Todo() {
   const { user } = useAuth();
-  const { tasks, loading, fetchTasks, createTask, updateTask, deleteTask } = useTasks();
+  const { tasks, initialLoading, fetchTasks, createTask, updateTask, deleteTask } = useTasks();
   const { orders } = useOrders();
   const now = useNow();
 
@@ -550,7 +550,7 @@ export default function Todo() {
       </div>
 
       {/* Belum Terhandle — order aktif yang belum punya task hari ini */}
-      {!loading && viewMode === "list" && unhandledOrders.length > 0 && (
+      {!initialLoading && viewMode === "list" && unhandledOrders.length > 0 && (
         <UnhandledSection
           orders={unhandledOrders}
           isAdminOrPM={isAdminOrPM}
@@ -568,7 +568,7 @@ export default function Todo() {
       )}
 
       {/* Content */}
-      {loading ? (
+      {initialLoading ? (
         <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-400">Memuat task...</div>
       ) : visibleTasks.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
