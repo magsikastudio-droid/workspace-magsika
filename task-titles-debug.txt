@@ -1,0 +1,18 @@
+'3D Temple — Andre' | assignee: 'Andre' | status: in_revision
+'Quokka Revisi pinggiran' | assignee: 'Andre' | status: in_revision
+'Curly Hair — Andre' | assignee: 'Andre' | status: in_revision
+'Bunny revisi' | assignee: 'Hadziq' | status: in_revision
+'OWL VTUBER' | assignee: 'Hadziq' | status: menunggu_review
+'Rigging hair Physic' | assignee: 'Hadziq' | status: menunggu_review
+'Hair Vtuber' | assignee: 'Hadziq' | status: pending
+'Vtuber drakiavel' | assignee: 'kevin' | status: in progress
+'Model mobil ' | assignee: 'Andre' | status: in progress
+'Government Uniform' | assignee: 'kevin' | status: pending
+'3D Vtuber model' | assignee: 'Hadziq' | status: in progress
+'OWL VTUBER' | assignee: 'kevin' | status: pending
+'Government Uniform' | assignee: 'Stefanus' | status: pending
+'FOX AR' | assignee: 'kevin' | status: pending
+'Lizard Hoppers' | assignee: 'Novita ' | status: pending
+'Hair Model' | assignee: 'Hadziq' | status: pending
+'REPAIR ASHER VRCHAT' | assignee: 'kevin' | status: pending
+'Batty Ghost' | assignee: 'Andre' | status: pending
