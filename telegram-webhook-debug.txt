@@ -1,4 +1,3 @@
-Sep 15 16:19:29 debian uvicorn[22380]: [Telegram webhook] parsed date=260915 project='3 SHOULDER UGC' -> 0 task cocok
 Sep 15 16:34:48 debian uvicorn[23378]: [Telegram webhook] parsed date=260915 project='HAIR VTUBER' -> 1 task cocok
 Sep 15 16:34:50 debian uvicorn[23378]: [Telegram webhook] reaksi terkirim OK buat message_id=10046
 Sep 15 16:34:57 debian uvicorn[23378]: [Telegram webhook] parsed date=260915 project='3 SHOULDER UGC' -> 0 task cocok
