@@ -285,41 +285,6 @@ jobs:
           scp nginx/queue-magsika.conf vps:/etc/nginx/sites-available/queue-magsika
           ssh vps "ln -sf /etc/nginx/sites-available/admin-dashboard /etc/nginx/sites-enabled/admin-dashboard && ln -sf /etc/nginx/sites-available/queue-magsika /etc/nginx/sites-enabled/queue-magsika && nginx -t && systemctl reload nginx && echo 'nginx reloaded OK'"
 
-      - name: DEBUG - cek log webhook Telegram hari ini
-        run: |
-          ssh vps "journalctl -u admin-dashboard --no-pager --since today | grep -i '\[Telegram webhook\]'" > telegram-webhook-debug.txt || true
-          cat telegram-webhook-debug.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add telegram-webhook-debug.txt
-          git diff --cached --quiet || git commit -m "debug: cek log webhook Telegram hari ini [skip ci]"
-          git push || true
-
-      - name: DEBUG - dump judul task aktif (repr, buat cek karakter tersembunyi)
-        run: |
-          ssh vps bash << 'ENDSSH' > task-titles-debug.txt || true
-          cd /root/admin-dashboard/backend
-          .venv/bin/python3 -c "
-          import asyncio
-          from dotenv import load_dotenv
-          load_dotenv()
-          import os
-          from motor.motor_asyncio import AsyncIOMotorClient
-
-          async def main():
-              client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017'))
-              db = client[os.getenv('DB_NAME', 'admin_dashboard')]
-              async for t in db.tasks.find({'status': {'\$nin': ['done', 'failed']}}, {'title': 1, 'assignee': 1, 'status': 1}):
-                  print(repr(t.get('title')), '| assignee:', repr(t.get('assignee')), '| status:', t.get('status'))
-
-          asyncio.run(main())
-          "
-          ENDSSH
-          cat task-titles-debug.txt
-          git add task-titles-debug.txt
-          git diff --cached --quiet || git commit -m "debug: dump judul task aktif [skip ci]"
-          git push || true
-
       - name: Verify deployment
         run: |
           sleep 3
