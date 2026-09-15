@@ -6,7 +6,35 @@ on:
       - main
 
 jobs:
+  # Upload installer desktop-app ke VPS itu lambat banget (~90 KB/s efektif,
+  # ternyata bukan gara-gara runner Windows — udah dicoba pindah ke runner
+  # Linux, tetap ~19 menit buat file ~100MB — jadi bottleneck-nya di jalur
+  # ke VPS-nya sendiri/pihak hosting, bukan sesuatu yang bisa dipercepat dari
+  # sini). Daripada nunggu itu tiap kali push (padahal desktop-app/ jarang
+  # berubah — kebanyakan push cuma ubah backend/frontend), job ini cek dulu:
+  # kalau folder desktop-app/ gak ikut berubah di commit ini, build+upload-nya
+  # di-skip total.
+  check-desktop-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: check
+        run: |
+          if git rev-parse HEAD^ >/dev/null 2>&1 && git diff --quiet HEAD^ HEAD -- desktop-app/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "desktop-app/ tidak berubah, skip build+upload installer"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "desktop-app/ berubah (atau commit pertama), lanjut build+upload"
+          fi
+
   build-desktop-app:
+    needs: check-desktop-changes
+    if: needs.check-desktop-changes.outputs.changed == 'true'
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -43,11 +71,11 @@ jobs:
         run: |
           curl -fsSL -o desktop-app/dist/rustdesk-installer.exe "https://github.com/rustdesk/rustdesk/releases/download/1.4.9/rustdesk-1.4.9-x86_64.exe"
 
-      # Runner windows-latest punya bandwidth keluar yang jauh lebih kecil
-      # dibanding ubuntu-latest — scp langsung dari sini ke VPS bisa makan
-      # 15-20 menit padahal cuma file installer belasan-puluhan MB. Jadi
-      # taruh dulu hasil build sebagai artifact (antar-job di dalam GitHub,
-      # cepat), baru job Linux di bawah yang scp ke VPS.
+      # Taruh dulu hasil build sebagai artifact (transfer antar-job di dalam
+      # GitHub sendiri, cepat), baru job di bawah yang scp ke VPS — scp-nya
+      # sendiri tetap lambat (lihat catatan di check-desktop-changes di atas),
+      # tapi job ini juga guna dipisah biar kalau build gagal gak nyampur
+      # sama proses upload.
       - name: Upload installer as artifact
         uses: actions/upload-artifact@v4
         with:
