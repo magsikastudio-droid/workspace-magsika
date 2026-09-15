@@ -18,7 +18,7 @@ except ImportError:
     certifi = None
 from bson import ObjectId
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -71,6 +71,41 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_GROUP_CHAT_ID = os.getenv("TELEGRAM_GROUP_CHAT_ID", "-1003611845591")
 TELEGRAM_UPDATE_TOPIC_ID = os.getenv("TELEGRAM_UPDATE_TOPIC_ID", "2")
 TELEGRAM_TOPIC_LINK = "https://t.me/c/3611845591/2"
+TELEGRAM_WEBHOOK_PATH = "/telegram/webhook"
+# Diturunkan dari token sendiri (bukan disimpan terpisah) — dikirim balik
+# oleh Telegram di header X-Telegram-Bot-Api-Secret-Token tiap update asli.
+# Kalau ada yang coba POST langsung ke endpoint webhook kita (bukan lewat
+# Telegram beneran), header ini gak bakal cocok dan langsung ditolak.
+TELEGRAM_WEBHOOK_SECRET = (
+    hashlib.sha256(TELEGRAM_BOT_TOKEN.encode()).hexdigest()[:32] if TELEGRAM_BOT_TOKEN else ""
+)
+
+
+async def _setup_telegram_webhook():
+    """Pasang ulang webhook bot Telegram ke server kita SETIAP kali backend
+    nyala/deploy. Ini jaring pengaman kalau token bot ke-kompromi lagi di
+    masa depan (siapa pun yang pegang token bisa manggil setWebhook ke
+    server LAIN dan bajak update-nya) — begitu kita restart backend
+    (misal abis rotate token & deploy), webhook otomatis kebalikin ke kita
+    lagi, gak perlu ada yang manual manggil Telegram API dari browser."""
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    try:
+        import httpx
+        webhook_url = f"https://workspace.magsikastudio.com/api{TELEGRAM_WEBHOOK_PATH}"
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
+                json={"url": webhook_url, "secret_token": TELEGRAM_WEBHOOK_SECRET, "allowed_updates": ["message"]},
+            )
+            data = resp.json()
+            if data.get("ok"):
+                print(f"[Telegram] webhook ke-set ulang ke {webhook_url}", flush=True)
+            else:
+                print(f"[Telegram] gagal set webhook: {data}", flush=True)
+    except Exception as e:
+        print(f"[Telegram] error set webhook: {e}", flush=True)
+
 
 def _call_ai(prompt: str, max_tokens: int = 800) -> str:
     if not ANTHROPIC_API_KEY:
@@ -951,6 +986,7 @@ async def on_startup():
 
     await _load_work_hours_cache()
     await _load_reminder_interval_cache()
+    await _setup_telegram_webhook()
 
     if scheduler:
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
@@ -3976,10 +4012,13 @@ def _parse_daily_update_text(text: str):
 
 
 @app.post("/telegram/webhook")
-async def telegram_webhook(update: Dict[str, Any]):
-    """Endpoint publik dipanggil Telegram tiap ada pesan baru (di-set sekali
-    lewat Bot API setWebhook). Tidak butuh auth user — validasi cukup dari
-    cocok/tidaknya chat_id & topic_id sama punya kita."""
+async def telegram_webhook(update: Dict[str, Any], request: Request):
+    """Endpoint publik dipanggil Telegram tiap ada pesan baru (di-set
+    otomatis tiap startup lewat _setup_telegram_webhook). Diverifikasi pakai
+    header rahasia (secret_token) biar cuma Telegram beneran yang bisa
+    manggil endpoint ini — bukan sembarang orang yang nemu URL-nya."""
+    if TELEGRAM_WEBHOOK_SECRET and request.headers.get("x-telegram-bot-api-secret-token") != TELEGRAM_WEBHOOK_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         msg = update.get("message") or update.get("channel_post") or {}
         if not msg:
