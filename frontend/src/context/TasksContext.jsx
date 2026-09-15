@@ -9,6 +9,15 @@ export function TasksProvider({ children }) {
   const { user } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
+  // Beda dari `loading` — cuma true SEBELUM data pertama kali kebaca. Tiap
+  // ada perubahan task (hapus/approve/dll, dari siapa pun), WS broadcast
+  // "tasks_updated" ke SEMUA klien yang lagi buka To Do, yang bikin
+  // fetchTasks() jalan lagi di background. Kalau halaman nge-gate render-nya
+  // pakai `loading` biasa, list-nya sempat diganti "Memuat..." tiap kali itu
+  // kejadian — kelihatan kayak "refresh" dan scroll balik ke atas walau
+  // datanya sendiri gak berubah drastis. Pakai `initialLoading` buat render
+  // gate, biar refetch di background gak nampilin placeholder lagi.
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchTasks = useCallback(
     async (date) => {
@@ -21,6 +30,7 @@ export function TasksProvider({ children }) {
         console.error("Failed to fetch tasks", error);
       } finally {
         setLoading(false);
+        setInitialLoading(false);
       }
     },
     []
@@ -54,7 +64,7 @@ export function TasksProvider({ children }) {
   }, [user, fetchTasks]);
 
   return (
-    <TasksContext.Provider value={{ tasks, loading, fetchTasks, createTask, updateTask, deleteTask }}>
+    <TasksContext.Provider value={{ tasks, loading, initialLoading, fetchTasks, createTask, updateTask, deleteTask }}>
       {children}
     </TasksContext.Provider>
   );
