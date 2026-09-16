@@ -648,7 +648,16 @@ export default function Todo() {
 
   /* ── render ─────────────── */
   return (
-    <div className="space-y-5">
+    <div className="todo-page space-y-5">
+      {/* Font khusus redesain (Sora buat judul/nama, IBM Plex Sans buat
+          teks biasa, IBM Plex Mono buat angka/jam/kode) — di-scope ke
+          class .todo-page doang biar halaman lain tetap Inter kayak
+          biasa, gak ikut berubah. */}
+      <style>{`
+        .todo-page { font-family: "IBM Plex Sans", Inter, sans-serif; }
+        .todo-page .font-display { font-family: "Sora", "IBM Plex Sans", sans-serif; }
+        .todo-page .font-mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+      `}</style>
       {/* ── Resume Stream Banner (setelah refresh) ── */}
       {pendingResume && !streaming && (
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-violet-300 bg-violet-50 px-4 py-3 shadow-sm animate-pulse-slow">
@@ -680,7 +689,7 @@ export default function Todo() {
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">To Do</h1>
+            <h1 className="font-display text-2xl font-extrabold tracking-tight text-slate-900">To Do</h1>
             <p className="mt-0.5 text-sm text-slate-500">{fmtDateLabel(date)}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -737,7 +746,7 @@ export default function Todo() {
               { label: "Gagal",       value: stats.failed,     color: "text-rose-600"    },
             ].map((s) => (
               <div key={s.label} className="flex items-baseline gap-1.5">
-                <span className={`font-mono text-lg font-extrabold tabular-nums ${s.color}`}>{s.value}</span>
+                <span className={`font-display text-lg font-extrabold tabular-nums ${s.color}`}>{s.value}</span>
                 <span className="text-xs font-medium text-slate-400">{s.label}</span>
               </div>
             ))}
@@ -1145,7 +1154,7 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="font-bold text-slate-900">{assignee}</p>
+          <p className="font-display font-bold text-slate-900">{assignee}</p>
           <p className="text-xs text-slate-400">
             {tasks.length} task
             {totalElapsed > 0 && <span className="ml-1.5 font-mono text-indigo-500">· ∑ {fmtElapsed(totalElapsed)}</span>}
@@ -1233,7 +1242,7 @@ function FeaturedTaskCard({ task, orders, now, onTimer, onMarkDone, onDetail }) 
           <p className={`text-[10px] font-bold uppercase tracking-widest ${tone.label}`}>
             {isOverdue ? "Overdue" : isUrgent ? "Segera!" : isRunning ? "Lagi Dikerjakan" : "Prioritas Berikutnya"}
           </p>
-          <p className={`mt-0.5 truncate text-lg font-extrabold ${tone.title}`}>{toTitleCase(displayTitle(task))}</p>
+          <p className={`font-display mt-0.5 truncate text-lg font-extrabold ${tone.title}`}>{toTitleCase(displayTitle(task))}</p>
           {sub && <p className={`mt-0.5 truncate text-sm ${tone.sub}`}>{sub}</p>}
         </div>
         {streamAllowed && (
