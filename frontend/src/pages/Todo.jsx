@@ -384,6 +384,17 @@ export default function Todo() {
   const [dragState, setDragState] = useState({});
   const dragIdRef = useRef(null);
   const dragOverRef = useRef(null);
+  // Selama drag task aktif, animasi hover (membesar/mengecil) di-nonaktifin
+  // sementara — kalau enggak, card yang lagi di-drag-over ikut membesar dan
+  // ngegeser layout persis di bawah kursor, bikin browser gagal ngedeteksi
+  // drop target yang bener (task paling atas/featured jadi kayak gak bisa
+  // dipindah posisinya).
+  const [isDraggingTask, setIsDraggingTask] = useState(false);
+  useEffect(() => {
+    const clear = () => setIsDraggingTask(false);
+    window.addEventListener("dragend", clear);
+    return () => window.removeEventListener("dragend", clear);
+  }, []);
 
   useEffect(() => { if (user) fetchTasks(date); }, [date, fetchTasks, user]);
 
@@ -658,6 +669,7 @@ export default function Todo() {
   const onDragStart = (e, taskId) => {
     dragIdRef.current = taskId;
     e.dataTransfer.effectAllowed = "move";
+    setIsDraggingTask(true);
   };
   const onDragOver = (e, assignee, overTaskId) => {
     e.preventDefault();
@@ -666,6 +678,7 @@ export default function Todo() {
 
   const onDrop = useCallback(async (e, targetAssignee, targetAssigneeType) => {
     e.preventDefault();
+    setIsDraggingTask(false);
     const fromId = dragIdRef.current;
     dragIdRef.current = null;
     if (!fromId) return;
@@ -847,7 +860,7 @@ export default function Todo() {
           <PersonLanesGrid
             groups={grouped.tim} assigneeType="tim"
             orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
-            presenceMap={presenceMap}
+            presenceMap={presenceMap} isDraggingTask={isDraggingTask}
             onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind} onRemote={handleRemote}
             onApprove={handleApprove} onReject={handleReject}
             onStatus={handleStatus} onDelete={handleDelete}
@@ -1155,7 +1168,7 @@ function TeamUpdateChecklist({ groups, orders, className = "" }) {
    orang jadi kartu (lane) sendiri dalam grid 2 kolom — checklist-nya
    digabung langsung jadi checkbox di tiap baris task, gak ada panel
    duplikat lagi. ── */
-function PersonLanesGrid({ groups, assigneeType, orders, dragState, taskMap, now, isAdminOrPM, presenceMap, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function PersonLanesGrid({ groups, assigneeType, orders, dragState, taskMap, now, isAdminOrPM, presenceMap, isDraggingTask, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const entries = Object.entries(groups);
   if (entries.length === 0) {
     return (
@@ -1172,7 +1185,7 @@ function PersonLanesGrid({ groups, assigneeType, orders, dragState, taskMap, now
         return (
           <PersonLane
             key={assignee} assignee={assignee} tasks={ordered} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
-            presence={presenceMap[assignee]}
+            presence={presenceMap[assignee]} isDraggingTask={isDraggingTask}
             onTimer={onTimer} onMarkDone={onMarkDone} onRemind={onRemind} onRemote={onRemote} onApprove={onApprove} onReject={onReject}
             onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
             onDragStart={onDragStart}
@@ -1195,11 +1208,14 @@ function PersonLanesGrid({ groups, assigneeType, orders, dragState, taskMap, now
    TIDAK pindah — cuma ukurannya yang animasi. Semua logic asli (schedule
    estimasi jam, drag-reorder, presence) dipertahankan persis dari versi
    lama. ── */
-function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, isDraggingTask, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const accent = avatarAccent(assignee);
   const [hoveredId, setHoveredId] = useState(null);
-  const handleHoverStart = useCallback((id) => setHoveredId(id), []);
-  const handleHoverEnd = useCallback((id) => setHoveredId((h) => (h === id ? null : h)), []);
+  // Selama ada drag task aktif, hover diabaikan biar card gak membesar/
+  // mengecil sendiri di bawah kursor (itu yang bikin drop target-nya
+  // gagal ke-detect browser, khususnya buat task yang lagi tampil besar).
+  const handleHoverStart = useCallback((id) => { if (!isDraggingTask) setHoveredId(id); }, [isDraggingTask]);
+  const handleHoverEnd = useCallback((id) => { if (!isDraggingTask) setHoveredId((h) => (h === id ? null : h)); }, [isDraggingTask]);
 
   const sortedTasks = useMemo(() => {
     return [...tasks].sort((a, b) => {
@@ -1263,7 +1279,7 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
 
   const featured = useMemo(() => pickFeaturedTask(sortedTasks), [sortedTasks]);
   const restTasks = useMemo(() => sortedTasks.filter((t) => t.id !== featured?.id), [sortedTasks, featured]);
-  const activeId = hoveredId ?? featured?.id ?? null;
+  const activeId = isDraggingTask ? (featured?.id ?? null) : (hoveredId ?? featured?.id ?? null);
 
   const doneCount = tasks.filter((t) => t.status === "done").length;
   const pct = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
