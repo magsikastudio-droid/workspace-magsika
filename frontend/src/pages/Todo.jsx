@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   CheckCircle2, ClipboardList, GripVertical, Kanban, Loader2, Pause, Pencil, Play,
   Plus, Search, Send, X, Zap, Clock, CheckCheck, AlarmClock, Target, Bell, Monitor,
-  Copy, Check, ClipboardPaste, Trash2,
+  Copy, Check, ClipboardPaste, Trash2, Link2, Unlink,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
@@ -130,6 +130,20 @@ const parsePriorityText = (raw) => {
     }
   }
   return rows;
+};
+
+/* Auto-link ke order aktif yang sudah ada — kalau task hasil import gak
+   di-link ke order_id, sistem nganggep order-nya "belum terhandle"
+   terus (tetep muncul di section Belum Terhandle) padahal sebenernya
+   sudah ada task-nya, dan order.artists juga gak ke-update. Cuma match
+   kalau judulnya PERSIS sama (setelah dinormalisasi) — supaya gak asal
+   nebak-nebak salah order; kalau ambigu/gak ketemu, PM link manual. */
+const normalizeForOrderMatch = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const findMatchingOrder = (title, orders) => {
+  const norm = normalizeForOrderMatch(title);
+  if (!norm) return null;
+  const candidates = (orders || []).filter((o) => normalizeForOrderMatch(o.project) === norm);
+  return candidates.length === 1 ? candidates[0] : null;
 };
 
 const shiftDate = (dateStr, days) => {
@@ -750,7 +764,7 @@ export default function Todo() {
       )}
       {showImport && (
         <ImportPriorityModal
-          date={date} knownAssignees={knownAssignees}
+          date={date} knownAssignees={knownAssignees} orders={orders}
           createTask={createTask}
           onClose={() => setShowImport(false)}
         />
@@ -1714,11 +1728,13 @@ function UnhandledSection({ orders, isAdminOrPM, onAddTask }) {
    draft task per baris. Nama di header blok cuma saran assignee —
    PM edit langsung di tabel kalau ternyata itu nama market/klien,
    bukan nama tim. Bikin semua task sekaligus setelah dikurasi. ── */
-function ImportPriorityModal({ date, knownAssignees, createTask, onClose }) {
+function ImportPriorityModal({ date, knownAssignees, orders = [], createTask, onClose }) {
   const [raw, setRaw] = useState("");
   const [rows, setRows] = useState(null); // null = belum di-parse
   const [bulkAssignee, setBulkAssignee] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [orderSearchFor, setOrderSearchFor] = useState(null); // _key baris yang lagi cari order
+  const [orderSearchQuery, setOrderSearchQuery] = useState("");
 
   const handleParse = () => {
     const parsed = parsePriorityText(raw);
@@ -1726,7 +1742,13 @@ function ImportPriorityModal({ date, knownAssignees, createTask, onClose }) {
       toast.error("Gak ketemu baris task — pastikan formatnya '1. Judul - target' per baris.");
       return;
     }
-    setRows(parsed);
+    // Auto-link ke order aktif yang judulnya persis sama, biar order gak
+    // ketinggalan "Belum Terhandle" dan order.artists ke-sync otomatis.
+    const withOrderLink = parsed.map((r) => {
+      const match = findMatchingOrder(r.title, orders);
+      return match ? { ...r, order_id: match.id } : { ...r, order_id: null };
+    });
+    setRows(withOrderLink);
   };
 
   const updateRow = (key, patch) => {
@@ -1738,6 +1760,19 @@ function ImportPriorityModal({ date, knownAssignees, createTask, onClose }) {
   const applyBulkAssignee = () => {
     if (!bulkAssignee.trim()) return;
     setRows((prev) => prev.map((r) => ({ ...r, assignee: bulkAssignee.trim() })));
+  };
+
+  const filteredOrdersFor = useMemo(() => {
+    if (!orderSearchQuery) return orders.slice(0, 6);
+    const q = orderSearchQuery.toLowerCase();
+    return orders.filter((o) =>
+      o.project?.toLowerCase().includes(q) || o.folder_code?.toLowerCase().includes(q) || o.client?.toLowerCase().includes(q)
+    ).slice(0, 6);
+  }, [orders, orderSearchQuery]);
+  const openOrderSearch = (key) => { setOrderSearchFor(key); setOrderSearchQuery(""); };
+  const pickOrderFor = (key, order) => {
+    updateRow(key, { order_id: order.id });
+    setOrderSearchFor(null);
   };
 
   const handleSubmit = async () => {
@@ -1757,6 +1792,7 @@ function ImportPriorityModal({ date, knownAssignees, createTask, onClose }) {
             date,
             notes: "",
             target_progress: r.target_progress || "",
+            order_id: r.order_id || null,
           })
         )
       );
@@ -1850,6 +1886,52 @@ function ImportPriorityModal({ date, knownAssignees, createTask, onClose }) {
                       <button onClick={() => removeRow(r._key)} className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
                         <Trash2 size={14} />
                       </button>
+                    </div>
+
+                    {/* Link ke order aktif — biar order gak nyangkut di
+                        "Belum Terhandle" dan artists-nya ke-sync otomatis */}
+                    <div className="mt-1.5">
+                      {r.order_id ? (
+                        (() => {
+                          const linked = orders.find((o) => o.id === r.order_id);
+                          return (
+                            <div className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs">
+                              <Link2 size={12} className="shrink-0 text-emerald-500" />
+                              <span className="min-w-0 flex-1 truncate text-emerald-700">
+                                Terhubung ke order: <span className="font-semibold">{linked?.project || r.order_id}</span>
+                                {linked?.folder_code && <span className="text-emerald-500"> · {linked.folder_code}</span>}
+                              </span>
+                              <button onClick={() => updateRow(r._key, { order_id: null })} className="shrink-0 text-emerald-400 hover:text-emerald-700" title="Lepas link order">
+                                <Unlink size={12} />
+                              </button>
+                            </div>
+                          );
+                        })()
+                      ) : orderSearchFor === r._key ? (
+                        <div className="rounded-lg border border-slate-200 p-2">
+                          <input
+                            autoFocus
+                            value={orderSearchQuery}
+                            onChange={(e) => setOrderSearchQuery(e.target.value)}
+                            placeholder="Cari project atau kode folder..."
+                            className="mb-1.5 w-full rounded-lg border border-slate-200 px-2 py-1 text-xs focus:border-indigo-400 focus:outline-none"
+                          />
+                          <div className="max-h-32 space-y-0.5 overflow-y-auto">
+                            {filteredOrdersFor.map((o) => (
+                              <button key={o.id} onClick={() => pickOrderFor(r._key, o)} className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-indigo-50">
+                                <span className="font-medium text-slate-700">{o.project}</span>
+                                <span className="text-slate-400"> · {o.folder_code}</span>
+                              </button>
+                            ))}
+                            {filteredOrdersFor.length === 0 && <p className="px-2 py-1 text-xs text-slate-400">Tidak ditemukan.</p>}
+                          </div>
+                          <button onClick={() => setOrderSearchFor(null)} className="mt-1 text-xs text-slate-400 hover:text-slate-600">Batal</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => openOrderSearch(r._key)} className="flex items-center gap-1 text-xs text-slate-400 hover:text-indigo-600 transition">
+                          <Link2 size={12} /> Gak terhubung ke order — klik buat hubungkan
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
