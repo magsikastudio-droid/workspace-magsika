@@ -69,12 +69,28 @@ const buildPriorityTextFor = (assignee, tasks) => {
   const lines = ordered.map((t, i) => `${i + 1}. ${priorityLineFor(t)}`);
   return `Urutan Prioritas\n\n${assignee}\n${lines.join("\n")}`;
 };
-const buildAllPriorityText = (groupsTim, dragState, taskMap) => {
-  const blocks = Object.entries(groupsTim)
-    .map(([assignee, aTasks]) => {
-      const orderedIds = dragState[assignee] || aTasks.map((t) => t.id);
-      const ordered = orderedIds.map((id) => taskMap[id]).filter(Boolean);
-      return buildPriorityTextFor(assignee, ordered);
+/* "Copy Semua" beda dari copy per-orang — ini buat rekap ke atasan/
+   marketer per MARKET (Magsika, Eirene, dst — dari field order.market),
+   bukan per talent, dan nyakup SEMUA task hari itu (Tim + Freelance),
+   gak cuma yang lagi kelihatan di satu lane. Task tanpa order_id
+   (atau order-nya gak punya market) dianggap "Magsika" (default
+   studio sendiri). */
+const buildMarketPriorityText = (tasks, orders) => {
+  const orderMap = {};
+  (orders || []).forEach((o) => { orderMap[o.id] = o; });
+  const groups = {};
+  for (const t of tasks) {
+    const order = t.order_id ? orderMap[t.order_id] : null;
+    const market = order?.market || "Magsika";
+    if (!groups[market]) groups[market] = [];
+    groups[market].push(t);
+  }
+  const blocks = Object.entries(groups)
+    .map(([market, list]) => {
+      const ordered = sortForPriorityList(list);
+      if (ordered.length === 0) return "";
+      const lines = ordered.map((t, i) => `${i + 1}. ${priorityLineFor(t)}`);
+      return `*${market}*\nUrutan Prioritas\n${lines.join("\n")}`;
     })
     .filter(Boolean);
   return blocks.join("\n\n");
@@ -725,8 +741,8 @@ export default function Todo() {
             )}
             {isAdminOrPM && (
               <button
-                onClick={() => copyToClipboard(buildAllPriorityText(grouped.tim, dragState, taskMap), "Teks urutan prioritas semua orang disalin!")}
-                title="Copy teks 'Urutan Prioritas' semua orang buat di-paste ke WhatsApp"
+                onClick={() => copyToClipboard(buildMarketPriorityText(visibleTasks, orders), "Teks urutan prioritas semua market disalin!")}
+                title="Copy teks 'Urutan Prioritas' semua task hari ini, dikelompokkan per market"
                 className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
                 <Copy size={14} /> Copy Semua
               </button>
@@ -2068,7 +2084,6 @@ function UnhandledSection({ orders, isAdminOrPM, onOpenOrder, onAddTask }) {
 function ImportPriorityModal({ date, knownAssignees, orders = [], createTask, onClose }) {
   const [raw, setRaw] = useState("");
   const [rows, setRows] = useState(null); // null = belum di-parse
-  const [bulkAssignee, setBulkAssignee] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [orderSearchFor, setOrderSearchFor] = useState(null); // _key baris yang lagi cari order
   const [orderSearchQuery, setOrderSearchQuery] = useState("");
@@ -2093,10 +2108,6 @@ function ImportPriorityModal({ date, knownAssignees, orders = [], createTask, on
   };
   const removeRow = (key) => {
     setRows((prev) => prev.filter((r) => r._key !== key));
-  };
-  const applyBulkAssignee = () => {
-    if (!bulkAssignee.trim()) return;
-    setRows((prev) => prev.map((r) => ({ ...r, assignee: bulkAssignee.trim() })));
   };
 
   const filteredOrdersFor = useMemo(() => {
@@ -2174,22 +2185,9 @@ function ImportPriorityModal({ date, knownAssignees, orders = [], createTask, on
             </>
           ) : (
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <span className="text-xs font-semibold text-slate-500 shrink-0">Set semua assignee ke:</span>
-                <input
-                  value={bulkAssignee}
-                  onChange={(e) => setBulkAssignee(e.target.value)}
-                  list="known-assignees-import"
-                  placeholder="Nama tim..."
-                  className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:border-indigo-400 focus:outline-none"
-                />
-                <datalist id="known-assignees-import">
-                  {knownAssignees.map((a) => <option key={a} value={a} />)}
-                </datalist>
-                <button onClick={applyBulkAssignee} className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition">
-                  Terapkan
-                </button>
-              </div>
+              <datalist id="known-assignees-import">
+                {knownAssignees.map((a) => <option key={a} value={a} />)}
+              </datalist>
 
               <div className="space-y-2">
                 {rows.map((r) => (
