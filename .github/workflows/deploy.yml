@@ -289,35 +289,6 @@ jobs:
         run: |
           ssh vps "systemctl restart admin-dashboard"
 
-      - name: DEBUG - cek lagi message_id terbaru di daily_updates
-        run: |
-          ssh vps bash << 'ENDSSH' > telegram-link-debug2.txt || true
-          cd /root/admin-dashboard/backend
-          .venv/bin/python3 -c "
-          import asyncio
-          from dotenv import load_dotenv
-          load_dotenv()
-          import os
-          from motor.motor_asyncio import AsyncIOMotorClient
-
-          async def main():
-              client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017'))
-              db = client[os.getenv('DB_NAME', 'admin_dashboard')]
-              docs = await db.daily_updates.find({}).sort('confirmed_at', -1).to_list(10)
-              print('10 konfirmasi update terbaru (confirmed_at, message_id, thread_id):')
-              for d in docs:
-                  print(' ', d.get('confirmed_at'), '| message_id=', d.get('message_id'), '| thread_id=', d.get('thread_id'))
-
-          asyncio.run(main())
-          "
-          ENDSSH
-          cat telegram-link-debug2.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add telegram-link-debug2.txt
-          git diff --cached --quiet || git commit -m "debug: cek lagi message_id daily_updates [skip ci]"
-          git push || true
-
       - name: Renew SSL certificate (Let's Encrypt)
         run: |
           ssh vps bash << 'ENDSSH'
