@@ -80,7 +80,7 @@ const buildPriorityTextFor = (assignee, tasks) => {
    "Fiverr "/"Etsy " dibuang biar labelnya bersih ("Fiverr Eirene" jadi
    cuma "Eirene"). Task tanpa order_id dianggap "Magsika" (default). */
 const platformLabel = (platform) => (platform || "Magsika").replace(/^(Fiverr|Etsy)\s+/i, "");
-const buildMarketPriorityText = (tasks, orders) => {
+const buildMarketPriorityText = (tasks, orders, unhandledOrders) => {
   const orderMap = {};
   (orders || []).forEach((o) => { orderMap[o.id] = o; });
   const groups = {};
@@ -90,11 +90,24 @@ const buildMarketPriorityText = (tasks, orders) => {
     if (!groups[market]) groups[market] = [];
     groups[market].push(t);
   }
-  const blocks = Object.entries(groups)
-    .map(([market, list]) => {
-      const ordered = sortForPriorityList(list);
-      if (ordered.length === 0) return "";
+  // Order aktif yang belum punya task hari ini ("Belum Terhandle") tetap
+  // perlu kelihatan di teks WA ini, biar PM gak kelewat kasih task-nya.
+  const unhandledGroups = {};
+  for (const o of unhandledOrders || []) {
+    const market = platformLabel(o?.platform);
+    if (!unhandledGroups[market]) unhandledGroups[market] = [];
+    unhandledGroups[market].push(o);
+  }
+  const markets = new Set([...Object.keys(groups), ...Object.keys(unhandledGroups)]);
+  const blocks = Array.from(markets)
+    .map((market) => {
+      const ordered = sortForPriorityList(groups[market] || []);
       const lines = ordered.map((t, i) => `${i + 1}. ${priorityLineFor(t)}`);
+      const unhandled = unhandledGroups[market] || [];
+      unhandled.forEach((o, i) => {
+        lines.push(`${ordered.length + i + 1}. ${o.project || "Unnamed"} - (belum ada task)`);
+      });
+      if (lines.length === 0) return "";
       return `*${market}*\nUrutan Prioritas\n${lines.join("\n")}`;
     })
     .filter(Boolean);
@@ -738,7 +751,7 @@ export default function Todo() {
             )}
             {isAdminOrPM && (
               <button
-                onClick={() => copyToClipboard(buildMarketPriorityText(visibleTasks, orders), "Teks urutan prioritas semua market disalin!")}
+                onClick={() => copyToClipboard(buildMarketPriorityText(visibleTasks, orders, unhandledOrders), "Teks urutan prioritas semua market disalin!")}
                 title="Copy teks 'Urutan Prioritas' semua task hari ini, dikelompokkan per market"
                 className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
                 <Copy size={14} /> Copy Semua
