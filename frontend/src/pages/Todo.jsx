@@ -70,18 +70,23 @@ const buildPriorityTextFor = (assignee, tasks) => {
   return `Urutan Prioritas\n\n${assignee}\n${lines.join("\n")}`;
 };
 /* "Copy Semua" beda dari copy per-orang — ini buat rekap ke atasan/
-   marketer per MARKET (Magsika, Eirene, dst — dari field order.market),
-   bukan per talent, dan nyakup SEMUA task hari itu (Tim + Freelance),
-   gak cuma yang lagi kelihatan di satu lane. Task tanpa order_id
-   (atau order-nya gak punya market) dianggap "Magsika" (default
-   studio sendiri). */
+   marketer per SUMBER ORDER (Magsika, Eirene, dst), bukan per talent,
+   dan nyakup SEMUA task hari itu (Tim + Freelance), gak cuma yang lagi
+   kelihatan di satu lane.
+   Sumbernya diambil dari order.platform (bukan order.market — market
+   ternyata di data real selalu "Magsika" gak pernah diisi beda,
+   sedangkan platform yang benar-benar kepakai buat bedain klien, lihat
+   kode folder "EIRENE04" dll yang berasal dari PLATFORM_CODES). Prefix
+   "Fiverr "/"Etsy " dibuang biar labelnya bersih ("Fiverr Eirene" jadi
+   cuma "Eirene"). Task tanpa order_id dianggap "Magsika" (default). */
+const platformLabel = (platform) => (platform || "Magsika").replace(/^(Fiverr|Etsy)\s+/i, "");
 const buildMarketPriorityText = (tasks, orders) => {
   const orderMap = {};
   (orders || []).forEach((o) => { orderMap[o.id] = o; });
   const groups = {};
   for (const t of tasks) {
     const order = t.order_id ? orderMap[t.order_id] : null;
-    const market = order?.market || "Magsika";
+    const market = platformLabel(order?.platform);
     if (!groups[market]) groups[market] = [];
     groups[market].push(t);
   }
