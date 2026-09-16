@@ -1271,7 +1271,11 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
   const ringOffset = ringC - (ringC * pct) / 100;
 
   return (
-    <div className={`overflow-hidden rounded-[26px] border border-t-[5px] border-slate-200 bg-white shadow-sm ${accent.border}`}>
+    <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+      className={`overflow-hidden rounded-[26px] border border-t-[5px] border-slate-200 bg-white shadow-sm ${accent.border}`}
+    >
       <div className="flex items-center gap-3.5 px-6 py-5">
         <div className="relative shrink-0">
           <div className={`flex h-[46px] w-[46px] items-center justify-center rounded-full text-base font-bold text-white ${accent.bg}`}>
@@ -1329,10 +1333,11 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
           onHoverStart={handleHoverStart} onHoverEnd={handleHoverEnd}
           onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
           onDetail={(t, est) => onDetail(t, est ?? schedule[t.id] ?? null)}
+          onDragStart={onDragStart} onDragOver={onDragOver}
         />
       )}
 
-      <div onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+      <div>
         {restTasks.length === 0 && !featured && (
           <p className="px-5 py-6 text-center text-xs text-slate-400">Tidak ada task.</p>
         )}
@@ -1414,8 +1419,8 @@ function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHove
 
   return (
     <div
-      draggable={isAdminOrPM && !isBig}
-      onDragStart={isAdminOrPM && !isBig ? (e) => { e.stopPropagation(); onDragStart(e, task.id); } : undefined}
+      draggable={isAdminOrPM}
+      onDragStart={isAdminOrPM ? (e) => { e.stopPropagation(); onDragStart(e, task.id); } : undefined}
       onDragOver={onDragOver ? (e) => onDragOver(e, task.id) : undefined}
       onMouseEnter={() => onHoverStart?.(task.id)}
       onMouseLeave={() => onHoverEnd?.(task.id)}
@@ -1481,8 +1486,8 @@ function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHove
         )}
         {!isBig && (
           isReview ? (
-            <button onClick={stopProp(() => onDetail(task, estStart))} className="shrink-0 rounded-full border border-orange-300 bg-orange-50 px-[15px] py-[7px] text-xs font-bold text-orange-700 hover:bg-orange-100 transition">
-              Tinjau
+            <button onClick={stopProp(() => onApprove(task))} className="shrink-0 rounded-full border border-emerald-300 bg-emerald-50 px-[15px] py-[7px] text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition">
+              Approve
             </button>
           ) : isActive ? (
             <button
@@ -1517,10 +1522,10 @@ function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHove
             ) : <span />}
             {isReview ? (
               <button
-                onClick={stopProp(() => onDetail(task, estStart))}
+                onClick={stopProp(() => onApprove(task))}
                 className={`ml-auto shrink-0 rounded-full px-[18px] py-[9px] text-[12.5px] font-bold transition ${tone.btn}`}
               >
-                Tinjau
+                Approve
               </button>
             ) : isDone ? (
               <button
