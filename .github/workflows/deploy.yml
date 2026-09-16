@@ -289,6 +289,41 @@ jobs:
         run: |
           ssh vps "systemctl restart admin-dashboard"
 
+      - name: DEBUG - cek order_id & market task aktif hari ini
+        run: |
+          ssh vps bash << 'ENDSSH' > market-debug.txt || true
+          cd /root/admin-dashboard/backend
+          .venv/bin/python3 -c "
+          import asyncio
+          from dotenv import load_dotenv
+          load_dotenv()
+          import os
+          from motor.motor_asyncio import AsyncIOMotorClient
+          from datetime import datetime, timezone, timedelta
+
+          async def main():
+              client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017'))
+              db = client[os.getenv('DB_NAME', 'admin_dashboard')]
+              jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+              today = jkt_now.strftime('%Y-%m-%d')
+              print('Tanggal today (WIB):', today)
+              async for t in db.tasks.find({'date': today}, {'title': 1, 'order_id': 1, 'assignee': 1}):
+                  oid = t.get('order_id')
+                  print(repr(t.get('title')), '| order_id:', repr(oid))
+              print('--- daftar market per order ---')
+              async for o in db.orders.find({}, {'project': 1, 'market': 1}).limit(30):
+                  print(repr(o.get('project')), '| market:', repr(o.get('market')), '| id:', str(o.get('_id')))
+
+          asyncio.run(main())
+          "
+          ENDSSH
+          cat market-debug.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add market-debug.txt
+          git diff --cached --quiet || git commit -m "debug: cek order_id & market task [skip ci]"
+          git push || true
+
       - name: Renew SSL certificate (Let's Encrypt)
         run: |
           ssh vps bash << 'ENDSSH'
