@@ -855,9 +855,14 @@ export default function Todo() {
             onDetail={(t, estStart) => { setDetailTaskId(t.id); setDetailEstStart(estStart ?? null); }}
             onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
           />
-          <div className="flex flex-col lg:flex-row gap-5">
+          <div className="flex items-center gap-3 pt-1">
+            <div className="h-px flex-1 bg-slate-200" />
+            <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Freelance &amp; Update Harian</span>
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             <FreelanceChecklist groups={grouped.freelance} isAdminOrPM={isAdminOrPM} onStatus={handleStatus} />
-            <TeamUpdateChecklist groups={grouped.tim} orders={orders} />
+            <TeamUpdateChecklist groups={grouped.tim} orders={orders} className="sm:col-span-1 xl:col-span-2" />
           </div>
         </>
       )}
@@ -1014,7 +1019,7 @@ function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
   };
 
   return (
-    <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <div className="w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center gap-2 border-b border-slate-100 px-6 py-5">
         <span className="text-lg">🎨</span>
         <h3 className="font-display font-bold text-slate-800">Freelance</h3>
@@ -1058,7 +1063,7 @@ function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
    Beda dari FreelanceChecklist: ini bukan status task (pending/done), tapi
    status kirim-update — jadi tetap tercentang walau admin belum approve
    ke "done", dan gak bisa dicentang manual sama sekali (murni dari bot). ── */
-function TeamUpdateChecklist({ groups, orders }) {
+function TeamUpdateChecklist({ groups, orders, className = "" }) {
   const tasks = useMemo(() => Object.values(groups).flat(), [groups]);
   const orderMap = useMemo(() => {
     const m = {};
@@ -1100,7 +1105,7 @@ function TeamUpdateChecklist({ groups, orders }) {
   const marketNames = Object.keys(marketGroups).sort();
 
   return (
-    <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <div className={`w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm ${className}`}>
       <div className="flex items-center gap-2 border-b border-slate-100 px-6 py-5">
         <span className="text-lg">📋</span>
         <h3 className="font-display font-bold text-slate-800">Update Hari Ini</h3>
@@ -1109,31 +1114,33 @@ function TeamUpdateChecklist({ groups, orders }) {
       {tasks.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-slate-400">Tidak ada task tim internal hari ini.</p>
       ) : (
-        <div className="divide-y divide-slate-100">
+        <div className="px-6 py-4 sm:columns-2 sm:gap-x-8 [column-fill:balance]">
           {marketNames.map((market) => (
-            <div key={market}>
-              <p className="px-6 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{market}</p>
-              {marketGroups[market].map((task) => {
-                const isConfirmed = !!confirmedMap[task.id];
-                return (
-                  <div key={task.id} className="flex items-center gap-3 px-6 py-[11px]">
-                    <span
-                      title={isConfirmed ? "Sudah kirim update hari ini" : "Belum kirim update hari ini"}
-                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                        isConfirmed ? "border-emerald-500 bg-emerald-500" : "border-slate-300"
-                      }`}
-                    >
-                      {isConfirmed && <Check size={12} className="text-white" />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className={`truncate text-[14.5px] font-medium ${isConfirmed ? "text-slate-700" : "text-slate-400"}`}>
-                        {toTitleCase(displayTitle(task))}
-                      </p>
-                      <p className="text-[11.5px] text-slate-400">{task.assignee}</p>
+            <div key={market} className="break-inside-avoid pb-4">
+              <p className="mb-2 text-[13px] font-extrabold uppercase tracking-wide text-slate-700">{market}</p>
+              <div className="space-y-2.5">
+                {marketGroups[market].map((task) => {
+                  const isConfirmed = !!confirmedMap[task.id];
+                  return (
+                    <div key={task.id} className="flex items-center gap-2.5">
+                      <span
+                        title={isConfirmed ? "Sudah kirim update hari ini" : "Belum kirim update hari ini"}
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                          isConfirmed ? "border-emerald-500 bg-emerald-500" : "border-slate-300"
+                        }`}
+                      >
+                        {isConfirmed && <Check size={12} className="text-white" />}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className={`truncate text-[13.5px] font-medium ${isConfirmed ? "text-slate-700" : "text-slate-400"}`}>
+                          {toTitleCase(displayTitle(task))}
+                        </p>
+                        <p className="text-[11px] text-slate-400">{task.assignee}</p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           ))}
         </div>
