@@ -672,8 +672,14 @@ export default function Todo() {
           teks biasa, IBM Plex Mono buat angka/jam/kode) — di-scope ke
           class .todo-page doang biar halaman lain tetap Inter kayak
           biasa, gak ikut berubah. */}
+      {/* Aplikasi ini di-zoom 0.8 secara global (lihat html{zoom:0.8} di
+          index.css) — ukuran font/jarak yang udah disamain persis-piksel
+          ke draft (yang dibikin TANPA zoom itu) jadi kelihatan 20% lebih
+          kecil dari niatnya begitu ke-render. zoom:1.25 di sini nge-
+          batalin zoom parent-nya (0.8 × 1.25 = 1.0) — cuma buat halaman
+          To Do, halaman lain tetap ikut zoom 0.8 seperti biasa. */}
       <style>{`
-        .todo-page { font-family: "IBM Plex Sans", Inter, sans-serif; }
+        .todo-page { font-family: "IBM Plex Sans", Inter, sans-serif; zoom: 1.25; }
         .todo-page .font-display { font-family: "Sora", "IBM Plex Sans", sans-serif; }
         .todo-page .font-mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
       `}</style>
@@ -963,23 +969,13 @@ function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onRemind, on
    (toggle status done) — satu-satunya aksi yang mereka perlu. ── */
 function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
   const flat = useMemo(() => Object.values(groups).flat(), [groups]);
-  const idsKey = flat.map((t) => t.id).join(",");
-  const [confirmedMap, setConfirmedMap] = useState({});
 
-  useEffect(() => {
-    if (!idsKey) { setConfirmedMap({}); return; }
-    api.get(`/tasks/daily-update-status-bulk?ids=${idsKey}`)
-      .then((r) => setConfirmedMap(r.data || {}))
-      .catch(() => {});
-  }, [idsKey]);
-
+  // Freelancer gak masuk grup Telegram, jadi bot gak bisa deteksi/
+  // konfirmasi update mereka — beda dari Tim Internal. Centangnya
+  // murni manual oleh admin/PM, gak ada gerbang konfirmasi bot lagi.
   const handleToggle = async (task) => {
     if (!isAdminOrPM) return;
     const isDone = task.status === "done";
-    if (!isDone && !confirmedMap[task.id]) {
-      toast.error("Belum ada update dari Telegram buat task ini hari ini.");
-      return;
-    }
     try {
       await onStatus(task, isDone ? "pending" : "done");
     } catch {
@@ -988,10 +984,10 @@ function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
   };
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
+    <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-6 py-5">
         <span className="text-lg">🎨</span>
-        <h3 className="font-bold text-slate-800">Freelance</h3>
+        <h3 className="font-display font-bold text-slate-800">Freelance</h3>
         <span className="ml-auto text-xs text-slate-400">{flat.length} task</span>
       </div>
       {flat.length === 0 ? (
@@ -1000,30 +996,24 @@ function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
         <div className="divide-y divide-slate-100">
           {flat.map((task) => {
             const isDone = task.status === "done";
-            const confirmed = !!confirmedMap[task.id];
             return (
-              <div key={task.id} className="flex items-center gap-3 px-5 py-3">
+              <div key={task.id} className="flex items-center gap-3 px-6 py-[11px]">
                 <button
                   onClick={() => handleToggle(task)}
                   disabled={!isAdminOrPM}
-                  title={isDone ? "Batalkan approve" : confirmed ? "Tandai selesai" : "Belum ada update Telegram"}
+                  title={isDone ? "Batalkan approve" : "Tandai selesai (manual, freelance gak bisa dikonfirmasi bot)"}
                   className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
-                    isDone ? "border-emerald-500 bg-emerald-500" : confirmed ? "border-emerald-400 bg-emerald-50" : "border-slate-300"
+                    isDone ? "border-emerald-500 bg-emerald-500" : "border-slate-300 hover:border-indigo-400"
                   } ${isAdminOrPM ? "cursor-pointer" : "cursor-default"}`}
                 >
                   {isDone && <Check size={12} className="text-white" />}
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className={`truncate text-sm font-medium ${isDone ? "line-through text-slate-400" : "text-slate-700"}`}>
+                  <p className={`truncate text-[14.5px] font-medium ${isDone ? "line-through text-slate-400" : "text-slate-700"}`}>
                     {toTitleCase(displayTitle(task))}
                   </p>
-                  <p className="text-xs text-slate-400">{task.assignee}</p>
+                  <p className="text-[11.5px] text-slate-400">{task.assignee}</p>
                 </div>
-                {!isDone && confirmed && (
-                  <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                    Update masuk
-                  </span>
-                )}
               </div>
             );
           })}
@@ -1049,7 +1039,7 @@ function PersonLanesGrid({ groups, assigneeType, orders, dragState, taskMap, now
     );
   }
   return (
-    <div className="grid gap-5 md:grid-cols-2">
+    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
       {entries.map(([assignee, aTasks]) => {
         const orderedIds = dragState[assignee] || aTasks.map((t) => t.id);
         const ordered = orderedIds.map((id) => taskMap[id]).filter(Boolean);
@@ -1077,7 +1067,6 @@ function PersonLanesGrid({ groups, assigneeType, orders, dragState, taskMap, now
    dipertahankan persis dari versi lama. ── */
 function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const accent = avatarAccent(assignee);
-  const totalElapsed = tasks.reduce((s, t) => s + getElapsed(t, now), 0);
 
   const sortedTasks = useMemo(() => {
     return [...tasks].sort((a, b) => {
@@ -1174,10 +1163,7 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
         </div>
         <div className="min-w-0 flex-1">
           <p className="font-display text-[16.5px] font-bold text-slate-900">{assignee}</p>
-          <p className="mt-px text-[12.5px] text-slate-400">
-            {tasks.length} task
-            {totalElapsed > 0 && <span className="ml-1.5 font-mono text-indigo-500">· ∑ {fmtElapsed(totalElapsed)}</span>}
-          </p>
+          <p className="mt-px text-[12.5px] text-slate-400">{tasks.length} task</p>
         </div>
         {isAdminOrPM && (
           <button
@@ -2034,46 +2020,40 @@ function UnhandledSection({ orders, isAdminOrPM, onOpenOrder, onAddTask }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 shadow-sm overflow-hidden">
+    <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <button
         onClick={() => setCollapsed((v) => !v)}
-        className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-orange-100/60 transition"
+        className="flex w-full items-center gap-[11px] px-6 py-4 text-left select-none"
       >
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-500 text-white text-xs font-bold animate-pulse">
-            {orders.length}
-          </span>
-          <span className="font-bold text-orange-800">Belum Terhandle</span>
-          <span className="text-xs text-orange-500 font-medium">— order aktif belum ada task hari ini</span>
-        </div>
-        <span className="text-xs text-orange-400 font-semibold">{collapsed ? "▼ Lihat" : "▲ Tutup"}</span>
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-[12px] font-extrabold text-amber-950">
+          {orders.length}
+        </span>
+        <span className="text-sm font-bold text-slate-800">Belum Terhandle</span>
+        <span className="text-[12.5px] text-slate-400">— order aktif belum ada task hari ini</span>
+        <span className={`ml-auto text-xs text-slate-400 transition-transform ${collapsed ? "" : "rotate-180"}`}>▾</span>
       </button>
 
       {!collapsed && (
-        <div className="border-t border-orange-200 px-4 pb-4 pt-3">
-          <div className="flex flex-wrap gap-2">
-            {orders.map((order) => (
-              <div
-                key={order.id}
-                onClick={() => onOpenOrder(order)}
-                title="Klik buat buka & edit order ini"
-                className="flex items-center gap-2.5 rounded-xl border border-orange-200 bg-white px-3 py-2 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition"
-              >
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-slate-800 truncate max-w-[160px]">{order.project || "Unnamed"}</p>
-                  <p className="text-[10px] text-slate-400 truncate max-w-[160px]">{order.folder_code || order.client || ""}</p>
-                </div>
-                {isAdminOrPM && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onAddTask(order); }}
-                    className="shrink-0 rounded-lg bg-orange-100 px-2 py-1 text-[10px] font-bold text-orange-700 hover:bg-orange-500 hover:text-white transition"
-                  >
-                    + Task
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+        <div className="flex gap-[9px] overflow-x-auto px-[18px] pb-[18px]">
+          {orders.map((order) => (
+            <div
+              key={order.id}
+              onClick={() => onOpenOrder(order)}
+              title="Klik buat buka & edit order ini"
+              className="flex shrink-0 flex-col gap-0.5 rounded-2xl border border-slate-200 bg-slate-50 px-[15px] py-[10px] min-w-[150px] cursor-pointer transition hover:border-indigo-300 hover:-translate-y-0.5"
+            >
+              <p className="text-[12.5px] font-semibold text-slate-800 truncate max-w-[170px]">{order.project || "Unnamed"}</p>
+              <p className="font-mono text-[10.5px] text-slate-400 truncate max-w-[170px]">{order.folder_code || order.client || ""}</p>
+              {isAdminOrPM && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onAddTask(order); }}
+                  className="mt-1 self-start rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-600 hover:bg-indigo-100 transition"
+                >
+                  + Task
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
