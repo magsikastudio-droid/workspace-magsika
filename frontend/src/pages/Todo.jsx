@@ -1188,11 +1188,18 @@ function PersonLanesGrid({ groups, assigneeType, orders, dragState, taskMap, now
 /* ─── PersonLane ────────────────────────────────────────────────────
    Satu kartu per orang: header (avatar + nama + ring progres hari ini),
    task yang lagi/paling perlu dikerjakan ditonjolkan jadi kartu besar
-   berwarna (FeaturedTaskCard), sisanya list ringkas (CompactTaskRow).
-   Semua logic asli (schedule estimasi jam, drag-reorder, presence)
-   dipertahankan persis dari versi lama. ── */
+   berwarna, sisanya list ringkas — keduanya sekarang dirender pakai satu
+   komponen (TalentTaskRow) yang morph ukurannya lewat hover: task mana
+   pun yang lagi di-hover (`hoveredId`) yang tampil besar, sisanya
+   (termasuk task andalan default) otomatis mengecil. Posisi tiap task
+   TIDAK pindah — cuma ukurannya yang animasi. Semua logic asli (schedule
+   estimasi jam, drag-reorder, presence) dipertahankan persis dari versi
+   lama. ── */
 function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const accent = avatarAccent(assignee);
+  const [hoveredId, setHoveredId] = useState(null);
+  const handleHoverStart = useCallback((id) => setHoveredId(id), []);
+  const handleHoverEnd = useCallback((id) => setHoveredId((h) => (h === id ? null : h)), []);
 
   const sortedTasks = useMemo(() => {
     return [...tasks].sort((a, b) => {
@@ -1256,6 +1263,7 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
 
   const featured = useMemo(() => pickFeaturedTask(sortedTasks), [sortedTasks]);
   const restTasks = useMemo(() => sortedTasks.filter((t) => t.id !== featured?.id), [sortedTasks, featured]);
+  const activeId = hoveredId ?? featured?.id ?? null;
 
   const doneCount = tasks.filter((t) => t.status === "done").length;
   const pct = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
@@ -1314,10 +1322,13 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
       </div>
 
       {featured && (
-        <FeaturedTaskCard
-          task={featured} orders={orders} now={now}
-          onTimer={onTimer} onMarkDone={onMarkDone}
-          onDetail={(t) => onDetail(t, schedule[t.id] ?? null)}
+        <TalentTaskRow
+          task={featured} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
+          estStart={schedule[featured.id] ?? null}
+          isBig={activeId === featured.id}
+          onHoverStart={handleHoverStart} onHoverEnd={handleHoverEnd}
+          onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+          onDetail={(t, est) => onDetail(t, est ?? schedule[t.id] ?? null)}
         />
       )}
 
@@ -1326,9 +1337,11 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
           <p className="px-5 py-6 text-center text-xs text-slate-400">Tidak ada task.</p>
         )}
         {restTasks.map((task) => (
-          <CompactTaskRow
-            key={task.id} task={task} now={now} isAdminOrPM={isAdminOrPM}
+          <TalentTaskRow
+            key={task.id} task={task} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
             estStart={schedule[task.id] ?? null}
+            isBig={activeId === task.id}
+            onHoverStart={handleHoverStart} onHoverEnd={handleHoverEnd}
             onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
             onDetail={onDetail}
             onDragStart={onDragStart} onDragOver={onDragOver}
@@ -1339,74 +1352,15 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
   );
 }
 
-/* ─── FeaturedTaskCard ──────────────────────────────────────────────
-   Kartu besar berwarna buat task yang lagi jalan/paling perlu dikerjain
-   duluan — hierarki visual biar gak semua task keliatan sama pentingnya. */
-function FeaturedTaskCard({ task, orders, now, onTimer, onMarkDone, onDetail }) {
-  const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
-  const elapsed = getElapsed(task, now);
-  const countdown = getCountdown(task, now);
-  const hasStarted = elapsed > 0 || !!task.timer_started;
-  const isOverdue = countdown !== null && countdown <= 0 && hasStarted;
-  const isUrgent = countdown !== null && countdown > 0 && countdown <= 1800 && hasStarted;
-  const linkedOrderInfo = useMemo(() => (task.order_id && orders?.length ? orders.find((o) => o.id === task.order_id) : null), [task.order_id, orders]);
-  const streamAllowed = !!linkedOrderInfo?.stream_allowed;
-  const sub = task.target_progress || task.notes || "";
-
-  const tone = isOverdue
-    ? { wrap: "bg-rose-500", label: "text-rose-100", title: "text-white", sub: "text-rose-50", barTrack: "bg-rose-400/50", barFill: "bg-white", btn: "bg-white text-rose-600 hover:bg-rose-50" }
-    : isUrgent
-    ? { wrap: "bg-amber-400", label: "text-amber-900/70", title: "text-amber-950", sub: "text-amber-900/80", barTrack: "bg-amber-300/60", barFill: "bg-amber-950", btn: "bg-amber-950 text-amber-50 hover:bg-amber-900" }
-    : task.status === "in_revision"
-    ? { wrap: "bg-violet-50", label: "text-violet-400", title: "text-violet-900", sub: "text-violet-500", barTrack: "bg-violet-200", barFill: "bg-violet-500", btn: "bg-white text-violet-700 shadow-sm hover:bg-violet-50" }
-    : task.status === "menunggu_review"
-    ? { wrap: "bg-orange-50", label: "text-orange-400", title: "text-orange-900", sub: "text-orange-500", barTrack: "bg-orange-200", barFill: "bg-orange-500", btn: "bg-white text-orange-700 shadow-sm hover:bg-orange-50" }
-    : { wrap: "bg-sky-50", label: "text-sky-400", title: "text-sky-900", sub: "text-sky-500", barTrack: "bg-sky-200", barFill: "bg-sky-500", btn: "bg-white text-sky-700 shadow-sm hover:bg-sky-50" };
-
-  return (
-    <div
-      onClick={() => onDetail(task)}
-      className={`mx-[18px] mt-4 mb-1 cursor-pointer rounded-[18px] px-[19px] py-[17px] transition hover:-translate-y-0.5 ${tone.wrap}`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className={`text-[10px] font-bold uppercase tracking-[0.07em] ${tone.label}`}>
-            {isOverdue ? "Overdue" : isUrgent ? "Segera!" : isRunning ? "Lagi Dikerjakan" : "Prioritas Berikutnya"}
-          </p>
-          <p className={`font-display mt-0.5 truncate text-lg font-extrabold ${tone.title}`}>{toTitleCase(displayTitle(task))}</p>
-          {sub && <p className={`mt-0.5 truncate text-[12.5px] ${tone.sub}`}>{sub}</p>}
-        </div>
-        {streamAllowed && (
-          <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">🔴 LIVE</span>
-        )}
-      </div>
-      <div className="mt-[14px] flex items-center gap-3">
-        {task.duration_seconds ? (
-          <>
-            <div className={`h-[7px] max-w-[180px] flex-1 overflow-hidden rounded-full ${tone.barTrack}`}>
-              <div className={`h-full rounded-full ${tone.barFill}`} style={{ width: `${Math.min(100, Math.round((elapsed / task.duration_seconds) * 100))}%` }} />
-            </div>
-            <span className={`shrink-0 font-mono text-[11.5px] font-semibold ${tone.sub}`}>{fmtElapsed(elapsed)} / {fmtBudget(task.duration_seconds)}</span>
-          </>
-        ) : <span />}
-        <button
-          onClick={(e) => { e.stopPropagation(); isRunning ? onMarkDone(task) : onTimer(task); }}
-          className={`ml-auto shrink-0 rounded-full px-[18px] py-[9px] text-[12.5px] font-bold transition ${tone.btn}`}
-        >
-          {isRunning ? "Tandai Selesai" : "Mulai"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─── CompactTaskRow ────────────────────────────────────────────────
-   Baris ringkas: checkbox (nyambung ke alur asli — bukan toggle mentah,
-   tetap lewat gate Telegram/approval yang sama persis kayak tombol
-   "Done" versi lama), judul, satu baris deskripsi (target/catatan asli
-   — bukan info status), satu tombol aksi utama. Info lain (order, kode
-   update, durasi lengkap) ada di detail pas card diklik. ── */
-function CompactTaskRow({ task, now, isAdminOrPM, estStart, onTimer, onMarkDone, onApprove, onReject, onDetail, onDragStart, onDragOver }) {
+/* ─── TalentTaskRow ─────────────────────────────────────────────────
+   Satu komponen buat kedua tampilan (dulu FeaturedTaskCard & CompactTaskRow
+   terpisah): `isBig` nentuin apakah render sebagai kartu besar berwarna
+   atau baris ringkas. Posisinya di DOM TETAP di tempatnya masing-masing —
+   yang berubah cuma ukurannya (animasi via transition-all + collapse
+   grid-rows), dipicu hover (lihat `activeId` di PersonLane). Saat besar,
+   durasi pengerjaan & kode folder ikut kebuka (sebelumnya cuma keliatan
+   di detail modal). ── */
+function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHoverStart, onHoverEnd, onTimer, onMarkDone, onApprove, onReject, onDetail, onDragStart, onDragOver }) {
   const isDone = task.status === "done";
   const isFailed = task.status === "failed";
   const isReview = task.status === "menunggu_review";
@@ -1420,7 +1374,10 @@ function CompactTaskRow({ task, now, isAdminOrPM, estStart, onTimer, onMarkDone,
   const isOverdue = !isFinished && countdown !== null && countdown <= 0 && hasStarted;
   const isUrgent = !isFinished && countdown !== null && countdown > 0 && countdown <= 1800 && hasStarted;
   const rail = STATUS_META[task.status]?.rail || "bg-slate-200";
-  const sub = task.target_progress || task.notes || "";
+  const sub = task.target_progress || "";
+  const linkedOrderInfo = useMemo(() => (task.order_id && orders?.length ? orders.find((o) => o.id === task.order_id) : null), [task.order_id, orders]);
+  const streamAllowed = !!linkedOrderInfo?.stream_allowed;
+  const folderCode = task.notes || linkedOrderInfo?.folder_code || "";
   const stopProp = (fn) => (e) => { e.stopPropagation(); fn(); };
 
   const checkTitle = isDone ? "Selesai" : isReview ? "Menunggu review admin" : isFailed ? (isAdminOrPM ? "Tandai selesai" : "Gagal") : isAdminOrPM ? "Tandai selesai" : "Kirim untuk review";
@@ -1431,67 +1388,131 @@ function CompactTaskRow({ task, now, isAdminOrPM, estStart, onTimer, onMarkDone,
     onMarkDone(task);
   };
 
+  const tone = isOverdue
+    ? { wrap: "bg-rose-500", label: "text-rose-100", title: "text-white", sub: "text-rose-50", barTrack: "bg-rose-400/50", barFill: "bg-white", btn: "bg-white text-rose-600 hover:bg-rose-50" }
+    : isUrgent
+    ? { wrap: "bg-amber-400", label: "text-amber-900/70", title: "text-amber-950", sub: "text-amber-900/80", barTrack: "bg-amber-300/60", barFill: "bg-amber-950", btn: "bg-amber-950 text-amber-50 hover:bg-amber-900" }
+    : task.status === "in_revision"
+    ? { wrap: "bg-violet-50", label: "text-violet-400", title: "text-violet-900", sub: "text-violet-500", barTrack: "bg-violet-200", barFill: "bg-violet-500", btn: "bg-white text-violet-700 shadow-sm hover:bg-violet-50" }
+    : task.status === "menunggu_review"
+    ? { wrap: "bg-orange-50", label: "text-orange-400", title: "text-orange-900", sub: "text-orange-500", barTrack: "bg-orange-200", barFill: "bg-orange-500", btn: "bg-white text-orange-700 shadow-sm hover:bg-orange-50" }
+    : { wrap: "bg-sky-50", label: "text-sky-400", title: "text-sky-900", sub: "text-sky-500", barTrack: "bg-sky-200", barFill: "bg-sky-500", btn: "bg-white text-sky-700 shadow-sm hover:bg-sky-50" };
+
   return (
     <div
-      draggable={isAdminOrPM}
-      onDragStart={isAdminOrPM ? (e) => { e.stopPropagation(); onDragStart(e, task.id); } : undefined}
-      onDragOver={(e) => onDragOver(e, task.id)}
+      draggable={isAdminOrPM && !isBig}
+      onDragStart={isAdminOrPM && !isBig ? (e) => { e.stopPropagation(); onDragStart(e, task.id); } : undefined}
+      onDragOver={onDragOver ? (e) => onDragOver(e, task.id) : undefined}
+      onMouseEnter={() => onHoverStart?.(task.id)}
+      onMouseLeave={() => onHoverEnd?.(task.id)}
       onClick={() => onDetail(task, estStart)}
-      className="group relative flex cursor-pointer items-center gap-3 border-b border-slate-100 px-6 py-[11px] last:border-0 hover:bg-slate-50 transition"
+      className={`group relative cursor-pointer transition-all duration-300 ease-out ${
+        isBig
+          ? `mx-[18px] my-3 rounded-[18px] px-[19px] py-[17px] hover:-translate-y-0.5 ${tone.wrap}`
+          : "border-b border-slate-100 px-6 py-[11px] last:border-0 hover:bg-slate-50"
+      }`}
     >
-      <span className={`absolute inset-y-2 left-0 w-[3px] rounded-r-full ${isOverdue ? "bg-rose-500" : isUrgent ? "bg-amber-400" : rail}`} />
+      {!isBig && (
+        <span className={`absolute inset-y-2 left-0 w-[3px] rounded-r-full transition-colors ${isOverdue ? "bg-rose-500" : isUrgent ? "bg-amber-400" : rail}`} />
+      )}
 
-      <button
-        onClick={stopProp(handleCheck)}
-        disabled={checkDisabled}
-        title={checkTitle}
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
-          isDone ? "border-emerald-500 bg-emerald-500"
-          : isReview ? "cursor-default border-orange-300 bg-orange-50"
-          : checkDisabled ? "cursor-default border-slate-200"
-          : "border-slate-300 hover:border-indigo-400"
-        }`}
-      >
-        {isDone && <Check size={11} className="text-white" />}
-        {isReview && <span className="text-[10px]">⏳</span>}
-      </button>
+      <div className="flex items-start gap-3">
+        {!isBig && (
+          <button
+            onClick={stopProp(handleCheck)}
+            disabled={checkDisabled}
+            title={checkTitle}
+            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+              isDone ? "border-emerald-500 bg-emerald-500"
+              : isReview ? "cursor-default border-orange-300 bg-orange-50"
+              : checkDisabled ? "cursor-default border-slate-200"
+              : "border-slate-300 hover:border-indigo-400"
+            }`}
+          >
+            {isDone && <Check size={11} className="text-white" />}
+            {isReview && <span className="text-[10px]">⏳</span>}
+          </button>
+        )}
 
-      <div className="min-w-0 flex-1">
-        <p className={`truncate text-[14.5px] font-semibold ${isDone || isFailed ? "text-slate-400 line-through" : "text-slate-900"}`}>
-          {toTitleCase(displayTitle(task))}
-        </p>
-        <p className="truncate text-[11.5px] text-slate-400">{sub || " "}</p>
+        <div className="min-w-0 flex-1">
+          {isBig && (
+            <p className={`text-[10px] font-bold uppercase tracking-[0.07em] ${tone.label}`}>
+              {isOverdue ? "Overdue" : isUrgent ? "Segera!" : isRunning ? "Lagi Dikerjakan" : "Prioritas Berikutnya"}
+            </p>
+          )}
+          <p className={`truncate transition-all duration-300 ${
+            isBig
+              ? `font-display mt-0.5 text-lg font-extrabold ${tone.title}`
+              : `text-[14.5px] font-semibold ${isDone || isFailed ? "text-slate-400 line-through" : "text-slate-900"}`
+          }`}>
+            {toTitleCase(displayTitle(task))}
+          </p>
+          <p className={`truncate transition-all duration-300 ${isBig ? `mt-0.5 text-[12.5px] ${tone.sub}` : "text-[11.5px] text-slate-400"}`}>
+            {sub || (isBig ? "" : " ")}
+          </p>
+        </div>
+
+        {!isBig && (
+          isOverdue ? (
+            <span className="shrink-0 rounded-full bg-rose-500 px-2.5 py-1 text-[10.5px] font-bold text-white">
+              🕐 {fmtCountdown(Math.abs(countdown))} lewat
+            </span>
+          ) : isUrgent ? (
+            <span className="shrink-0 rounded-full bg-amber-400 px-2.5 py-1 text-[10.5px] font-bold text-amber-950">
+              {fmtCountdown(countdown)} lagi
+            </span>
+          ) : estStart && !isFinished && !isRunning ? (
+            <span className="shrink-0 font-mono text-[11.5px] font-semibold text-slate-400">🕐 {estStart}</span>
+          ) : null
+        )}
+        {!isBig && (
+          isReview ? (
+            <button onClick={stopProp(() => onDetail(task, estStart))} className="shrink-0 rounded-full border border-orange-300 bg-orange-50 px-[15px] py-[7px] text-xs font-bold text-orange-700 hover:bg-orange-100 transition">
+              Tinjau
+            </button>
+          ) : isActive ? (
+            <button
+              onClick={stopProp(() => onTimer(task))}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full px-[15px] py-[7px] text-xs font-bold transition ${
+                isRunning ? "bg-sky-500 text-white hover:bg-sky-600" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+              }`}
+            >
+              {isRunning ? <Pause size={11} /> : <Play size={11} />}
+              {isRunning
+                ? <span className="font-mono">{fmtClock(elapsed)}</span>
+                : elapsed > 0 ? <span className="font-mono">{fmtElapsed(elapsed)}</span> : "Mulai"}
+            </button>
+          ) : null
+        )}
+        {isBig && streamAllowed && (
+          <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">🔴 LIVE</span>
+        )}
       </div>
 
-      {isOverdue ? (
-        <span className="shrink-0 rounded-full bg-rose-500 px-2.5 py-1 text-[10.5px] font-bold text-white">
-          🕐 {fmtCountdown(Math.abs(countdown))} lewat
-        </span>
-      ) : isUrgent ? (
-        <span className="shrink-0 rounded-full bg-amber-400 px-2.5 py-1 text-[10.5px] font-bold text-amber-950">
-          {fmtCountdown(countdown)} lagi
-        </span>
-      ) : estStart && !isFinished && !isRunning ? (
-        <span className="shrink-0 font-mono text-[11.5px] font-semibold text-slate-400">🕐 {estStart}</span>
-      ) : null}
-
-      {isReview ? (
-        <button onClick={stopProp(() => onDetail(task, estStart))} className="shrink-0 rounded-full border border-orange-300 bg-orange-50 px-[15px] py-[7px] text-xs font-bold text-orange-700 hover:bg-orange-100 transition">
-          Tinjau
-        </button>
-      ) : isActive ? (
-        <button
-          onClick={stopProp(() => onTimer(task))}
-          className={`flex shrink-0 items-center gap-1.5 rounded-full px-[15px] py-[7px] text-xs font-bold transition ${
-            isRunning ? "bg-sky-500 text-white hover:bg-sky-600" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
-          }`}
-        >
-          {isRunning ? <Pause size={11} /> : <Play size={11} />}
-          {isRunning
-            ? <span className="font-mono">{fmtClock(elapsed)}</span>
-            : elapsed > 0 ? <span className="font-mono">{fmtElapsed(elapsed)}</span> : "Mulai"}
-        </button>
-      ) : null}
+      {/* Info yang cuma kebuka pas besar: progress durasi + kode folder */}
+      <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${isBig ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="overflow-hidden">
+          <div className="mt-[14px] flex items-center gap-3">
+            {task.duration_seconds ? (
+              <>
+                <div className={`h-[7px] max-w-[180px] flex-1 overflow-hidden rounded-full ${tone.barTrack}`}>
+                  <div className={`h-full rounded-full ${tone.barFill}`} style={{ width: `${Math.min(100, Math.round((elapsed / task.duration_seconds) * 100))}%` }} />
+                </div>
+                <span className={`shrink-0 font-mono text-[11.5px] font-semibold ${tone.sub}`}>{fmtElapsed(elapsed)} / {fmtBudget(task.duration_seconds)}</span>
+              </>
+            ) : <span />}
+            <button
+              onClick={stopProp(() => (isRunning ? onMarkDone(task) : onTimer(task)))}
+              className={`ml-auto shrink-0 rounded-full px-[18px] py-[9px] text-[12.5px] font-bold transition ${tone.btn}`}
+            >
+              {isRunning ? "Tandai Selesai" : "Mulai"}
+            </button>
+          </div>
+          {folderCode && (
+            <p className={`mt-2 truncate font-mono text-[11px] ${tone.sub}`}>📁 {folderCode}</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
