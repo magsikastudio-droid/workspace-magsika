@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   CheckCircle2, ClipboardList, GripVertical, Kanban, Loader2, Pause, Pencil, Play,
   Plus, Search, Send, X, Zap, Clock, CheckCheck, AlarmClock, Target, Bell, Monitor,
-  Copy, Check,
+  Copy, Check, ClipboardPaste, Trash2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
@@ -86,6 +86,45 @@ const copyToClipboard = async (text, successMsg) => {
   } catch {
     toast.error("Gagal menyalin — coba lagi.");
   }
+};
+
+/* ── Import teks "Urutan Prioritas" dari WA ───────────────────────
+   Alur aslinya: admin per-market setor daftar prioritas mereka (judul
+   + target + urutan) ke WA, PM yang mindahin manual satu-satu ke To
+   Do. Ini parse teks mentah itu jadi draft task — PM tinggal cek/edit
+   assignee-nya (baris header di teks itu kadang nama orang, kadang
+   nama market/klien, jadi gak bisa dipercaya 100% sebagai assignee)
+   terus konfirmasi buat bikin semua sekaligus. ── */
+const parsePriorityText = (raw) => {
+  if (!raw || !raw.trim()) return [];
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const blocks = [];
+  let current = null;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) { current = null; continue; }
+    if (/^urutan\s*prioritas$/i.test(trimmed)) continue;
+    const item = trimmed.match(/^(?:\d+[.)]|[-•·*])\s*(.+)$/);
+    if (item) {
+      if (!current) { current = { header: "", items: [] }; blocks.push(current); }
+      current.items.push(item[1]);
+    } else {
+      current = { header: trimmed, items: [] };
+      blocks.push(current);
+    }
+  }
+  const rows = [];
+  let seq = 0;
+  for (const block of blocks) {
+    for (const raw of block.items) {
+      const dashIdx = raw.indexOf(" - ");
+      const title = (dashIdx >= 0 ? raw.slice(0, dashIdx) : raw).trim();
+      const target = dashIdx >= 0 ? raw.slice(dashIdx + 3).trim() : "";
+      if (!title) continue;
+      rows.push({ _key: `p${seq++}`, title, target_progress: target, assignee: block.header || "", assignee_type: "tim" });
+    }
+  }
+  return rows;
 };
 
 const shiftDate = (dateStr, days) => {
@@ -204,6 +243,7 @@ export default function Todo() {
   const [date, setDate] = useState(todayStr());
   const [viewMode, setViewMode] = useState("list");
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -578,6 +618,11 @@ export default function Todo() {
               </button>
             )}
             {isAdminOrPM && (
+              <button onClick={() => setShowImport(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+                <ClipboardPaste size={14} /> Import dari Teks
+              </button>
+            )}
+            {isAdminOrPM && (
               <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
                 <Plus size={14} /> Task
               </button>
@@ -696,6 +741,13 @@ export default function Todo() {
           title="Tambah Task" data={taskInput} onChange={setTaskInput}
           onSubmit={handleCreateTask} onClose={() => setShowAdd(false)}
           orders={orders} knownAssignees={knownAssignees} isAdd
+        />
+      )}
+      {showImport && (
+        <ImportPriorityModal
+          date={date} knownAssignees={knownAssignees}
+          createTask={createTask}
+          onClose={() => setShowImport(false)}
         />
       )}
       {editTask && (
@@ -1648,6 +1700,180 @@ function UnhandledSection({ orders, isAdminOrPM, onAddTask }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── ImportPriorityModal ───────────────────────────────────────────
+   Paste teks "Urutan Prioritas" mentah dari WA, sistem parse jadi
+   draft task per baris. Nama di header blok cuma saran assignee —
+   PM edit langsung di tabel kalau ternyata itu nama market/klien,
+   bukan nama tim. Bikin semua task sekaligus setelah dikurasi. ── */
+function ImportPriorityModal({ date, knownAssignees, createTask, onClose }) {
+  const [raw, setRaw] = useState("");
+  const [rows, setRows] = useState(null); // null = belum di-parse
+  const [bulkAssignee, setBulkAssignee] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleParse = () => {
+    const parsed = parsePriorityText(raw);
+    if (parsed.length === 0) {
+      toast.error("Gak ketemu baris task — pastikan formatnya '1. Judul - target' per baris.");
+      return;
+    }
+    setRows(parsed);
+  };
+
+  const updateRow = (key, patch) => {
+    setRows((prev) => prev.map((r) => (r._key === key ? { ...r, ...patch } : r)));
+  };
+  const removeRow = (key) => {
+    setRows((prev) => prev.filter((r) => r._key !== key));
+  };
+  const applyBulkAssignee = () => {
+    if (!bulkAssignee.trim()) return;
+    setRows((prev) => prev.map((r) => ({ ...r, assignee: bulkAssignee.trim() })));
+  };
+
+  const handleSubmit = async () => {
+    const valid = (rows || []).filter((r) => r.title.trim());
+    if (valid.length === 0) { toast.error("Gak ada task buat dibuat."); return; }
+    const missingAssignee = valid.some((r) => !r.assignee.trim());
+    if (missingAssignee && !confirm("Ada task yang belum ada assignee-nya — tetap lanjut buat?")) return;
+    setSubmitting(true);
+    try {
+      const results = await Promise.allSettled(
+        valid.map((r) =>
+          createTask({
+            title: r.title.trim(),
+            assignee: r.assignee.trim(),
+            assignee_type: r.assignee_type || "tim",
+            status: "pending",
+            date,
+            notes: "",
+            target_progress: r.target_progress || "",
+          })
+        )
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      const ok = results.length - failed;
+      if (failed > 0) toast.warning(`${ok} task berhasil dibuat, ${failed} gagal.`);
+      else toast.success(`${ok} task berhasil dibuat dari import.`);
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm px-4">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-center gap-3 bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-5">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
+            <ClipboardPaste size={20} className="text-white" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-white text-base">Import dari Teks</p>
+            <p className="text-xs text-indigo-100">Paste teks "Urutan Prioritas" dari WA, sistem bikinin draft task-nya</p>
+          </div>
+          <button onClick={onClose} className="shrink-0 rounded-lg p-1.5 text-white/80 hover:bg-white/10"><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {rows === null ? (
+            <>
+              <textarea
+                value={raw}
+                onChange={(e) => setRaw(e.target.value)}
+                rows={12}
+                placeholder={"Contoh:\n\nEirene\n1. Government Uniform (Emperor) - Cek Roblox\n2. Cone Coach - Revisi 100%\n\nDARTMAX3D\n1. 3D Vtuber model - Rigg - 50%"}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-mono focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              />
+              <p className="mt-2 text-xs text-slate-400">
+                Boleh paste beberapa pesan sekaligus (dipisah baris kosong). Baris di atas tiap list dianggap saran nama assignee — bisa diedit lagi sebelum dibuat.
+              </p>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="text-xs font-semibold text-slate-500 shrink-0">Set semua assignee ke:</span>
+                <input
+                  value={bulkAssignee}
+                  onChange={(e) => setBulkAssignee(e.target.value)}
+                  list="known-assignees-import"
+                  placeholder="Nama tim..."
+                  className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:border-indigo-400 focus:outline-none"
+                />
+                <datalist id="known-assignees-import">
+                  {knownAssignees.map((a) => <option key={a} value={a} />)}
+                </datalist>
+                <button onClick={applyBulkAssignee} className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition">
+                  Terapkan
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {rows.map((r) => (
+                  <div key={r._key} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 p-2.5">
+                    <input
+                      value={r.title}
+                      onChange={(e) => updateRow(r._key, { title: e.target.value })}
+                      placeholder="Judul task"
+                      className="min-w-0 flex-[2] rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
+                    />
+                    <input
+                      value={r.assignee}
+                      onChange={(e) => updateRow(r._key, { assignee: e.target.value })}
+                      list="known-assignees-import"
+                      placeholder="Assignee"
+                      className={`min-w-0 flex-1 rounded-lg border px-2.5 py-1.5 text-sm focus:outline-none ${
+                        r.assignee.trim() ? "border-slate-200 focus:border-indigo-400" : "border-amber-300 bg-amber-50"
+                      }`}
+                    />
+                    <input
+                      value={r.target_progress}
+                      onChange={(e) => updateRow(r._key, { target_progress: e.target.value })}
+                      placeholder="Target/progres"
+                      className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
+                    />
+                    <button onClick={() => removeRow(r._key)} className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+                {rows.length === 0 && (
+                  <p className="py-6 text-center text-sm text-slate-400">Semua baris dihapus — klik "Ulang" buat paste lagi.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+          {rows === null ? (
+            <>
+              <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">
+                Batal
+              </button>
+              <button onClick={handleParse} className="flex-1 rounded-2xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 transition">
+                Parse Teks
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setRows(null)} className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">
+                Ulang
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={submitting || rows.length === 0}
+                className="flex-1 rounded-2xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
+                {submitting ? "Membuat..." : `Buat ${rows.length} Task`}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
