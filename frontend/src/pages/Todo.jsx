@@ -121,7 +121,12 @@ const parsePriorityText = (raw) => {
       const title = (dashIdx >= 0 ? raw.slice(0, dashIdx) : raw).trim();
       const target = dashIdx >= 0 ? raw.slice(dashIdx + 3).trim() : "";
       if (!title) continue;
-      rows.push({ _key: `p${seq++}`, title, target_progress: target, assignee: block.header || "", assignee_type: "tim" });
+      // assignee SENGAJA dikosongin, bukan diisi dari header block — header
+      // itu kadang nama market/klien (bukan nama orang), dan satu blok bisa
+      // aja isinya project-project yang perlu dipecah ke talent berbeda-
+      // beda (biar gak numpuk/bottleneck di satu orang). PM wajib isi
+      // manual tiap baris; header cuma dipajang sebagai label info.
+      rows.push({ _key: `p${seq++}`, title, target_progress: target, assignee: "", assignee_type: "tim", sourceLabel: block.header || "" });
     }
   }
   return rows;
@@ -1814,31 +1819,38 @@ function ImportPriorityModal({ date, knownAssignees, createTask, onClose }) {
 
               <div className="space-y-2">
                 {rows.map((r) => (
-                  <div key={r._key} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 p-2.5">
-                    <input
-                      value={r.title}
-                      onChange={(e) => updateRow(r._key, { title: e.target.value })}
-                      placeholder="Judul task"
-                      className="min-w-0 flex-[2] rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
-                    />
-                    <input
-                      value={r.assignee}
-                      onChange={(e) => updateRow(r._key, { assignee: e.target.value })}
-                      list="known-assignees-import"
-                      placeholder="Assignee"
-                      className={`min-w-0 flex-1 rounded-lg border px-2.5 py-1.5 text-sm focus:outline-none ${
-                        r.assignee.trim() ? "border-slate-200 focus:border-indigo-400" : "border-amber-300 bg-amber-50"
-                      }`}
-                    />
-                    <input
-                      value={r.target_progress}
-                      onChange={(e) => updateRow(r._key, { target_progress: e.target.value })}
-                      placeholder="Target/progres"
-                      className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
-                    />
-                    <button onClick={() => removeRow(r._key)} className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
-                      <Trash2 size={14} />
-                    </button>
+                  <div key={r._key} className="rounded-xl border border-slate-200 p-2.5">
+                    {r.sourceLabel && (
+                      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Dari teks: {r.sourceLabel} — isi assignee manual di bawah ↓
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        value={r.title}
+                        onChange={(e) => updateRow(r._key, { title: e.target.value })}
+                        placeholder="Judul task"
+                        className="min-w-0 flex-[2] rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
+                      />
+                      <input
+                        value={r.assignee}
+                        onChange={(e) => updateRow(r._key, { assignee: e.target.value })}
+                        list="known-assignees-import"
+                        placeholder="Assignee (wajib diisi)"
+                        className={`min-w-0 flex-1 rounded-lg border px-2.5 py-1.5 text-sm focus:outline-none ${
+                          r.assignee.trim() ? "border-slate-200 focus:border-indigo-400" : "border-amber-300 bg-amber-50"
+                        }`}
+                      />
+                      <input
+                        value={r.target_progress}
+                        onChange={(e) => updateRow(r._key, { target_progress: e.target.value })}
+                        placeholder="Target/progres"
+                        className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
+                      />
+                      <button onClick={() => removeRow(r._key)} className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {rows.length === 0 && (

@@ -2359,8 +2359,11 @@ async def create_task(task: TaskCreate, current_user: dict = Depends(get_current
     except Exception:
         result_task = {**payload, "id": f"task-mock-{datetime.now(timezone.utc).timestamp()}"}
     # Auto-sync assignee into order.artists
-    oid = payload.get("order_id", "").strip()
-    assignee = payload.get("assignee", "").strip()
+    # (order_id/assignee ada di TaskBase dengan default None/"Unassigned",
+    # tapi kalau None tetap kekirim, .get(key, default) gak ke-trigger
+    # karena key-nya ADA cuma value-nya None — makanya perlu `or ""`.)
+    oid = (payload.get("order_id") or "").strip()
+    assignee = (payload.get("assignee") or "").strip()
     if oid and assignee:
         try:
             await db.orders.update_one({"_id": ObjectId(oid)}, {"$addToSet": {"artists": assignee}})
