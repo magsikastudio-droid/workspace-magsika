@@ -57,8 +57,10 @@ const sortForPriorityList = (list) => {
   });
 };
 const priorityLineFor = (task) => {
-  const desc = task.target_progress || task.notes || "";
-  return desc ? `${displayTitle(task)} - ${desc}` : displayTitle(task);
+  // Sengaja gak fallback ke task.notes — itu isinya kode folder order,
+  // bukan deskripsi progres. Selalu tampilin "Judul - " (walau kosong
+  // di belakangnya) biar admin tinggal isi manual detailnya pas kurasi.
+  return `${displayTitle(task)} - ${task.target_progress || ""}`;
 };
 const buildPriorityTextFor = (assignee, tasks) => {
   const ordered = sortForPriorityList(tasks);
