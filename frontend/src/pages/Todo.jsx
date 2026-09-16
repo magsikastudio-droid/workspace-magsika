@@ -364,6 +364,9 @@ export default function Todo() {
 
   const role = user?.role || "talent";
   const isAdminOrPM = role === "admin" || role === "pm";
+  // Detail order (harga, client, dll) rahasia -- cuma admin yang boleh buka/edit,
+  // beda sama isAdminOrPM yang dipakai buat hak akses task talent/PM biasa.
+  const isAdmin = role === "admin";
   const { streaming, connectStreamWithMedia, resumeStream, pendingResume, sendBRB, dismissResume } = useStream();
 
   const [date, setDate] = useState(todayStr());
@@ -824,6 +827,7 @@ export default function Todo() {
         <UnhandledSection
           orders={unhandledOrders}
           isAdminOrPM={isAdminOrPM}
+          isAdmin={isAdmin}
           onOpenOrder={setEditOrder}
           onAddTask={(order) => {
             setTaskInput((p) => ({
@@ -954,6 +958,7 @@ export default function Todo() {
           orders={orders}
           now={now}
           isAdminOrPM={isAdminOrPM}
+          isAdmin={isAdmin}
           estStart={detailEstStart}
           onClose={() => { setDetailTaskId(null); setDetailEstStart(null); }}
           onEdit={(t) => { setDetailTaskId(null); setEditTask({ ...t }); }}
@@ -1844,7 +1849,7 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemin
    judul + 1 tombol. Semua fetch/state (orderTotal, dailyUpdateConfirmed,
    revoke) dipertahankan persis, cuma tata letaknya dirapikan + sekarang
    satu tombol aksi utama per status (bukan nyebar 4-5 tombol). ── */
-function TaskDetailModal({ task, orders, now, isAdminOrPM, estStart, onClose, onEdit, onOpenOrder, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onDelete }) {
+function TaskDetailModal({ task, orders, now, isAdminOrPM, isAdmin, estStart, onClose, onEdit, onOpenOrder, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onDelete }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
   const linkedOrder = orders.find((o) => o.id === task.order_id);
@@ -1982,7 +1987,7 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, estStart, onClose, on
                   <p className="text-sm font-semibold text-indigo-900 truncate">{linkedOrder.project}</p>
                   <p className="text-xs text-indigo-500 font-mono">{linkedOrder.folder_code || linkedOrder.client}</p>
                 </div>
-                {isAdminOrPM && (
+                {isAdmin && (
                   <button
                     onClick={handleOpenOrder}
                     title="Buka & edit order ini (kayak di halaman Order)"
@@ -2218,7 +2223,7 @@ function NeedDailyUpdateModal({ task, onClose }) {
 }
 
 /* ─── UnhandledSection ──────────────────────────────────────────── */
-function UnhandledSection({ orders, isAdminOrPM, onOpenOrder, onAddTask }) {
+function UnhandledSection({ orders, isAdminOrPM, isAdmin, onOpenOrder, onAddTask }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -2240,9 +2245,11 @@ function UnhandledSection({ orders, isAdminOrPM, onOpenOrder, onAddTask }) {
           {orders.map((order) => (
             <div
               key={order.id}
-              onClick={() => onOpenOrder(order)}
-              title="Klik buat buka & edit order ini"
-              className="flex shrink-0 flex-col gap-0.5 rounded-2xl border border-slate-200 bg-slate-50 px-[15px] py-[10px] min-w-[150px] cursor-pointer transition hover:border-indigo-300 hover:-translate-y-0.5"
+              onClick={isAdmin ? () => onOpenOrder(order) : undefined}
+              title={isAdmin ? "Klik buat buka & edit order ini" : undefined}
+              className={`flex shrink-0 flex-col gap-0.5 rounded-2xl border border-slate-200 bg-slate-50 px-[15px] py-[10px] min-w-[150px] transition ${
+                isAdmin ? "cursor-pointer hover:border-indigo-300 hover:-translate-y-0.5" : ""
+              }`}
             >
               <p className="text-[12.5px] font-semibold text-slate-800 truncate max-w-[170px]">{order.project || "Unnamed"}</p>
               <p className="font-mono text-[10.5px] text-slate-400 truncate max-w-[170px]">{order.folder_code || order.client || ""}</p>

@@ -229,6 +229,27 @@ def format_order(record: dict) -> dict:
     }
 
 
+# Field yang dianggap rahasia finansial/klien -- cuma admin & PM yang boleh
+# lihat (mereka juga satu-satunya yang boleh create/update/delete order,
+# lihat endpoint di bawah). Talent tetap butuh sisa field order (project,
+# folder_code, market, dll) buat nampilin info task-nya sendiri di To Do,
+# makanya GET /orders gak diblok total buat talent -- cuma field ini yang
+# disamarkan.
+_ORDER_CONFIDENTIAL_FIELDS = (
+    "client", "total", "payment_status", "dp_paid", "fee_freelance",
+    "marketer", "artist_contributions",
+)
+
+
+def redact_order_for_role(order: dict, role: str) -> dict:
+    if role in ("admin", "pm"):
+        return order
+    redacted = dict(order)
+    for field in _ORDER_CONFIDENTIAL_FIELDS:
+        redacted.pop(field, None)
+    return redacted
+
+
 def format_chat_entry(record: dict) -> dict:
     return {
         "id": str(record.get("_id")) if record.get("_id") else record.get("id"),
@@ -1935,11 +1956,12 @@ async def get_turn_credentials(current_user: dict = Depends(get_current_user)):
 
 @app.get("/orders")
 async def list_orders(current_user: dict = Depends(get_current_user)):
+    role = current_user.get("role")
     try:
         records = await db.orders.find().to_list(200)
-        return {"orders": [format_order(record) for record in records]}
+        return {"orders": [redact_order_for_role(format_order(record), role) for record in records]}
     except Exception:
-        return {"orders": mock_orders}
+        return {"orders": [redact_order_for_role(o, role) for o in mock_orders]}
 
 
 @app.post("/orders")
@@ -1971,7 +1993,7 @@ async def get_order(order_id: str, current_user: dict = Depends(get_current_user
         record = None
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    return {"order": format_order(record)}
+    return {"order": redact_order_for_role(format_order(record), current_user.get("role"))}
 
 
 @app.patch("/orders/{order_id}")
