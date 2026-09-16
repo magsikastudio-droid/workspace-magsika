@@ -299,16 +299,16 @@ export default function OrdersPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
-          <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
+          <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50">
             <Upload size={15} /> Import CSV
           </button>
-          <button onClick={handleExportCSV} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
+          <button onClick={handleExportCSV} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50">
             <Download size={15} /> Export CSV
           </button>
-          <button onClick={() => setShowExport(true)} className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 shadow-sm">
+          <button onClick={() => setShowExport(true)} className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-100">
             <FileText size={15} /> Export PDF
           </button>
-          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-violet-700">
+          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-violet-700">
             <Plus size={15} /> Tambah Order
           </button>
         </div>
@@ -322,8 +322,8 @@ export default function OrdersPage() {
           { label: "Completed",       value: doneCount,    sub: "Order selesai",          accent: "border-l-emerald-500"},
           { label: "Cancelled",       value: cancelCount,  sub: "Order dibatalkan",       accent: "border-l-rose-400"  },
         ].map((c) => (
-          <div key={c.label} className={`rounded-2xl border-l-4 border border-slate-200 bg-white px-5 py-4 shadow-sm ${c.accent}`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">{c.label}</p>
+          <div key={c.label} className={`rounded-3xl border-l-4 border border-slate-200 bg-white px-5 py-4 shadow-sm ${c.accent}`}>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{c.label}</p>
             <p className="mt-2 text-3xl font-bold text-slate-900">{c.value}</p>
             <p className="mt-0.5 text-xs text-slate-400">{c.sub}</p>
           </div>
@@ -331,7 +331,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Table card */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
           <div className="relative flex-1 min-w-[200px]">
@@ -359,7 +359,7 @@ export default function OrdersPage() {
           </select>
           <button
             onClick={() => setWeeklyView((v) => !v)}
-            className={`ml-auto inline-flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${weeklyView ? "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+            className={`ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-2.5 text-xs font-semibold transition ${weeklyView ? "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
           >
             <Columns size={13} /> {weeklyView ? "Per Minggu" : "Full"}
           </button>
@@ -369,7 +369,7 @@ export default function OrdersPage() {
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-[0.13em] text-slate-500">
+              <tr className="border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                 <th className="px-4 py-3">Project</th>
                 <th className="px-4 py-3">Klien</th>
                 <th className="px-4 py-3">Kode Folder</th>
@@ -438,7 +438,7 @@ export default function OrdersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        <select value={normalizeStatus(order.status)} onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)} className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer" style={{ background: sc.bg, color: sc.text }}>
+                        <select value={normalizeStatus(order.status)} onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)} className="rounded-full border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer" style={{ background: sc.bg, color: sc.text }}>
                           {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
                         </select>
                         {order.status_auto_updated && (
@@ -449,8 +449,8 @@ export default function OrdersPage() {
                     <td className="px-4 py-3"><PaymentSelect orderId={order.id} value={order.payment_status} onUpdate={handleInlineUpdate} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => setActiveOrder(order)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">Details</button>
-                        <button onClick={() => setConfirmDelete(order)} className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition"><Trash2 size={14} /></button>
+                        <button onClick={() => setActiveOrder(order)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50">Details</button>
+                        <button onClick={() => setConfirmDelete(order)} className="rounded-full p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition"><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>
@@ -548,7 +548,7 @@ export default function OrdersPage() {
                               <select
                                 value={normalizeStatus(order.status)}
                                 onChange={(e) => handleInlineUpdate(order.id, "status", e.target.value)}
-                                className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
+                                className="rounded-full border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
                                 style={{ background: sc.bg, color: sc.text }}
                               >
                                 {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
@@ -563,10 +563,10 @@ export default function OrdersPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
-                              <button onClick={() => setActiveOrder(order)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
+                              <button onClick={() => setActiveOrder(order)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50">
                                 Details
                               </button>
-                              <button onClick={() => setConfirmDelete(order)} className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
+                              <button onClick={() => setConfirmDelete(order)} className="rounded-full p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
                                 <Trash2 size={14} />
                               </button>
                             </div>
@@ -610,12 +610,12 @@ export default function OrdersPage() {
 
       {confirmDelete && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-7 shadow-2xl">
+          <div className="w-full max-w-sm rounded-[28px] bg-white p-7 shadow-2xl">
             <h2 className="text-lg font-bold text-slate-900">Hapus Order?</h2>
             <p className="mt-2 text-sm text-slate-500">Order <span className="font-semibold text-slate-800">{confirmDelete.project}</span> akan dihapus permanen dan tidak bisa dikembalikan.</p>
             <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setConfirmDelete(null)} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
-              <button onClick={() => handleDelete(confirmDelete.id)} className="rounded-xl bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-700">Hapus</button>
+              <button onClick={() => setConfirmDelete(null)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50">Batal</button>
+              <button onClick={() => handleDelete(confirmDelete.id)} className="rounded-full bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-rose-700">Hapus</button>
             </div>
           </div>
         </div>
@@ -706,7 +706,7 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
 
   const inp = "w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-indigo-300 focus:bg-white transition";
   const SectionHeader = ({ icon: Icon, label, color }) => (
-    <div className={`mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] ${color}`}>
+    <div className={`mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest ${color}`}>
       <Icon size={14} /> {label}
     </div>
   );
@@ -1053,8 +1053,8 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
 
           {/* Footer */}
           <div className="flex justify-end gap-3 border-t border-slate-100 px-7 py-5">
-            <button type="button" onClick={onClose} className="rounded-full border border-slate-200 px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
-            <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
+            <button type="button" onClick={onClose} className="rounded-full border border-slate-200 px-6 py-2.5 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50">Batal</button>
+            <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:opacity-60">
               {saving ? "Menyimpan..." : "Simpan perubahan"}
             </button>
           </div>
@@ -1071,7 +1071,7 @@ function PaymentSelect({ orderId, value, onUpdate }) {
     <select
       value={value || "Belum Lunas"}
       onChange={(e) => onUpdate(orderId, "payment_status", e.target.value)}
-      className="rounded-lg border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
+      className="rounded-full border-0 px-2.5 py-1 text-xs font-semibold outline-none cursor-pointer"
       style={{ background: pc.bg, color: pc.text }}
     >
       {PAYMENT_OPTIONS.map((p) => <option key={p}>{p}</option>)}

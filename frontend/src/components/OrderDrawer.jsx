@@ -179,25 +179,25 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
       <div className="fixed inset-0 z-[200] bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Drawer */}
-      <div className="fixed right-0 inset-y-0 z-[300] flex w-full max-w-[500px] flex-col bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="fixed right-0 inset-y-0 z-[300] flex w-full max-w-[500px] flex-col overflow-hidden rounded-l-[28px] bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-5">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: sc.bg, color: sc.text }}>
+              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: sc.bg, color: sc.text }}>
                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: sc.text }} />
                 {normalizeStatus(order.status)}
               </span>
-              <span className="inline-flex rounded-lg px-2.5 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
+              <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: pc.bg, color: pc.text }}>
                 {order.payment_status || "Belum Lunas"}
               </span>
               {order.stream_allowed && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-red-100 px-2.5 py-1 text-xs font-bold text-red-600">
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-600">
                   🔴 Live Stream
                 </span>
               )}
               {order.payment_status === "DP" && order.dp_paid > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-700">
                   Sisa: {formatMoney(Math.max(0, (order.total || 0) - order.dp_paid / exchangeRate))}
                 </span>
               )}
@@ -207,7 +207,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {!editing && (
-              <button onClick={(e) => { e.stopPropagation(); setEditing(true); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm flex items-center gap-1.5">
+              <button onClick={(e) => { e.stopPropagation(); setEditing(true); }} className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50">
                 <Edit3 size={13} /> Edit
               </button>
             )}
@@ -227,7 +227,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
                 <div className="px-6 py-4">
                   {/* Header + progress bar */}
                   <div className="mb-3 flex items-center justify-between">
-                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Milestones</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Milestones</p>
                     <span className="text-xs font-semibold text-slate-500">
                       {order.milestones.filter((m) => m.status === "done").length}/{order.milestones.length} selesai
                     </span>
@@ -246,7 +246,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
                       return (
                         <div
                           key={idx}
-                          className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition ${
+                          className={`flex items-center gap-3 rounded-2xl border px-4 py-3 transition ${
                             isDone ? "border-emerald-200 bg-emerald-50"
                             : isActive ? "border-blue-200 bg-blue-50 ring-1 ring-blue-300"
                             : "border-slate-100 bg-slate-50 opacity-50"
@@ -313,7 +313,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
 
               {/* Order Info */}
               <div className="px-6 py-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Info Order</p>
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Info Order</p>
                 <Row label="Order ID" value={order.order_id} />
                 <Row label="Tanggal Order" value={order.order_date} />
                 <Row label="Deadline" value={<span className={order.deadline && Math.ceil((new Date(order.deadline) - new Date()) / 86400000) < 0 ? "text-rose-600" : order.deadline && Math.ceil((new Date(order.deadline) - new Date()) / 86400000) <= 3 ? "text-amber-600" : ""}>{order.deadline}</span>} />
@@ -324,8 +324,8 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
 
               {/* Folder Code */}
               <div className="px-6 py-4">
-                <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Kode Folder</p>
-                <div className="rounded-xl bg-indigo-50 border border-indigo-100 px-4 py-3">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Kode Folder</p>
+                <div className="rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-3">
                   <p className="font-mono text-sm font-semibold text-indigo-800">{order.folder_code || autoFolderCode}</p>
                 </div>
               </div>
@@ -333,14 +333,14 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
               {/* Tim Artist */}
               <div className="px-6 py-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
                   {dynamicContribs && (
                     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">Aktual dari task</span>
                   )}
                 </div>
                 <div className="space-y-2">
                   {mergedContribs.map((c, i) => (
-                    <div key={i} className="rounded-xl bg-slate-50 px-3 py-2.5">
+                    <div key={i} className="rounded-2xl bg-slate-50 px-3 py-2.5">
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                           <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: artistColor(c.name) }}>{c.name?.charAt(0)?.toUpperCase() || "?"}</div>
@@ -367,21 +367,21 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
 
               {/* Keuangan */}
               <div className="px-6 py-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Keuangan</p>
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Keuangan</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-slate-100 bg-white p-3">
+                  <div className="rounded-2xl border border-slate-100 bg-white p-3">
                     <p className="text-xs text-slate-400">Nilai Order</p>
                     <p className="mt-1 text-base font-bold text-slate-900">${order.total}</p>
                     <p className="text-xs text-slate-400">{formatMoney(order.total)}</p>
                   </div>
                   {order.fee_freelance > 0 && (
-                    <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3">
                       <p className="text-xs text-amber-600">Fee Freelance</p>
                       <p className="mt-1 text-base font-bold text-amber-700">Rp{Number(order.fee_freelance).toLocaleString("id-ID")}</p>
                       <p className="text-xs text-amber-500">{Number(order.total) > 0 ? Math.round((order.fee_freelance / exchangeRate / Number(order.total)) * 100) : 0}% dari order</p>
                     </div>
                   )}
-                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 col-span-2">
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3 col-span-2">
                     <p className="text-xs text-emerald-600">Net</p>
                     <p className="mt-1 text-base font-bold text-emerald-700">${((Number(order.total) || 0) - (Number(order.fee_freelance) || 0) / exchangeRate).toFixed(2)}</p>
                   </div>
@@ -391,7 +391,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
               {/* Catatan */}
               {order.notes && (
                 <div className="px-6 py-4">
-                  <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Catatan</p>
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Catatan</p>
                   <p className="text-sm text-slate-600 whitespace-pre-wrap">{order.notes}</p>
                 </div>
               )}
@@ -400,7 +400,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
             /* EDIT MODE */
             <form id="drawer-edit-form" onSubmit={handleSave} className="space-y-0 divide-y divide-slate-100">
               <div className="px-6 py-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Info Dasar</p>
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Info Dasar</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs font-medium text-slate-500">Tanggal Order<input type="date" value={form.order_date || ""} onChange={set("order_date")} className={inp} /></label>
                   <label className="space-y-1 text-xs font-medium text-slate-500">Deadline<input type="date" value={form.deadline || ""} onChange={set("deadline")} className={inp} /></label>
@@ -411,7 +411,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
                 </div>
               </div>
               <div className="px-6 py-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Detail Project</p>
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Detail Project</p>
                 <label className="mb-3 block space-y-1 text-xs font-medium text-slate-500">Nama Project<input value={form.project} onChange={set("project")} required className={inp} /></label>
                 <div className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
                   <div className="flex items-center justify-between mb-2">
@@ -447,7 +447,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
               {/* Milestones editor */}
               <div className="px-6 py-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Milestones</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Milestones</p>
                   <button
                     type="button"
                     onClick={() => setForm((p) => ({ ...p, milestones: [...(p.milestones || []), emptyMilestone()] }))}
@@ -500,7 +500,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
               </div>
 
               <div className="px-6 py-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Tim Artist</p>
                 <div className="space-y-2">
                   {(form.artist_contributions || []).map((contrib, idx) => (
                     <div key={idx} className="flex items-center gap-2">
@@ -524,7 +524,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
                 </div>
               </div>
               <div className="px-6 py-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Keuangan</p>
+                <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Keuangan</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <div className="flex items-center justify-between gap-2">
@@ -563,17 +563,17 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
         <div className="border-t border-slate-100 px-6 py-4">
           {editing ? (
             <div className="flex justify-between gap-3">
-              <button type="button" onClick={() => setEditing(false)} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Batal</button>
-              <button type="submit" form="drawer-edit-form" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60">
+              <button type="button" onClick={() => setEditing(false)} className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50">Batal</button>
+              <button type="submit" form="drawer-edit-form" disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-violet-700 disabled:opacity-60">
                 {saving ? "Menyimpan..." : "Simpan"}
               </button>
             </div>
           ) : (
             <div className="flex justify-between gap-3">
-              <button type="button" onClick={() => onDelete(order.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50">
+              <button type="button" onClick={() => onDelete(order.id)} className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:-translate-y-0.5 hover:bg-rose-50">
                 <Trash2 size={14} /> Hapus
               </button>
-              <button type="button" onClick={(e) => { e.stopPropagation(); setEditing(true); }} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-violet-700">
+              <button type="button" onClick={(e) => { e.stopPropagation(); setEditing(true); }} className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-violet-700">
                 <Edit3 size={14} /> Edit Order
               </button>
             </div>
