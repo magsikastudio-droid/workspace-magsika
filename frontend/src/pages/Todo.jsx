@@ -1380,6 +1380,18 @@ function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHove
   const folderCode = task.notes || linkedOrderInfo?.folder_code || "";
   const stopProp = (fn) => (e) => { e.stopPropagation(); fn(); };
 
+  // Link ke pesan update spesifik di Telegram — cuma perlu di-fetch pas task
+  // selesai DAN lagi ditampilin besar (buat tombol "Cek Update").
+  const [telegramLink, setTelegramLink] = useState(null);
+  useEffect(() => {
+    if (!isBig || !isDone) return;
+    let alive = true;
+    api.get(`/tasks/${task.id}/daily-update-status`)
+      .then((r) => { if (alive) setTelegramLink(r.data?.telegram_link || null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isBig, isDone, task.id]);
+
   const checkTitle = isDone ? "Selesai" : isReview ? "Menunggu review admin" : isFailed ? (isAdminOrPM ? "Tandai selesai" : "Gagal") : isAdminOrPM ? "Tandai selesai" : "Kirim untuk review";
   const checkDisabled = isDone || isReview || (isFailed && !isAdminOrPM);
   const handleCheck = () => {
@@ -1392,9 +1404,11 @@ function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHove
     ? { wrap: "bg-rose-500", label: "text-rose-100", title: "text-white", sub: "text-rose-50", barTrack: "bg-rose-400/50", barFill: "bg-white", btn: "bg-white text-rose-600 hover:bg-rose-50" }
     : isUrgent
     ? { wrap: "bg-amber-400", label: "text-amber-900/70", title: "text-amber-950", sub: "text-amber-900/80", barTrack: "bg-amber-300/60", barFill: "bg-amber-950", btn: "bg-amber-950 text-amber-50 hover:bg-amber-900" }
+    : isDone
+    ? { wrap: "bg-emerald-50", label: "text-emerald-400", title: "text-emerald-900", sub: "text-emerald-500", barTrack: "bg-emerald-200", barFill: "bg-emerald-500", btn: "bg-white text-emerald-700 shadow-sm hover:bg-emerald-50" }
     : task.status === "in_revision"
     ? { wrap: "bg-violet-50", label: "text-violet-400", title: "text-violet-900", sub: "text-violet-500", barTrack: "bg-violet-200", barFill: "bg-violet-500", btn: "bg-white text-violet-700 shadow-sm hover:bg-violet-50" }
-    : task.status === "menunggu_review"
+    : isReview
     ? { wrap: "bg-orange-50", label: "text-orange-400", title: "text-orange-900", sub: "text-orange-500", barTrack: "bg-orange-200", barFill: "bg-orange-500", btn: "bg-white text-orange-700 shadow-sm hover:bg-orange-50" }
     : { wrap: "bg-sky-50", label: "text-sky-400", title: "text-sky-900", sub: "text-sky-500", barTrack: "bg-sky-200", barFill: "bg-sky-500", btn: "bg-white text-sky-700 shadow-sm hover:bg-sky-50" };
 
@@ -1437,7 +1451,7 @@ function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHove
         <div className="min-w-0 flex-1">
           {isBig && (
             <p className={`text-[10px] font-bold uppercase tracking-[0.07em] ${tone.label}`}>
-              {isOverdue ? "Overdue" : isUrgent ? "Segera!" : isRunning ? "Lagi Dikerjakan" : "Prioritas Berikutnya"}
+              {isOverdue ? "Overdue" : isUrgent ? "Segera!" : isDone ? "Selesai" : isReview ? "Menunggu Review" : isRunning ? "Lagi Dikerjakan" : "Prioritas Berikutnya"}
             </p>
           )}
           <p className={`truncate transition-all duration-300 ${
@@ -1501,12 +1515,28 @@ function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHove
                 <span className={`shrink-0 font-mono text-[11.5px] font-semibold ${tone.sub}`}>{fmtElapsed(elapsed)} / {fmtBudget(task.duration_seconds)}</span>
               </>
             ) : <span />}
-            <button
-              onClick={stopProp(() => (isRunning ? onMarkDone(task) : onTimer(task)))}
-              className={`ml-auto shrink-0 rounded-full px-[18px] py-[9px] text-[12.5px] font-bold transition ${tone.btn}`}
-            >
-              {isRunning ? "Tandai Selesai" : "Mulai"}
-            </button>
+            {isReview ? (
+              <button
+                onClick={stopProp(() => onDetail(task, estStart))}
+                className={`ml-auto shrink-0 rounded-full px-[18px] py-[9px] text-[12.5px] font-bold transition ${tone.btn}`}
+              >
+                Tinjau
+              </button>
+            ) : isDone ? (
+              <button
+                onClick={stopProp(() => window.open(telegramLink || TELEGRAM_TOPIC_LINK, "_blank", "noopener,noreferrer"))}
+                className={`ml-auto shrink-0 rounded-full px-[18px] py-[9px] text-[12.5px] font-bold transition ${tone.btn}`}
+              >
+                Cek Update
+              </button>
+            ) : !isFailed ? (
+              <button
+                onClick={stopProp(() => (isRunning ? onMarkDone(task) : onTimer(task)))}
+                className={`ml-auto shrink-0 rounded-full px-[18px] py-[9px] text-[12.5px] font-bold transition ${tone.btn}`}
+              >
+                {isRunning ? "Tandai Selesai" : "Mulai"}
+              </button>
+            ) : null}
           </div>
           {folderCode && (
             <p className={`mt-2 truncate font-mono text-[11px] ${tone.sub}`}>📁 {folderCode}</p>

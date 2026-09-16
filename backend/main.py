@@ -71,6 +71,23 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_GROUP_CHAT_ID = os.getenv("TELEGRAM_GROUP_CHAT_ID", "-1003611845591")
 TELEGRAM_UPDATE_TOPIC_ID = os.getenv("TELEGRAM_UPDATE_TOPIC_ID", "2")
 TELEGRAM_TOPIC_LINK = "https://t.me/c/3611845591/2"
+
+
+def _telegram_chat_internal_id() -> str:
+    """Strip prefix -100 dari chat_id supergroup buat dipakai di link t.me/c/.
+    Format Bot API: -1003611845591 -> internal id buat deep link: 3611845591."""
+    cid = TELEGRAM_GROUP_CHAT_ID
+    return cid[4:] if cid.startswith("-100") else cid.lstrip("-")
+
+
+def _telegram_message_link(message_id, thread_id: str = "") -> Optional[str]:
+    """Deep link ke pesan spesifik di topic (forum) grup Telegram — dipakai
+    tombol 'Cek Update' biar admin langsung lompat ke foto/video update-nya,
+    bukan cuma ke topic secara umum."""
+    if not message_id:
+        return None
+    topic = thread_id or TELEGRAM_UPDATE_TOPIC_ID
+    return f"https://t.me/c/{_telegram_chat_internal_id()}/{topic}/{message_id}"
 TELEGRAM_WEBHOOK_PATH = "/telegram/webhook"
 # Diturunkan dari token sendiri (bukan disimpan terpisah) — dikirim balik
 # oleh Telegram di header X-Telegram-Bot-Api-Secret-Token tiap update asli.
@@ -2537,6 +2554,7 @@ async def get_daily_update_status(task_id: str, current_user: dict = Depends(get
         "confirmed": bool(doc),
         "date_code": today_code,
         "filenames": (doc or {}).get("filenames", []),
+        "telegram_link": _telegram_message_link((doc or {}).get("message_id"), (doc or {}).get("thread_id", "")),
     }
 
 
@@ -4067,6 +4085,7 @@ async def telegram_webhook(update: Dict[str, Any], request: Request):
 
         sender = msg.get("from", {})
         sender_name = sender.get("username") or sender.get("first_name") or "unknown"
+        message_id = msg.get("message_id")
 
         for t in hits:
             task_id = str(t["_id"])
@@ -4078,6 +4097,8 @@ async def telegram_webhook(update: Dict[str, Any], request: Request):
                         "date_code": date_code,
                         "confirmed_at": datetime.now(timezone.utc).isoformat(),
                         "sender": sender_name,
+                        "message_id": message_id,
+                        "thread_id": thread_id,
                     },
                     "$addToSet": {"filenames": candidate_text},
                 },
@@ -4088,11 +4109,11 @@ async def telegram_webhook(update: Dict[str, Any], request: Request):
                 "task_id": task_id,
                 "task_title": t.get("title", ""),
                 "date_code": date_code,
+                "telegram_link": _telegram_message_link(message_id, thread_id),
             })
 
         # Kasih reaksi ✅ di pesannya sendiri di Telegram, biar tim langsung
         # tau file-nya kebaca tanpa perlu buka dashboard.
-        message_id = msg.get("message_id")
         if TELEGRAM_BOT_TOKEN and message_id:
             try:
                 import httpx
