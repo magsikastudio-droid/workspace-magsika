@@ -9,6 +9,7 @@ import { useTasks } from "../context/TasksContext";
 import { useOrders } from "../context/OrdersContext";
 import { useStream } from "../context/StreamContext";
 import { api } from "../lib/api";
+import { subscribe } from "../lib/ws";
 import { toast } from "sonner";
 import OrderDrawer from "../components/OrderDrawer";
 
@@ -854,7 +855,10 @@ export default function Todo() {
             onDetail={(t, estStart) => { setDetailTaskId(t.id); setDetailEstStart(estStart ?? null); }}
             onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
           />
-          <FreelanceChecklist groups={grouped.freelance} isAdminOrPM={isAdminOrPM} onStatus={handleStatus} />
+          <div className="flex flex-col lg:flex-row gap-5">
+            <FreelanceChecklist groups={grouped.freelance} isAdminOrPM={isAdminOrPM} onStatus={handleStatus} />
+            <TeamUpdateChecklist groups={grouped.tim} orders={orders} />
+          </div>
         </>
       )}
 
@@ -1043,6 +1047,95 @@ function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── TeamUpdateChecklist ─────────────────────────────────────────────
+   Checklist "sudah kirim update Telegram hari ini apa belum", per market.
+   Beda dari FreelanceChecklist: ini bukan status task (pending/done), tapi
+   status kirim-update — jadi tetap tercentang walau admin belum approve
+   ke "done", dan gak bisa dicentang manual sama sekali (murni dari bot). ── */
+function TeamUpdateChecklist({ groups, orders }) {
+  const tasks = useMemo(() => Object.values(groups).flat(), [groups]);
+  const orderMap = useMemo(() => {
+    const m = {};
+    (orders || []).forEach((o) => { m[o.id] = o; });
+    return m;
+  }, [orders]);
+
+  const marketGroups = useMemo(() => {
+    const g = {};
+    for (const t of tasks) {
+      const order = t.order_id ? orderMap[t.order_id] : null;
+      const market = platformLabel(order?.platform);
+      if (!g[market]) g[market] = [];
+      g[market].push(t);
+    }
+    return g;
+  }, [tasks, orderMap]);
+
+  const [confirmedMap, setConfirmedMap] = useState({});
+  const idsKey = useMemo(() => tasks.map((t) => t.id).sort().join(","), [tasks]);
+
+  useEffect(() => {
+    if (!idsKey) { setConfirmedMap({}); return; }
+    let alive = true;
+    api.get("/tasks/daily-update-status-bulk", { params: { ids: idsKey } })
+      .then((r) => { if (alive) setConfirmedMap(r.data || {}); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [idsKey]);
+
+  useEffect(() => {
+    return subscribe("daily_update_confirmed", (msg) => {
+      if (!msg?.task_id) return;
+      setConfirmedMap((prev) => ({ ...prev, [msg.task_id]: !msg.revoked }));
+    });
+  }, []);
+
+  const doneCount = tasks.filter((t) => confirmedMap[t.id]).length;
+  const marketNames = Object.keys(marketGroups).sort();
+
+  return (
+    <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-6 py-5">
+        <span className="text-lg">📋</span>
+        <h3 className="font-display font-bold text-slate-800">Update Hari Ini</h3>
+        <span className="ml-auto text-xs text-slate-400">{doneCount}/{tasks.length} update</span>
+      </div>
+      {tasks.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-slate-400">Tidak ada task tim internal hari ini.</p>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {marketNames.map((market) => (
+            <div key={market}>
+              <p className="px-6 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{market}</p>
+              {marketGroups[market].map((task) => {
+                const isConfirmed = !!confirmedMap[task.id];
+                return (
+                  <div key={task.id} className="flex items-center gap-3 px-6 py-[11px]">
+                    <span
+                      title={isConfirmed ? "Sudah kirim update hari ini" : "Belum kirim update hari ini"}
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                        isConfirmed ? "border-emerald-500 bg-emerald-500" : "border-slate-300"
+                      }`}
+                    >
+                      {isConfirmed && <Check size={12} className="text-white" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-[14.5px] font-medium ${isConfirmed ? "text-slate-700" : "text-slate-400"}`}>
+                        {toTitleCase(displayTitle(task))}
+                      </p>
+                      <p className="text-[11.5px] text-slate-400">{task.assignee}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -1557,8 +1650,10 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemin
       {/* Bottom row: aksi kiri + status kanan */}
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 px-4 py-2.5">
 
-        {/* Kiri: tombol aksi */}
-        <div className="flex items-center gap-1.5">
+        {/* Kiri: tombol aksi — di mode compact (Kanban) cuma tombol inti yang
+            ditampilkan biar gak "kebablasan" (overflow) di kolom sempit;
+            Ingatkan/Remote tetap bisa diakses lewat detail modal (klik card). */}
+        <div className="flex flex-wrap items-center gap-1.5">
           {/* Tombol Mulai / timer — hanya untuk task aktif */}
           {isActive && (
             <button
@@ -1592,8 +1687,9 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemin
             </button>
           )}
 
-          {/* Admin/PM: ingatkan manual — fallback kalau desktop app talent lagi bug/mati */}
-          {isActive && isAdminOrPM && (
+          {/* Admin/PM: ingatkan manual — fallback kalau desktop app talent lagi bug/mati.
+              Disembunyikan di mode compact (Kanban), tetap ada di detail modal. */}
+          {isActive && isAdminOrPM && !compact && (
             <button
               onClick={stopProp(() => onRemind(task))}
               title="Ingatkan mulai / live stream (manual, buat jaga-jaga kalau app di laptop-nya lagi bug)"
@@ -1604,8 +1700,9 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemin
             </button>
           )}
 
-          {/* Admin/PM: remote ke PC talent (RustDesk, dijalankan via desktop app admin) */}
-          {isActive && isAdminOrPM && (
+          {/* Admin/PM: remote ke PC talent (RustDesk, dijalankan via desktop app admin).
+              Disembunyikan di mode compact (Kanban), tetap ada di detail modal. */}
+          {isActive && isAdminOrPM && !compact && (
             <button
               onClick={stopProp(() => onRemote(task))}
               title="Buka remote desktop ke PC talent ini"
@@ -2352,18 +2449,22 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-4">
-      <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5 sticky top-0 bg-white rounded-t-3xl z-10">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+      <div className="w-full max-w-lg overflow-hidden rounded-[28px] bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="h-1.5 bg-indigo-500" />
+        <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5 sticky top-0 bg-white z-10">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+            {isAdd ? <Plus size={20} /> : <Pencil size={18} />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-display text-[19px] font-extrabold tracking-tight text-slate-900">{title}</h2>
             {data.date && <p className="text-xs text-slate-400 mt-0.5">· {data.date}</p>}
           </div>
-          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+          <button onClick={onClose} className="shrink-0 rounded-full p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
         <form className="space-y-4 p-6" onSubmit={onSubmit}>
           {isAdd && (
             <div className="space-y-1.5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Link ke Order (opsional)</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Link ke Order (opsional)</p>
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
@@ -2400,7 +2501,7 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
             </div>
           )}
 
-          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+          <label className="block space-y-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
             Title
             <input
               value={data.title}
@@ -2411,7 +2512,7 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
           </label>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+            <label className="block space-y-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
               Assignee
               <input
                 list="assignee-suggestions"
@@ -2424,7 +2525,7 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
                 {knownAssignees.map((name) => <option key={name} value={name} />)}
               </datalist>
             </label>
-            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+            <label className="block space-y-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
               Tipe
               <select
                 value={data.assignee_type}
@@ -2438,7 +2539,7 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
           </div>
 
           {!isAdd && (
-            <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+            <label className="block space-y-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
               Status
               <select
                 value={data.status}
@@ -2455,7 +2556,7 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
           )}
 
           <div className="space-y-1.5">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Durasi (Countdown)</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Durasi (Countdown)</p>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1.5 flex-1">
                 <input
@@ -2493,7 +2594,7 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
               <p className="text-xs text-indigo-500">Countdown mulai saat tombol Start ditekan</p>
             )}
           </div>
-          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+          <label className="block space-y-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
             Target Progres
             <input
               value={data.target_progress || ""}
@@ -2503,7 +2604,7 @@ function TaskModal({ title, data, onChange, onSubmit, onClose, orders = [], know
             />
           </label>
 
-          <label className="block space-y-1.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+          <label className="block space-y-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
             Catatan
             <textarea
               value={data.notes || ""}
