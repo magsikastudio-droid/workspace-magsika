@@ -1694,6 +1694,7 @@ function NeedDailyUpdateModal({ task, onClose }) {
 
 /* ─── UnhandledSection ──────────────────────────────────────────── */
 function UnhandledSection({ orders, isAdminOrPM, onAddTask }) {
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -1718,7 +1719,9 @@ function UnhandledSection({ orders, isAdminOrPM, onAddTask }) {
             {orders.map((order) => (
               <div
                 key={order.id}
-                className="flex items-center gap-2.5 rounded-xl border border-orange-200 bg-white px-3 py-2 shadow-sm"
+                onClick={() => navigate(`/orders?open=${order.id}`)}
+                title="Klik buat buka & edit order ini"
+                className="flex items-center gap-2.5 rounded-xl border border-orange-200 bg-white px-3 py-2 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition"
               >
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-slate-800 truncate max-w-[160px]">{order.project || "Unnamed"}</p>
@@ -1726,7 +1729,7 @@ function UnhandledSection({ orders, isAdminOrPM, onAddTask }) {
                 </div>
                 {isAdminOrPM && (
                   <button
-                    onClick={() => onAddTask(order)}
+                    onClick={(e) => { e.stopPropagation(); onAddTask(order); }}
                     className="shrink-0 rounded-lg bg-orange-100 px-2 py-1 text-[10px] font-bold text-orange-700 hover:bg-orange-500 hover:text-white transition"
                   >
                     + Task
