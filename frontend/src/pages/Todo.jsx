@@ -4,6 +4,7 @@ import {
   Plus, Search, Send, X, Zap, Clock, CheckCheck, AlarmClock, Target, Bell, Monitor,
   Copy, Check, ClipboardPaste, Trash2, Link2, Unlink,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
 import { useOrders } from "../context/OrdersContext";
@@ -1387,9 +1388,14 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemin
 
 /* ─── TaskDetailModal ───────────────────────────────────────────── */
 function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
+  const navigate = useNavigate();
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
   const linkedOrder = orders.find((o) => o.id === task.order_id);
+  const handleOpenOrder = () => {
+    onClose();
+    navigate(`/orders?open=${linkedOrder.id}`);
+  };
   const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
   const elapsed2 = getElapsed(task, now);
   const countdown = getCountdown(task, now);
@@ -1491,9 +1497,21 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
           )}
           {linkedOrder && (
             <div className="rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-3">
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-indigo-400">Order Terkait</p>
-              <p className="text-sm font-semibold text-indigo-900">{linkedOrder.project}</p>
-              <p className="text-xs text-indigo-500 font-mono">{linkedOrder.folder_code || linkedOrder.client}</p>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-indigo-400">Order Terkait</p>
+                  <p className="text-sm font-semibold text-indigo-900 truncate">{linkedOrder.project}</p>
+                  <p className="text-xs text-indigo-500 font-mono">{linkedOrder.folder_code || linkedOrder.client}</p>
+                </div>
+                {isAdminOrPM && (
+                  <button
+                    onClick={handleOpenOrder}
+                    title="Buka & edit order ini (kayak di halaman Order)"
+                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition">
+                    <Link2 size={12} /> Edit Order
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
