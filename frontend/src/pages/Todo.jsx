@@ -391,15 +391,7 @@ export default function Todo() {
   }, [isAdminOrPM]);
 
   const visibleTasks = useMemo(() => {
-    const raw = tasks.filter((t) => t.date === date);
-    const noOrder = raw.filter((t) => !t.order_id);
-    const withOrder = raw.filter((t) => t.order_id);
-    const seen = {};
-    for (const t of withOrder) {
-      const k = `${t.order_id}__${t.assignee}`;
-      if (!seen[k] || t.id > seen[k].id) seen[k] = t;
-    }
-    return [...noOrder, ...Object.values(seen)];
+    return tasks.filter((t) => t.date === date);
   }, [tasks, date]);
 
   const grouped = useMemo(() => {
