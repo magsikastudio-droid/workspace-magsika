@@ -289,6 +289,46 @@ jobs:
         run: |
           ssh vps "systemctl restart admin-dashboard"
 
+      - name: DEBUG - cek task hari ini yang mungkin ke-dedup diam-diam
+        run: |
+          ssh vps bash << 'ENDSSH' > dedup-debug.txt || true
+          cd /root/admin-dashboard/backend
+          .venv/bin/python3 -c "
+          import asyncio
+          from dotenv import load_dotenv
+          load_dotenv()
+          import os
+          from motor.motor_asyncio import AsyncIOMotorClient
+          from datetime import datetime, timezone, timedelta
+
+          async def main():
+              client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017'))
+              db = client[os.getenv('DB_NAME', 'admin_dashboard')]
+              jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+              today = jkt_now.strftime('%Y-%m-%d')
+              print('Tanggal today (WIB):', today)
+              tasks = await db.tasks.find({'date': today}).to_list(500)
+              print('Total task mentah hari ini:', len(tasks))
+              groups = {}
+              for t in tasks:
+                  key = (str(t.get('order_id')), t.get('assignee'))
+                  groups.setdefault(key, []).append(t)
+              dupes = {k: v for k, v in groups.items() if t.get('order_id') and k[0] != 'None' and len(v) > 1}
+              print('Kombinasi order_id+assignee yang punya LEBIH DARI 1 task (bakal ke-dedup jadi cuma 1 di UI):')
+              for key, items in groups.items():
+                  if key[0] != 'None' and len(items) > 1:
+                      print(' ', key, '->', [(str(i.get('_id')), i.get('title'), i.get('status')) for i in items])
+
+          asyncio.run(main())
+          "
+          ENDSSH
+          cat dedup-debug.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dedup-debug.txt
+          git diff --cached --quiet || git commit -m "debug: cek dedup task hari ini [skip ci]"
+          git push || true
+
 
       - name: Renew SSL certificate (Let's Encrypt)
         run: |
