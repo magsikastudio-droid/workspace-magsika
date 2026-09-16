@@ -83,11 +83,17 @@ def _telegram_chat_internal_id() -> str:
 def _telegram_message_link(message_id, thread_id: str = "") -> Optional[str]:
     """Deep link ke pesan spesifik di topic (forum) grup Telegram — dipakai
     tombol 'Cek Update' biar admin langsung lompat ke foto/video update-nya,
-    bukan cuma ke topic secara umum."""
+    bukan cuma ke topic secara umum.
+
+    Format `/c/<chat>/<topic>/<message_id>` (2 segment) ternyata salah
+    diparsing sama Telegram Web (topic-nya kebaca sebagai "post", message_id
+    malah kebuang). Format yang bener: message_id sebagai path langsung,
+    topic sebagai query param `thread` — ini format yang beneran dipakai
+    Telegram sendiri buat "Copy Message Link" di grup forum."""
     if not message_id:
         return None
     topic = thread_id or TELEGRAM_UPDATE_TOPIC_ID
-    return f"https://t.me/c/{_telegram_chat_internal_id()}/{topic}/{message_id}"
+    return f"https://t.me/c/{_telegram_chat_internal_id()}/{message_id}?thread={topic}"
 TELEGRAM_WEBHOOK_PATH = "/telegram/webhook"
 # Diturunkan dari token sendiri (bukan disimpan terpisah) — dikirim balik
 # oleh Telegram di header X-Telegram-Bot-Api-Secret-Token tiap update asli.
