@@ -1,4 +1,5 @@
 import React, { useRef, useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X, Calendar, CheckCircle2, AlertCircle, FileText } from "lucide-react";
 import ExportReportModal from "../components/ExportReportModal";
 import { toast } from "sonner";
@@ -55,6 +56,7 @@ const emptyMilestone = () => ({ title: "", price: "", deadline: "", status: "pen
 export default function OrdersPage() {
   const { orders, loading, createOrder, updateOrder, deleteOrder } = useOrders();
   const ordersOnDay = (date) => orders.filter((o) => (o.order_date || o.created_at?.slice(0, 10)) === date).length;
+  const [searchParams, setSearchParams] = useSearchParams();
   const { formatMoney } = useCurrency();
   const _today = new Date();
   const _currentMonth = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, "0")}`;
@@ -73,6 +75,19 @@ export default function OrdersPage() {
   const [newOrder, setNewOrder] = useState(emptyOrder());
   const [weeklyView, setWeeklyView] = useState(true);
   const fileInputRef = useRef(null);
+
+  // Dibuka dari luar (mis. tombol "Edit Order" di detail task To Do) lewat
+  // ?open=<order_id> — begitu order-nya ketemu, langsung buka drawer-nya
+  // dan bersihin query param biar gak kebuka lagi kalau di-refresh.
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (!openId || orders.length === 0) return;
+    const target = orders.find((o) => o.id === openId);
+    if (target) {
+      setActiveOrder(target);
+      setSearchParams((p) => { p.delete("open"); return p; }, { replace: true });
+    }
+  }, [searchParams, orders, setSearchParams]);
 
   const availableMonths = useMemo(() => {
     const set = new Set();
