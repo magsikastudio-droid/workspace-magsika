@@ -289,34 +289,6 @@ jobs:
         run: |
           ssh vps "systemctl restart admin-dashboard"
 
-      - name: DEBUG - cek webhook Telegram masih hidup atau enggak
-        run: |
-          ssh vps bash << 'ENDSSH' > telegram-webhook-debug.txt || true
-          cd /root/admin-dashboard/backend
-          echo '=== getWebhookInfo dari Telegram ==='
-          .venv/bin/python3 -c "
-          from dotenv import load_dotenv
-          load_dotenv()
-          import os, httpx
-          token = os.getenv('TELEGRAM_BOT_TOKEN', '')
-          r = httpx.get(f'https://api.telegram.org/bot{token}/getWebhookInfo', timeout=10)
-          print(r.status_code, r.text)
-          "
-          echo '=== service status ringkas ==='
-          systemctl is-active admin-dashboard
-          systemctl show admin-dashboard -p ActiveEnterTimestamp
-          echo '=== semua log yang nyinggung telegram sejak restart ==='
-          journalctl -u admin-dashboard --since '3 hours ago' | grep -i 'telegram' | tail -60
-          echo '=== ada error/traceback gak sejak restart ==='
-          journalctl -u admin-dashboard --since '3 hours ago' | grep -iE 'error|traceback|exception' | tail -30
-          ENDSSH
-          cat telegram-webhook-debug.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add telegram-webhook-debug.txt
-          git diff --cached --quiet || git commit -m "debug: cek webhook telegram masih hidup [skip ci]"
-          git push || true
-
       - name: Renew SSL certificate (Let's Encrypt)
         run: |
           ssh vps bash << 'ENDSSH'
