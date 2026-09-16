@@ -4,13 +4,13 @@ import {
   Plus, Search, Send, X, Zap, Clock, CheckCheck, AlarmClock, Target, Bell, Monitor,
   Copy, Check, ClipboardPaste, Trash2, Link2, Unlink,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
 import { useOrders } from "../context/OrdersContext";
 import { useStream } from "../context/StreamContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
+import OrderDrawer from "../components/OrderDrawer";
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 const todayStr = () => {
@@ -253,8 +253,48 @@ const getElapsed = (task, now) => {
 export default function Todo() {
   const { user } = useAuth();
   const { tasks, initialLoading, fetchTasks, createTask, updateTask, deleteTask } = useTasks();
-  const { orders } = useOrders();
+  const { orders, updateOrder, deleteOrder } = useOrders();
   const now = useNow();
+  const ordersOnDay = (date) => orders.filter((o) => (o.order_date || o.created_at?.slice(0, 10)) === date).length;
+
+  /* ── Edit Order langsung di To Do — sebelumnya redirect ke halaman
+     Order, sekarang OrderDrawer yang sama dirender in-place biar admin
+     gak bolak-balik halaman. Handler-nya sama persis kayak di
+     Orders.jsx (reuse OrderDrawer, jadi kontraknya harus sama). ── */
+  const [editOrder, setEditOrder] = useState(null);
+  const handleSaveOrder = async (updated) => {
+    const contributions = (updated.artist_contributions || []).filter((c) => c.name.trim());
+    const artistNames = contributions.map((c) => c.name.trim());
+    await updateOrder(editOrder.id, {
+      ...updated,
+      total: Number(updated.total),
+      artists: artistNames.length ? artistNames : (updated.artists || "").split(",").map((a) => a.trim()).filter(Boolean),
+      artist_contributions: contributions,
+      fee_freelance: Number(updated.fee_freelance) || 0,
+    });
+    setEditOrder(null);
+  };
+  const handleDeleteOrder = async (id) => {
+    if (!confirm("Hapus order ini? Task yang sudah ke-link gak ikut kehapus.")) return;
+    await deleteOrder(id);
+    setEditOrder(null);
+  };
+  const handleCompleteMilestoneForOrder = async (orderId, idx) => {
+    try {
+      await api.post(`/orders/${orderId}/milestones/${idx}/complete`);
+      toast.success("Milestone selesai! Milestone berikutnya aktif.");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal update milestone");
+    }
+  };
+  const handleActivateMilestoneForOrder = async (orderId, idx) => {
+    try {
+      await api.post(`/orders/${orderId}/milestones/${idx}/activate`);
+      toast.success("Milestone diaktifkan!");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gagal mengaktifkan milestone");
+    }
+  };
 
   const role = user?.role || "talent";
   const isAdminOrPM = role === "admin" || role === "pm";
@@ -673,6 +713,7 @@ export default function Todo() {
         <UnhandledSection
           orders={unhandledOrders}
           isAdminOrPM={isAdminOrPM}
+          onOpenOrder={setEditOrder}
           onAddTask={(order) => {
             setTaskInput((p) => ({
               ...p,
@@ -798,6 +839,18 @@ export default function Todo() {
           isAdminOrPM={isAdminOrPM}
           onClose={() => setDetailTaskId(null)}
           onEdit={(t) => { setDetailTaskId(null); setEditTask({ ...t }); }}
+          onOpenOrder={(o) => { setDetailTaskId(null); setEditOrder(o); }}
+        />
+      )}
+      {editOrder && (
+        <OrderDrawer
+          order={editOrder}
+          ordersOnDay={ordersOnDay}
+          onClose={() => setEditOrder(null)}
+          onSave={handleSaveOrder}
+          onDelete={handleDeleteOrder}
+          onCompleteMilestone={handleCompleteMilestoneForOrder}
+          onActivateMilestone={handleActivateMilestoneForOrder}
         />
       )}
     </div>
@@ -1387,15 +1440,11 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemin
 }
 
 /* ─── TaskDetailModal ───────────────────────────────────────────── */
-function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit }) {
-  const navigate = useNavigate();
+function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit, onOpenOrder }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
   const linkedOrder = orders.find((o) => o.id === task.order_id);
-  const handleOpenOrder = () => {
-    onClose();
-    navigate(`/orders?open=${linkedOrder.id}`);
-  };
+  const handleOpenOrder = () => onOpenOrder(linkedOrder);
   const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
   const elapsed2 = getElapsed(task, now);
   const countdown = getCountdown(task, now);
@@ -1693,8 +1742,7 @@ function NeedDailyUpdateModal({ task, onClose }) {
 }
 
 /* ─── UnhandledSection ──────────────────────────────────────────── */
-function UnhandledSection({ orders, isAdminOrPM, onAddTask }) {
-  const navigate = useNavigate();
+function UnhandledSection({ orders, isAdminOrPM, onOpenOrder, onAddTask }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -1719,7 +1767,7 @@ function UnhandledSection({ orders, isAdminOrPM, onAddTask }) {
             {orders.map((order) => (
               <div
                 key={order.id}
-                onClick={() => navigate(`/orders?open=${order.id}`)}
+                onClick={() => onOpenOrder(order)}
                 title="Klik buat buka & edit order ini"
                 className="flex items-center gap-2.5 rounded-xl border border-orange-200 bg-white px-3 py-2 shadow-sm cursor-pointer hover:border-orange-400 hover:shadow-md transition"
               >
