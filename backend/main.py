@@ -2681,9 +2681,18 @@ async def tasks_order_contributions(order_id: str, current_user: dict = Depends(
         records = await db.tasks.find({"order_id": order_id}).to_list(500)
     except Exception:
         records = []
+    # Nama assignee di task bisa ketik manual beda-beda dikit (beda huruf
+    # besar/kecil, spasi nyelip) — kalau di-grup mentah-mentah, satu orang
+    # bisa kepecah jadi 2 baris kontributor. Normalisasi ke nama resmi dari
+    # daftar user biar ke-gabung jadi satu.
+    try:
+        user_docs = await db.users.find({}, {"full_name": 1}).to_list(200)
+        known_names = [u.get("full_name", "").strip() for u in user_docs if u.get("full_name", "").strip()]
+    except Exception:
+        known_names = []
     amap: Dict[str, Any] = {}
     for t in records:
-        a = t.get("assignee", "?")
+        a = _normalize_name((t.get("assignee") or "?").strip(), known_names)
         if a not in amap:
             amap[a] = {"tasks": 0, "done": 0, "time": 0, "type": t.get("assignee_type", "tim")}
         amap[a]["tasks"] += 1
