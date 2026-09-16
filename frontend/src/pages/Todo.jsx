@@ -127,7 +127,7 @@ const parsePriorityText = (raw) => {
       // aja isinya project-project yang perlu dipecah ke talent berbeda-
       // beda (biar gak numpuk/bottleneck di satu orang). PM wajib isi
       // manual tiap baris; header cuma dipajang sebagai label info.
-      rows.push({ _key: `p${seq++}`, title, target_progress: target, assignee: "", assignee_type: "tim", sourceLabel: block.header || "" });
+      rows.push({ _key: `p${seq++}`, title, target_progress: target, assignee: "", assignee_type: "tim", duration: "", sourceLabel: block.header || "" });
     }
   }
   return rows;
@@ -514,9 +514,16 @@ export default function Todo() {
     }
   }, [updateTask, streaming, connectStreamWithMedia, sendBRB]);
 
-  /* ── tombol Done: admin/PM → konfirmasi Telegram, talent → menunggu review
-     (kalau belum kirim preview hari ini ke topik Update Progress, backend
-     nolak dan kita tampilin pop out perintah kirim, bukan langsung submit) ── */
+  /* ── tombol Done: talent → menunggu review (kalau belum kirim preview
+     hari ini ke topik Update Progress, backend nolak dan kita tampilin
+     pop out perintah kirim, bukan langsung submit).
+     Admin/PM (buat task orang lain): DULU selalu nanya manual "udah
+     kirim ke Telegram?" (honor system, gak pernah cek beneran). Sekarang
+     dicek dulu ke db.daily_updates (sumber yang sama yang dipakai bot) —
+     kalau bot emang udah konfirmasi, langsung submit ke review tanpa
+     nanya lagi; kalau belum, kasih tau buat kirim dulu (pop out yang
+     sama kayak alur talent). Popup konfirmasi manual jadi fallback
+     doang kalau pengecekan API-nya gagal (misal lagi offline). ── */
   const handleMarkDone = useCallback(async (task) => {
     // PM tidak boleh approve task-nya sendiri — statusnya sama kayak
     // talent biasa (submit ke review, admin lain yang approve). PM tetap
@@ -526,7 +533,19 @@ export default function Todo() {
     const canSelfApprove = role === "admin" || (isAdminOrPM && !isOwnTask);
 
     if (canSelfApprove) {
-      setConfirmDone(task);
+      try {
+        const res = await api.get(`/tasks/${task.id}/daily-update-status`);
+        if (res.data?.confirmed) {
+          await handleStatus(task, "menunggu_review");
+          toast.success("Update Telegram sudah terdeteksi bot — dikirim untuk review.");
+        } else {
+          setNeedDailyUpdate(task);
+        }
+      } catch {
+        // Gagal cek status (misal API lagi bermasalah) — fallback ke
+        // konfirmasi manual biar admin tetap bisa lanjut kerja.
+        setConfirmDone(task);
+      }
       return;
     }
     try {
@@ -648,7 +667,7 @@ export default function Todo() {
 
   /* ── render ─────────────── */
   return (
-    <div className="todo-page space-y-5">
+    <div className="todo-page space-y-[22px]">
       {/* Font khusus redesain (Sora buat judul/nama, IBM Plex Sans buat
           teks biasa, IBM Plex Mono buat angka/jam/kode) — di-scope ke
           class .todo-page doang biar halaman lain tetap Inter kayak
@@ -686,11 +705,11 @@ export default function Todo() {
 
       {/* Header + Statistik digabung — biar halaman gak kepotong-potong
           jadi banyak kotak kecil kayak versi lama. */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-[28px] border border-slate-200 bg-white px-7 py-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="font-display text-2xl font-extrabold tracking-tight text-slate-900">To Do</h1>
-            <p className="mt-0.5 text-sm text-slate-500">{fmtDateLabel(date)}</p>
+            <h1 className="font-display text-[27px] font-extrabold tracking-tight text-slate-900">To Do</h1>
+            <p className="mt-0.5 text-[13px] text-slate-500">{fmtDateLabel(date)}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {isAdminOrPM && (
@@ -746,8 +765,8 @@ export default function Todo() {
               { label: "Gagal",       value: stats.failed,     color: "text-rose-600"    },
             ].map((s) => (
               <div key={s.label} className="flex items-baseline gap-1.5">
-                <span className={`font-display text-lg font-extrabold tabular-nums ${s.color}`}>{s.value}</span>
-                <span className="text-xs font-medium text-slate-400">{s.label}</span>
+                <span className={`font-display text-[19px] font-extrabold tabular-nums ${s.color}`}>{s.value}</span>
+                <span className="text-[11.5px] font-medium text-slate-400">{s.label}</span>
               </div>
             ))}
           </div>
@@ -1129,10 +1148,10 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
   const ringOffset = ringC - (ringC * pct) / 100;
 
   return (
-    <div className={`overflow-hidden rounded-3xl border border-t-4 border-slate-200 bg-white shadow-sm ${accent.border}`}>
-      <div className="flex items-center gap-3 px-5 py-4">
+    <div className={`overflow-hidden rounded-[26px] border border-t-[5px] border-slate-200 bg-white shadow-sm ${accent.border}`}>
+      <div className="flex items-center gap-3.5 px-6 py-5">
         <div className="relative shrink-0">
-          <div className={`flex h-11 w-11 items-center justify-center rounded-full text-base font-bold text-white ${accent.bg}`}>
+          <div className={`flex h-[46px] w-[46px] items-center justify-center rounded-full text-base font-bold text-white ${accent.bg}`}>
             {assignee?.charAt(0)?.toUpperCase() || "?"}
           </div>
           {/* Titik status — prioritas: desktop app tidak terhubung (abu-abu,
@@ -1154,8 +1173,8 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="font-display font-bold text-slate-900">{assignee}</p>
-          <p className="text-xs text-slate-400">
+          <p className="font-display text-[16.5px] font-bold text-slate-900">{assignee}</p>
+          <p className="mt-px text-[12.5px] text-slate-400">
             {tasks.length} task
             {totalElapsed > 0 && <span className="ml-1.5 font-mono text-indigo-500">· ∑ {fmtElapsed(totalElapsed)}</span>}
           </p>
@@ -1168,8 +1187,8 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTim
             <Copy size={14} />
           </button>
         )}
-        <div className="relative h-10 w-10 shrink-0">
-          <svg width="40" height="40" viewBox="0 0 44 44" className="-rotate-90">
+        <div className="relative h-11 w-11 shrink-0">
+          <svg width="44" height="44" viewBox="0 0 44 44" className="-rotate-90">
             <circle cx="22" cy="22" r="18" fill="none" strokeWidth="4" className="stroke-slate-100" />
             <circle
               cx="22" cy="22" r="18" fill="none" strokeWidth="4" strokeLinecap="round"
@@ -1235,32 +1254,32 @@ function FeaturedTaskCard({ task, orders, now, onTimer, onMarkDone, onDetail }) 
   return (
     <div
       onClick={() => onDetail(task)}
-      className={`mx-5 mb-4 cursor-pointer rounded-2xl p-4 transition hover:-translate-y-0.5 ${tone.wrap}`}
+      className={`mx-[18px] mt-4 mb-1 cursor-pointer rounded-[18px] px-[19px] py-[17px] transition hover:-translate-y-0.5 ${tone.wrap}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className={`text-[10px] font-bold uppercase tracking-widest ${tone.label}`}>
+          <p className={`text-[10px] font-bold uppercase tracking-[0.07em] ${tone.label}`}>
             {isOverdue ? "Overdue" : isUrgent ? "Segera!" : isRunning ? "Lagi Dikerjakan" : "Prioritas Berikutnya"}
           </p>
           <p className={`font-display mt-0.5 truncate text-lg font-extrabold ${tone.title}`}>{toTitleCase(displayTitle(task))}</p>
-          {sub && <p className={`mt-0.5 truncate text-sm ${tone.sub}`}>{sub}</p>}
+          {sub && <p className={`mt-0.5 truncate text-[12.5px] ${tone.sub}`}>{sub}</p>}
         </div>
         {streamAllowed && (
           <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">🔴 LIVE</span>
         )}
       </div>
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-[14px] flex items-center gap-3">
         {task.duration_seconds ? (
           <>
-            <div className={`h-1.5 max-w-[160px] flex-1 overflow-hidden rounded-full ${tone.barTrack}`}>
+            <div className={`h-[7px] max-w-[180px] flex-1 overflow-hidden rounded-full ${tone.barTrack}`}>
               <div className={`h-full rounded-full ${tone.barFill}`} style={{ width: `${Math.min(100, Math.round((elapsed / task.duration_seconds) * 100))}%` }} />
             </div>
-            <span className={`shrink-0 font-mono text-xs font-semibold ${tone.sub}`}>{fmtElapsed(elapsed)} / {fmtBudget(task.duration_seconds)}</span>
+            <span className={`shrink-0 font-mono text-[11.5px] font-semibold ${tone.sub}`}>{fmtElapsed(elapsed)} / {fmtBudget(task.duration_seconds)}</span>
           </>
         ) : <span />}
         <button
           onClick={(e) => { e.stopPropagation(); isRunning ? onMarkDone(task) : onTimer(task); }}
-          className={`ml-auto shrink-0 rounded-full px-4 py-2 text-xs font-bold transition ${tone.btn}`}
+          className={`ml-auto shrink-0 rounded-full px-[18px] py-[9px] text-[12.5px] font-bold transition ${tone.btn}`}
         >
           {isRunning ? "Tandai Selesai" : "Mulai"}
         </button>
@@ -1306,7 +1325,7 @@ function CompactTaskRow({ task, now, isAdminOrPM, estStart, onTimer, onMarkDone,
       onDragStart={isAdminOrPM ? (e) => { e.stopPropagation(); onDragStart(e, task.id); } : undefined}
       onDragOver={(e) => onDragOver(e, task.id)}
       onClick={() => onDetail(task, estStart)}
-      className="group relative flex cursor-pointer items-center gap-3 border-b border-slate-100 px-5 py-3 last:border-0 hover:bg-slate-50 transition"
+      className="group relative flex cursor-pointer items-center gap-3 border-b border-slate-100 px-6 py-[11px] last:border-0 hover:bg-slate-50 transition"
     >
       <span className={`absolute inset-y-2 left-0 w-[3px] rounded-r-full ${isOverdue ? "bg-rose-500" : isUrgent ? "bg-amber-400" : rail}`} />
 
@@ -1326,10 +1345,10 @@ function CompactTaskRow({ task, now, isAdminOrPM, estStart, onTimer, onMarkDone,
       </button>
 
       <div className="min-w-0 flex-1">
-        <p className={`truncate text-sm font-semibold ${isDone || isFailed ? "text-slate-400 line-through" : "text-slate-900"}`}>
+        <p className={`truncate text-[14.5px] font-semibold ${isDone || isFailed ? "text-slate-400 line-through" : "text-slate-900"}`}>
           {toTitleCase(displayTitle(task))}
         </p>
-        <p className="truncate text-xs text-slate-400">{sub || " "}</p>
+        <p className="truncate text-[11.5px] text-slate-400">{sub || " "}</p>
       </div>
 
       {isOverdue ? (
@@ -1345,13 +1364,13 @@ function CompactTaskRow({ task, now, isAdminOrPM, estStart, onTimer, onMarkDone,
       ) : null}
 
       {isReview ? (
-        <button onClick={stopProp(() => onDetail(task, estStart))} className="shrink-0 rounded-full border border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 hover:bg-orange-100 transition">
+        <button onClick={stopProp(() => onDetail(task, estStart))} className="shrink-0 rounded-full border border-orange-300 bg-orange-50 px-[15px] py-[7px] text-xs font-bold text-orange-700 hover:bg-orange-100 transition">
           Tinjau
         </button>
       ) : isActive ? (
         <button
           onClick={stopProp(() => onTimer(task))}
-          className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
+          className={`flex shrink-0 items-center gap-1.5 rounded-full px-[15px] py-[7px] text-xs font-bold transition ${
             isRunning ? "bg-sky-500 text-white hover:bg-sky-600" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
           }`}
         >
@@ -2131,6 +2150,7 @@ function ImportPriorityModal({ date, knownAssignees, orders = [], createTask, on
             notes: "",
             target_progress: r.target_progress || "",
             order_id: r.order_id || null,
+            duration_seconds: r.duration && !isNaN(parseFloat(r.duration)) ? Math.round(parseFloat(r.duration) * 3600) : null,
           })
         )
       );
@@ -2221,6 +2241,17 @@ function ImportPriorityModal({ date, knownAssignees, orders = [], createTask, on
                         placeholder="Target/progres"
                         className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-indigo-400 focus:outline-none"
                       />
+                      <div className="relative shrink-0">
+                        <input
+                          value={r.duration}
+                          onChange={(e) => updateRow(r._key, { duration: e.target.value })}
+                          type="number" step="0.5" min="0"
+                          title="Estimasi durasi pengerjaan (jam) — dipakai buat hitung estimasi jam mulai & countdown"
+                          placeholder="Jam"
+                          className="w-20 rounded-lg border border-slate-200 px-2.5 py-1.5 pr-6 text-sm focus:border-indigo-400 focus:outline-none"
+                        />
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">j</span>
+                      </div>
                       <button onClick={() => removeRow(r._key)} className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition">
                         <Trash2 size={14} />
                       </button>
