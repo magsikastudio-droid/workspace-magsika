@@ -42,6 +42,50 @@ const dailyUpdateCode = (projectName) => {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yy}${mm}${dd} - ${(projectName || "").toUpperCase()}`;
 };
+/* ── Copy teks "Urutan Prioritas" ke WhatsApp ─────────────────────
+   Admin biasanya nulis manual urutan prioritas tiap orang ke WA tiap
+   pagi, padahal datanya (judul, urutan drag, target_progress) udah
+   ada di To Do. Ini generate teks siap-copy dari data itu — admin
+   tinggal paste ke WA, boleh diedit dulu sebelum kirim (bukan auto-
+   send, tetap ada tahap kurasi manual). ── */
+const sortForPriorityList = (list) => {
+  return [...list].sort((a, b) => {
+    const aFinished = ["done", "failed", "menunggu_review"].includes(a.status);
+    const bFinished = ["done", "failed", "menunggu_review"].includes(b.status);
+    if (aFinished !== bFinished) return aFinished ? 1 : -1;
+    return 0;
+  });
+};
+const priorityLineFor = (task) => {
+  const desc = task.target_progress || task.notes || "";
+  return desc ? `${displayTitle(task)} - ${desc}` : displayTitle(task);
+};
+const buildPriorityTextFor = (assignee, tasks) => {
+  const ordered = sortForPriorityList(tasks);
+  if (ordered.length === 0) return "";
+  const lines = ordered.map((t, i) => `${i + 1}. ${priorityLineFor(t)}`);
+  return `Urutan Prioritas\n\n${assignee}\n${lines.join("\n")}`;
+};
+const buildAllPriorityText = (groupsTim, dragState, taskMap) => {
+  const blocks = Object.entries(groupsTim)
+    .map(([assignee, aTasks]) => {
+      const orderedIds = dragState[assignee] || aTasks.map((t) => t.id);
+      const ordered = orderedIds.map((id) => taskMap[id]).filter(Boolean);
+      return buildPriorityTextFor(assignee, ordered);
+    })
+    .filter(Boolean);
+  return blocks.join("\n\n");
+};
+const copyToClipboard = async (text, successMsg) => {
+  if (!text.trim()) { toast.info("Belum ada task buat disalin."); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(successMsg);
+  } catch {
+    toast.error("Gagal menyalin — coba lagi.");
+  }
+};
+
 const shiftDate = (dateStr, days) => {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
@@ -524,6 +568,14 @@ export default function Todo() {
               </button>
             )}
             {isAdminOrPM && (
+              <button
+                onClick={() => copyToClipboard(buildAllPriorityText(grouped.tim, dragState, taskMap), "Teks urutan prioritas semua orang disalin!")}
+                title="Copy teks 'Urutan Prioritas' semua orang buat di-paste ke WhatsApp"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+                <Copy size={14} /> Copy Semua
+              </button>
+            )}
+            {isAdminOrPM && (
               <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
                 <Plus size={14} /> Task
               </button>
@@ -970,6 +1022,14 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, presence, on
             {totalElapsed > 0 && <span className="ml-2 text-indigo-500 font-mono">∑ {fmtElapsed(totalElapsed)}</span>}
           </p>
         </div>
+        {isAdminOrPM && (
+          <button
+            onClick={() => copyToClipboard(buildPriorityTextFor(assignee, tasks), `Prioritas ${assignee} disalin!`)}
+            title="Copy teks 'Urutan Prioritas' buat di-paste ke WhatsApp"
+            className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition">
+            <Copy size={14} />
+          </button>
+        )}
       </div>
       <div className="ml-10 space-y-2" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
         {sortedTasks.map((task) => (
