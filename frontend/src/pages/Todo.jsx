@@ -199,20 +199,51 @@ const fmtBudget = (secs) => {
   return `${m} menit`;
 };
 
-const avatarColors = ["bg-indigo-500","bg-emerald-500","bg-amber-500","bg-rose-500","bg-purple-500","bg-cyan-500"];
-const avatarColor = (name) => {
+/* Aksen warna identitas per orang (avatar + garis atas lane) — hash nama
+   biar satu orang tetap warna yang sama di mana pun dia muncul. */
+const AVATAR_ACCENTS = [
+  { bg: "bg-indigo-500",  border: "border-t-indigo-500",  ring: "ring-indigo-100",  text: "text-indigo-600",  stroke: "stroke-indigo-500"  },
+  { bg: "bg-emerald-500", border: "border-t-emerald-500", ring: "ring-emerald-100", text: "text-emerald-600", stroke: "stroke-emerald-500" },
+  { bg: "bg-amber-500",   border: "border-t-amber-500",   ring: "ring-amber-100",   text: "text-amber-600",   stroke: "stroke-amber-500"   },
+  { bg: "bg-rose-500",    border: "border-t-rose-500",    ring: "ring-rose-100",    text: "text-rose-600",    stroke: "stroke-rose-500"    },
+  { bg: "bg-purple-500",  border: "border-t-purple-500",  ring: "ring-purple-100",  text: "text-purple-600",  stroke: "stroke-purple-500"  },
+  { bg: "bg-cyan-500",    border: "border-t-cyan-500",    ring: "ring-cyan-100",    text: "text-cyan-600",    stroke: "stroke-cyan-500"    },
+];
+const avatarAccent = (name) => {
   let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return avatarColors[Math.abs(h) % avatarColors.length];
+  for (let i = 0; i < (name || "").length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return AVATAR_ACCENTS[Math.abs(h) % AVATAR_ACCENTS.length];
+};
+
+/* Judul task sering diketik admin ala kadarnya (ALL CAPS, campur-campur) —
+   dirapikan jadi Capitalize Each Word cuma pas ditampilkan, data asli di
+   database gak disentuh. Kata yang ada angkanya (3D, dll) dibiarin apa
+   adanya biar gak jadi "3d". */
+const toTitleCase = (s) => {
+  return (s || "").split(" ").map((w) => {
+    if (!w || /\d/.test(w)) return w;
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  }).join(" ");
+};
+
+/* Task yang "ditonjolkan" di atas tiap lane: yang timer-nya lagi jalan
+   diprioritaskan (itu yang paling relevan buat dilihat sekarang), kalau
+   gak ada yang jalan baru task aktif pertama di urutan (prioritas
+   berikutnya). Task yang udah kelar (done/failed/review) gak pernah
+   ditonjolkan — kerjaannya udah lewat dari tahap itu. */
+const pickFeaturedTask = (tasks) => {
+  const running = tasks.find((t) => !!t.timer_started);
+  if (running) return running;
+  return tasks.find((t) => !["done", "failed", "menunggu_review"].includes(t.status)) || null;
 };
 
 const STATUS_META = {
-  pending:          { label: "Pending",     bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-400"   },
-  "in progress":    { label: "In Progress", bg: "bg-sky-100",     text: "text-sky-700",     dot: "bg-sky-500"     },
-  in_revision:      { label: "In Revision", bg: "bg-violet-100",  text: "text-violet-700",  dot: "bg-violet-500"  },
-  menunggu_review:  { label: "Review",      bg: "bg-orange-100",  text: "text-orange-700",  dot: "bg-orange-500"  },
-  done:             { label: "Done",        bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
-  failed:           { label: "Gagal",       bg: "bg-rose-100",    text: "text-rose-700",    dot: "bg-rose-500"    },
+  pending:          { label: "Pending",     bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-400",   rail: "bg-amber-400"   },
+  "in progress":    { label: "In Progress", bg: "bg-sky-100",     text: "text-sky-700",     dot: "bg-sky-500",     rail: "bg-sky-500"     },
+  in_revision:      { label: "In Revision", bg: "bg-violet-100",  text: "text-violet-700",  dot: "bg-violet-500",  rail: "bg-violet-500"  },
+  menunggu_review:  { label: "Review",      bg: "bg-orange-100",  text: "text-orange-700",  dot: "bg-orange-500",  rail: "bg-orange-500"  },
+  done:             { label: "Done",        bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500", rail: "bg-emerald-500" },
+  failed:           { label: "Gagal",       bg: "bg-rose-100",    text: "text-rose-700",    dot: "bg-rose-500",    rail: "bg-rose-500"    },
 };
 
 const KANBAN_COLS = [
@@ -310,6 +341,7 @@ export default function Todo() {
   const [confirmDone, setConfirmDone] = useState(null);
   const [needDailyUpdate, setNeedDailyUpdate] = useState(null);
   const [detailTaskId, setDetailTaskId] = useState(null);
+  const [detailEstStart, setDetailEstStart] = useState(null);
   const [taskInput, setTaskInput] = useState({
     title: "", assignee: "", assignee_type: "tim", status: "pending", date: todayStr(), notes: "",
     duration_seconds: null, target_progress: "",
@@ -643,29 +675,17 @@ export default function Todo() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      {/* Header + Statistik digabung — biar halaman gak kepotong-potong
+          jadi banyak kotak kecil kayak versi lama. */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">To Do</h1>
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">To Do</h1>
             <p className="mt-0.5 text-sm text-slate-500">{fmtDateLabel(date)}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5">
-              <button onClick={() => setDate(shiftDate(date, -1))} className="rounded-lg p-1.5 hover:bg-slate-200 text-slate-600">‹</button>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-none bg-transparent text-sm font-semibold text-slate-800 outline-none" />
-              <button onClick={() => setDate(shiftDate(date, 1))} className="rounded-lg p-1.5 hover:bg-slate-200 text-slate-600">›</button>
-            </div>
-            <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
-              <button onClick={() => setViewMode("list")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${viewMode === "list" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                <ClipboardList size={14} className="inline mr-1" />List
-              </button>
-              <button onClick={() => setViewMode("kanban")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${viewMode === "kanban" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                <Kanban size={14} className="inline mr-1" />Kanban
-              </button>
-            </div>
             {isAdminOrPM && (
-              <button onClick={() => setShowGenerateConfirm(true)} disabled={generating} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
+              <button onClick={() => setShowGenerateConfirm(true)} disabled={generating} className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-60 transition">
                 <Zap size={14} /> {generating ? "Generating..." : "Auto Generate"}
               </button>
             )}
@@ -673,38 +693,55 @@ export default function Todo() {
               <button
                 onClick={() => copyToClipboard(buildAllPriorityText(grouped.tim, dragState, taskMap), "Teks urutan prioritas semua orang disalin!")}
                 title="Copy teks 'Urutan Prioritas' semua orang buat di-paste ke WhatsApp"
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
                 <Copy size={14} /> Copy Semua
               </button>
             )}
             {isAdminOrPM && (
-              <button onClick={() => setShowImport(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+              <button onClick={() => setShowImport(true)} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
                 <ClipboardPaste size={14} /> Import dari Teks
               </button>
             )}
             {isAdminOrPM && (
-              <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+              <button onClick={() => setShowAdd(true)} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
                 <Plus size={14} /> Task
               </button>
             )}
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {[
-            { label: "Total",       value: stats.total,      color: "text-slate-700",   bg: "bg-slate-100"  },
-            { label: "Pending",     value: stats.pending,    color: "text-amber-700",   bg: "bg-amber-50"   },
-            { label: "In Progress", value: stats.inProgress, color: "text-sky-700",     bg: "bg-sky-50"     },
-            { label: "Review",      value: stats.review,     color: "text-orange-700",  bg: "bg-orange-50"  },
-            { label: "Done",        value: stats.done,       color: "text-emerald-700", bg: "bg-emerald-50" },
-            { label: "Gagal",       value: stats.failed,     color: "text-rose-700",    bg: "bg-rose-50"    },
-          ].map((s) => (
-            <div key={s.label} className={`flex items-center gap-2 rounded-xl px-3 py-2 ${s.bg}`}>
-              <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-              <p className="text-xs text-slate-500">{s.label}</p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-4 border-t border-dashed border-slate-200 pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <button onClick={() => setDate(shiftDate(date, -1))} className="rounded-full p-1.5 hover:bg-slate-200 text-slate-600">‹</button>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border-none bg-transparent text-sm font-semibold text-slate-800 outline-none" />
+              <button onClick={() => setDate(shiftDate(date, 1))} className="rounded-full p-1.5 hover:bg-slate-200 text-slate-600">›</button>
             </div>
-          ))}
+            <div className="flex items-center rounded-full border border-slate-200 bg-slate-50 p-1">
+              <button onClick={() => setViewMode("list")} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${viewMode === "list" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                <ClipboardList size={14} className="inline mr-1" />List
+              </button>
+              <button onClick={() => setViewMode("kanban")} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${viewMode === "kanban" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                <Kanban size={14} className="inline mr-1" />Kanban
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
+            {[
+              { label: "Total",       value: stats.total,      color: "text-slate-700"   },
+              { label: "Pending",     value: stats.pending,    color: "text-amber-600"   },
+              { label: "In Progress", value: stats.inProgress, color: "text-sky-600"     },
+              { label: "Revisi",      value: stats.inRevision, color: "text-violet-600"  },
+              { label: "Review",      value: stats.review,     color: "text-orange-600"  },
+              { label: "Done",        value: stats.done,       color: "text-emerald-600" },
+              { label: "Gagal",       value: stats.failed,     color: "text-rose-600"    },
+            ].map((s) => (
+              <div key={s.label} className="flex items-baseline gap-1.5">
+                <span className={`font-mono text-lg font-extrabold tabular-nums ${s.color}`}>{s.value}</span>
+                <span className="text-xs font-medium text-slate-400">{s.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -746,19 +783,17 @@ export default function Todo() {
         />
       ) : (
         <>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <TaskGroup
-              title="Tim Internal" icon="👥" groups={grouped.tim} assigneeType="tim"
-              orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
-              presenceMap={presenceMap}
-              onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind} onRemote={handleRemote}
-              onApprove={handleApprove} onReject={handleReject}
-              onStatus={handleStatus} onDelete={handleDelete}
-              onEdit={setEditTask} onDetail={(t) => setDetailTaskId(t.id)}
-              onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
-            />
-            <TimSummaryChecklist groups={grouped.tim} />
-          </div>
+          <PersonLanesGrid
+            groups={grouped.tim} assigneeType="tim"
+            orders={orders} dragState={dragState} taskMap={taskMap} now={now} isAdminOrPM={isAdminOrPM}
+            presenceMap={presenceMap}
+            onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind} onRemote={handleRemote}
+            onApprove={handleApprove} onReject={handleReject}
+            onStatus={handleStatus} onDelete={handleDelete}
+            onEdit={setEditTask}
+            onDetail={(t, estStart) => { setDetailTaskId(t.id); setDetailEstStart(estStart ?? null); }}
+            onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
+          />
           <FreelanceChecklist groups={grouped.freelance} isAdminOrPM={isAdminOrPM} onStatus={handleStatus} />
         </>
       )}
@@ -837,9 +872,12 @@ export default function Todo() {
           orders={orders}
           now={now}
           isAdminOrPM={isAdminOrPM}
-          onClose={() => setDetailTaskId(null)}
+          estStart={detailEstStart}
+          onClose={() => { setDetailTaskId(null); setDetailEstStart(null); }}
           onEdit={(t) => { setDetailTaskId(null); setEditTask({ ...t }); }}
           onOpenOrder={(o) => { setDetailTaskId(null); setEditOrder(o); }}
+          onTimer={handleTimer} onMarkDone={handleMarkDone} onRemind={handleRemind} onRemote={handleRemote}
+          onApprove={handleApprove} onReject={handleReject} onDelete={handleDelete}
         />
       )}
       {editOrder && (
@@ -889,56 +927,9 @@ function KanbanView({ tasks, now, isAdminOrPM, onTimer, onMarkDone, onRemind, on
   );
 }
 
-/* ─── TimSummaryChecklist ───────────────────────────────────────────
-   Ringkasan simpel semua task Tim Internal hari ini — read-only, cuma
-   buat sekilas lihat siapa yang udah selesai tanpa perlu scroll card
-   satu-satu. Approve/reject tetap lewat TaskGroup di kiri, ini bukan
-   pengganti alurnya. ── */
-function TimSummaryChecklist({ groups }) {
-  const flat = useMemo(
-    () => Object.values(groups).flat().sort((a, b) => (a.order_num ?? 999) - (b.order_num ?? 999)),
-    [groups]
-  );
-  const doneCount = flat.filter((t) => t.status === "done").length;
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-        <span className="text-lg">✅</span>
-        <h3 className="text-sm font-bold text-slate-700">Checklist Hari Ini</h3>
-        <span className="ml-auto text-xs font-semibold text-slate-400">{doneCount}/{flat.length}</span>
-      </div>
-      {flat.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-slate-400">Tidak ada task tim internal hari ini.</p>
-      ) : (
-        <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
-          {flat.map((task) => {
-            const isDone = task.status === "done";
-            return (
-              <div key={task.id} className="flex items-center gap-3 px-4 py-2.5">
-                <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
-                  isDone ? "border-emerald-500 bg-emerald-500" : "border-slate-300"
-                }`}>
-                  {isDone && <Check size={12} className="text-white" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className={`text-sm font-medium truncate ${isDone ? "line-through text-slate-400" : "text-slate-700"}`}>
-                    {displayTitle(task)}
-                  </p>
-                  <p className="text-xs text-slate-400">{task.assignee}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ─── FreelanceChecklist ────────────────────────────────────────────
    Freelancer gak login ke workspace, jadi semua tombol (Mulai/Ingatkan/
-   Remote/dll) di TaskGroup biasa cuma makan tempat tanpa guna buat mereka.
+   Remote/dll) di lane biasa cuma makan tempat tanpa guna buat mereka.
    Ini gantinya: list simpel, checkbox otomatis nyala kalau bot Telegram
    udah nangkep update hari ini, dan admin/PM tinggal klik buat approve
    (toggle status done) — satu-satunya aksi yang mereka perlu. ── */
@@ -969,10 +960,10 @@ function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
         <span className="text-lg">🎨</span>
-        <h3 className="text-sm font-bold text-slate-700">Freelance</h3>
+        <h3 className="font-bold text-slate-800">Freelance</h3>
         <span className="ml-auto text-xs text-slate-400">{flat.length} task</span>
       </div>
       {flat.length === 0 ? (
@@ -983,20 +974,20 @@ function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
             const isDone = task.status === "done";
             const confirmed = !!confirmedMap[task.id];
             return (
-              <div key={task.id} className="flex items-center gap-3 px-4 py-3">
+              <div key={task.id} className="flex items-center gap-3 px-5 py-3">
                 <button
                   onClick={() => handleToggle(task)}
                   disabled={!isAdminOrPM}
                   title={isDone ? "Batalkan approve" : confirmed ? "Tandai selesai" : "Belum ada update Telegram"}
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition ${
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
                     isDone ? "border-emerald-500 bg-emerald-500" : confirmed ? "border-emerald-400 bg-emerald-50" : "border-slate-300"
                   } ${isAdminOrPM ? "cursor-pointer" : "cursor-default"}`}
                 >
                   {isDone && <Check size={12} className="text-white" />}
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-sm font-medium truncate ${isDone ? "line-through text-slate-400" : "text-slate-700"}`}>
-                    {displayTitle(task)}
+                  <p className={`truncate text-sm font-medium ${isDone ? "line-through text-slate-400" : "text-slate-700"}`}>
+                    {toTitleCase(displayTitle(task))}
                   </p>
                   <p className="text-xs text-slate-400">{task.assignee}</p>
                 </div>
@@ -1014,47 +1005,50 @@ function FreelanceChecklist({ groups, isAdminOrPM, onStatus }) {
   );
 }
 
-/* ─── TaskGroup ─────────────────────────────────────────────────── */
-function TaskGroup({ title, icon, groups, assigneeType, orders, dragState, taskMap, now, isAdminOrPM, presenceMap, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+/* ─── PersonLanesGrid ───────────────────────────────────────────────
+   Redesign: dulu satu kartu "Tim Internal" isinya semua orang berjejer
+   ke bawah + panel checklist duplikat di sampingnya. Sekarang tiap
+   orang jadi kartu (lane) sendiri dalam grid 2 kolom — checklist-nya
+   digabung langsung jadi checkbox di tiap baris task, gak ada panel
+   duplikat lagi. ── */
+function PersonLanesGrid({ groups, assigneeType, orders, dragState, taskMap, now, isAdminOrPM, presenceMap, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onStatus, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
   const entries = Object.entries(groups);
-  const totalTasks = entries.reduce((s, [, t]) => s + t.length, 0);
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center gap-2 border-b border-slate-100 pb-4">
-        <span className="text-lg">{icon}</span>
-        <div>
-          <p className="font-bold text-slate-900">{title}</p>
-          <p className="text-xs text-slate-400">{entries.length} org · {totalTasks} task</p>
-        </div>
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-10 text-center text-sm text-slate-400">
+        Tidak ada task tim internal hari ini.
       </div>
-      {entries.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">Tidak ada task.</div>
-      ) : (
-        <div className="space-y-4">
-          {entries.map(([assignee, aTasks]) => {
-            const orderedIds = dragState[assignee] || aTasks.map((t) => t.id);
-            const ordered = orderedIds.map((id) => taskMap[id]).filter(Boolean);
-            return (
-              <ArtistSection
-                key={assignee} assignee={assignee} tasks={ordered} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
-                presence={presenceMap[assignee]}
-                onTimer={onTimer} onMarkDone={onMarkDone} onRemind={onRemind} onRemote={onRemote} onApprove={onApprove} onReject={onReject}
-                onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
-                onDragStart={onDragStart}
-                onDragOver={(e, overId) => onDragOver(e, assignee, overId)}
-                onDrop={(e) => onDrop(e, assignee, assigneeType)}
-              />
-            );
-          })}
-        </div>
-      )}
+    );
+  }
+  return (
+    <div className="grid gap-5 md:grid-cols-2">
+      {entries.map(([assignee, aTasks]) => {
+        const orderedIds = dragState[assignee] || aTasks.map((t) => t.id);
+        const ordered = orderedIds.map((id) => taskMap[id]).filter(Boolean);
+        return (
+          <PersonLane
+            key={assignee} assignee={assignee} tasks={ordered} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
+            presence={presenceMap[assignee]}
+            onTimer={onTimer} onMarkDone={onMarkDone} onRemind={onRemind} onRemote={onRemote} onApprove={onApprove} onReject={onReject}
+            onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
+            onDragStart={onDragStart}
+            onDragOver={(e, overId) => onDragOver(e, assignee, overId)}
+            onDrop={(e) => onDrop(e, assignee, assigneeType)}
+          />
+        );
+      })}
     </div>
   );
 }
 
-/* ─── ArtistSection ─────────────────────────────────────────────── */
-function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, presence, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
-  const bgColor = avatarColor(assignee);
+/* ─── PersonLane ────────────────────────────────────────────────────
+   Satu kartu per orang: header (avatar + nama + ring progres hari ini),
+   task yang lagi/paling perlu dikerjakan ditonjolkan jadi kartu besar
+   berwarna (FeaturedTaskCard), sisanya list ringkas (CompactTaskRow).
+   Semua logic asli (schedule estimasi jam, drag-reorder, presence)
+   dipertahankan persis dari versi lama. ── */
+function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onDelete, onEdit, onDetail, onDragStart, onDragOver, onDrop }) {
+  const accent = avatarAccent(assignee);
   const totalElapsed = tasks.reduce((s, t) => s + getElapsed(t, now), 0);
 
   const sortedTasks = useMemo(() => {
@@ -1117,11 +1111,19 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, presence, on
     return result;
   }, [tasks, now]);
 
+  const featured = useMemo(() => pickFeaturedTask(sortedTasks), [sortedTasks]);
+  const restTasks = useMemo(() => sortedTasks.filter((t) => t.id !== featured?.id), [sortedTasks, featured]);
+
+  const doneCount = tasks.filter((t) => t.status === "done").length;
+  const pct = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
+  const ringC = 2 * Math.PI * 18;
+  const ringOffset = ringC - (ringC * pct) / 100;
+
   return (
-    <div>
-      <div className="mb-2 flex items-center gap-2.5">
+    <div className={`overflow-hidden rounded-3xl border border-t-4 border-slate-200 bg-white shadow-sm ${accent.border}`}>
+      <div className="flex items-center gap-3 px-5 py-4">
         <div className="relative shrink-0">
-          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-white ${bgColor}`}>
+          <div className={`flex h-11 w-11 items-center justify-center rounded-full text-base font-bold text-white ${accent.bg}`}>
             {assignee?.charAt(0)?.toUpperCase() || "?"}
           </div>
           {/* Titik status — prioritas: desktop app tidak terhubung (abu-abu,
@@ -1142,33 +1144,214 @@ function ArtistSection({ assignee, tasks, orders, now, isAdminOrPM, presence, on
             />
           )}
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-900">{assignee}</p>
+        <div className="min-w-0 flex-1">
+          <p className="font-bold text-slate-900">{assignee}</p>
           <p className="text-xs text-slate-400">
             {tasks.length} task
-            {totalElapsed > 0 && <span className="ml-2 text-indigo-500 font-mono">∑ {fmtElapsed(totalElapsed)}</span>}
+            {totalElapsed > 0 && <span className="ml-1.5 font-mono text-indigo-500">· ∑ {fmtElapsed(totalElapsed)}</span>}
           </p>
         </div>
         {isAdminOrPM && (
           <button
             onClick={() => copyToClipboard(buildPriorityTextFor(assignee, tasks), `Prioritas ${assignee} disalin!`)}
             title="Copy teks 'Urutan Prioritas' buat di-paste ke WhatsApp"
-            className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition">
+            className="shrink-0 rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition">
             <Copy size={14} />
           </button>
         )}
+        <div className="relative h-10 w-10 shrink-0">
+          <svg width="40" height="40" viewBox="0 0 44 44" className="-rotate-90">
+            <circle cx="22" cy="22" r="18" fill="none" strokeWidth="4" className="stroke-slate-100" />
+            <circle
+              cx="22" cy="22" r="18" fill="none" strokeWidth="4" strokeLinecap="round"
+              className={accent.stroke}
+              strokeDasharray={ringC} strokeDashoffset={ringOffset}
+              style={{ transition: "stroke-dashoffset .3s" }}
+            />
+          </svg>
+          <span className={`absolute inset-0 flex items-center justify-center font-mono text-[10px] font-bold ${accent.text}`}>{pct}%</span>
+        </div>
       </div>
-      <div className="ml-10 space-y-2" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-        {sortedTasks.map((task) => (
-          <TaskCard
-            key={task.id} task={task} orders={orders} now={now} isAdminOrPM={isAdminOrPM}
+
+      {featured && (
+        <FeaturedTaskCard
+          task={featured} orders={orders} now={now}
+          onTimer={onTimer} onMarkDone={onMarkDone}
+          onDetail={(t) => onDetail(t, schedule[t.id] ?? null)}
+        />
+      )}
+
+      <div onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+        {restTasks.length === 0 && !featured && (
+          <p className="px-5 py-6 text-center text-xs text-slate-400">Tidak ada task.</p>
+        )}
+        {restTasks.map((task) => (
+          <CompactTaskRow
+            key={task.id} task={task} now={now} isAdminOrPM={isAdminOrPM}
             estStart={schedule[task.id] ?? null}
-            onTimer={onTimer} onMarkDone={onMarkDone} onRemind={onRemind} onRemote={onRemote} onApprove={onApprove} onReject={onReject}
-            onDelete={onDelete} onEdit={onEdit} onDetail={onDetail}
+            onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+            onDetail={onDetail}
             onDragStart={onDragStart} onDragOver={onDragOver}
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ─── FeaturedTaskCard ──────────────────────────────────────────────
+   Kartu besar berwarna buat task yang lagi jalan/paling perlu dikerjain
+   duluan — hierarki visual biar gak semua task keliatan sama pentingnya. */
+function FeaturedTaskCard({ task, orders, now, onTimer, onMarkDone, onDetail }) {
+  const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
+  const elapsed = getElapsed(task, now);
+  const countdown = getCountdown(task, now);
+  const hasStarted = elapsed > 0 || !!task.timer_started;
+  const isOverdue = countdown !== null && countdown <= 0 && hasStarted;
+  const isUrgent = countdown !== null && countdown > 0 && countdown <= 1800 && hasStarted;
+  const linkedOrderInfo = useMemo(() => (task.order_id && orders?.length ? orders.find((o) => o.id === task.order_id) : null), [task.order_id, orders]);
+  const streamAllowed = !!linkedOrderInfo?.stream_allowed;
+  const sub = task.target_progress || task.notes || "";
+
+  const tone = isOverdue
+    ? { wrap: "bg-rose-500", label: "text-rose-100", title: "text-white", sub: "text-rose-50", barTrack: "bg-rose-400/50", barFill: "bg-white", btn: "bg-white text-rose-600 hover:bg-rose-50" }
+    : isUrgent
+    ? { wrap: "bg-amber-400", label: "text-amber-900/70", title: "text-amber-950", sub: "text-amber-900/80", barTrack: "bg-amber-300/60", barFill: "bg-amber-950", btn: "bg-amber-950 text-amber-50 hover:bg-amber-900" }
+    : task.status === "in_revision"
+    ? { wrap: "bg-violet-50", label: "text-violet-400", title: "text-violet-900", sub: "text-violet-500", barTrack: "bg-violet-200", barFill: "bg-violet-500", btn: "bg-white text-violet-700 shadow-sm hover:bg-violet-50" }
+    : task.status === "menunggu_review"
+    ? { wrap: "bg-orange-50", label: "text-orange-400", title: "text-orange-900", sub: "text-orange-500", barTrack: "bg-orange-200", barFill: "bg-orange-500", btn: "bg-white text-orange-700 shadow-sm hover:bg-orange-50" }
+    : { wrap: "bg-sky-50", label: "text-sky-400", title: "text-sky-900", sub: "text-sky-500", barTrack: "bg-sky-200", barFill: "bg-sky-500", btn: "bg-white text-sky-700 shadow-sm hover:bg-sky-50" };
+
+  return (
+    <div
+      onClick={() => onDetail(task)}
+      className={`mx-5 mb-4 cursor-pointer rounded-2xl p-4 transition hover:-translate-y-0.5 ${tone.wrap}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className={`text-[10px] font-bold uppercase tracking-widest ${tone.label}`}>
+            {isOverdue ? "Overdue" : isUrgent ? "Segera!" : isRunning ? "Lagi Dikerjakan" : "Prioritas Berikutnya"}
+          </p>
+          <p className={`mt-0.5 truncate text-lg font-extrabold ${tone.title}`}>{toTitleCase(displayTitle(task))}</p>
+          {sub && <p className={`mt-0.5 truncate text-sm ${tone.sub}`}>{sub}</p>}
+        </div>
+        {streamAllowed && (
+          <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">🔴 LIVE</span>
+        )}
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        {task.duration_seconds ? (
+          <>
+            <div className={`h-1.5 max-w-[160px] flex-1 overflow-hidden rounded-full ${tone.barTrack}`}>
+              <div className={`h-full rounded-full ${tone.barFill}`} style={{ width: `${Math.min(100, Math.round((elapsed / task.duration_seconds) * 100))}%` }} />
+            </div>
+            <span className={`shrink-0 font-mono text-xs font-semibold ${tone.sub}`}>{fmtElapsed(elapsed)} / {fmtBudget(task.duration_seconds)}</span>
+          </>
+        ) : <span />}
+        <button
+          onClick={(e) => { e.stopPropagation(); isRunning ? onMarkDone(task) : onTimer(task); }}
+          className={`ml-auto shrink-0 rounded-full px-4 py-2 text-xs font-bold transition ${tone.btn}`}
+        >
+          {isRunning ? "Tandai Selesai" : "Mulai"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── CompactTaskRow ────────────────────────────────────────────────
+   Baris ringkas: checkbox (nyambung ke alur asli — bukan toggle mentah,
+   tetap lewat gate Telegram/approval yang sama persis kayak tombol
+   "Done" versi lama), judul, satu baris deskripsi (target/catatan asli
+   — bukan info status), satu tombol aksi utama. Info lain (order, kode
+   update, durasi lengkap) ada di detail pas card diklik. ── */
+function CompactTaskRow({ task, now, isAdminOrPM, estStart, onTimer, onMarkDone, onApprove, onReject, onDetail, onDragStart, onDragOver }) {
+  const isDone = task.status === "done";
+  const isFailed = task.status === "failed";
+  const isReview = task.status === "menunggu_review";
+  const isRevision = task.status === "in_revision";
+  const isFinished = isDone || isFailed;
+  const isActive = task.status === "pending" || task.status === "in progress" || isRevision;
+  const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
+  const elapsed = getElapsed(task, now);
+  const countdown = getCountdown(task, now);
+  const hasStarted = elapsed > 0 || !!task.timer_started;
+  const isOverdue = !isFinished && countdown !== null && countdown <= 0 && hasStarted;
+  const isUrgent = !isFinished && countdown !== null && countdown > 0 && countdown <= 1800 && hasStarted;
+  const rail = STATUS_META[task.status]?.rail || "bg-slate-200";
+  const sub = task.target_progress || task.notes || "";
+  const stopProp = (fn) => (e) => { e.stopPropagation(); fn(); };
+
+  const checkTitle = isDone ? "Selesai" : isReview ? "Menunggu review admin" : isFailed ? (isAdminOrPM ? "Tandai selesai" : "Gagal") : isAdminOrPM ? "Tandai selesai" : "Kirim untuk review";
+  const checkDisabled = isDone || isReview || (isFailed && !isAdminOrPM);
+  const handleCheck = () => {
+    if (checkDisabled) return;
+    if (isFailed) { onApprove(task); return; }
+    onMarkDone(task);
+  };
+
+  return (
+    <div
+      draggable={isAdminOrPM}
+      onDragStart={isAdminOrPM ? (e) => { e.stopPropagation(); onDragStart(e, task.id); } : undefined}
+      onDragOver={(e) => onDragOver(e, task.id)}
+      onClick={() => onDetail(task, estStart)}
+      className="group relative flex cursor-pointer items-center gap-3 border-b border-slate-100 px-5 py-3 last:border-0 hover:bg-slate-50 transition"
+    >
+      <span className={`absolute inset-y-2 left-0 w-[3px] rounded-r-full ${isOverdue ? "bg-rose-500" : isUrgent ? "bg-amber-400" : rail}`} />
+
+      <button
+        onClick={stopProp(handleCheck)}
+        disabled={checkDisabled}
+        title={checkTitle}
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+          isDone ? "border-emerald-500 bg-emerald-500"
+          : isReview ? "cursor-default border-orange-300 bg-orange-50"
+          : checkDisabled ? "cursor-default border-slate-200"
+          : "border-slate-300 hover:border-indigo-400"
+        }`}
+      >
+        {isDone && <Check size={11} className="text-white" />}
+        {isReview && <span className="text-[10px]">⏳</span>}
+      </button>
+
+      <div className="min-w-0 flex-1">
+        <p className={`truncate text-sm font-semibold ${isDone || isFailed ? "text-slate-400 line-through" : "text-slate-900"}`}>
+          {toTitleCase(displayTitle(task))}
+        </p>
+        <p className="truncate text-xs text-slate-400">{sub || " "}</p>
+      </div>
+
+      {isOverdue ? (
+        <span className="shrink-0 rounded-full bg-rose-500 px-2.5 py-1 text-[10.5px] font-bold text-white">
+          🕐 {fmtCountdown(Math.abs(countdown))} lewat
+        </span>
+      ) : isUrgent ? (
+        <span className="shrink-0 rounded-full bg-amber-400 px-2.5 py-1 text-[10.5px] font-bold text-amber-950">
+          {fmtCountdown(countdown)} lagi
+        </span>
+      ) : estStart && !isFinished && !isRunning ? (
+        <span className="shrink-0 font-mono text-[11.5px] font-semibold text-slate-400">🕐 {estStart}</span>
+      ) : null}
+
+      {isReview ? (
+        <button onClick={stopProp(() => onDetail(task, estStart))} className="shrink-0 rounded-full border border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 hover:bg-orange-100 transition">
+          Tinjau
+        </button>
+      ) : isActive ? (
+        <button
+          onClick={stopProp(() => onTimer(task))}
+          className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
+            isRunning ? "bg-sky-500 text-white hover:bg-sky-600" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+          }`}
+        >
+          {isRunning ? <Pause size={11} /> : <Play size={11} />}
+          {isRunning
+            ? <span className="font-mono">{fmtClock(elapsed)}</span>
+            : elapsed > 0 ? <span className="font-mono">{fmtElapsed(elapsed)}</span> : "Mulai"}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1439,18 +1622,28 @@ function TaskCard({ task, orders, now, isAdminOrPM, onTimer, onMarkDone, onRemin
   );
 }
 
-/* ─── TaskDetailModal ───────────────────────────────────────────── */
-function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit, onOpenOrder }) {
+/* ─── TaskDetailModal ─────────────────────────────────────────────
+   Semua detail yang sebelumnya numpuk di card (target, order, kode
+   update harian, durasi) sekarang di sini — card di list cuma nyisain
+   judul + 1 tombol. Semua fetch/state (orderTotal, dailyUpdateConfirmed,
+   revoke) dipertahankan persis, cuma tata letaknya dirapikan + sekarang
+   satu tombol aksi utama per status (bukan nyebar 4-5 tombol). ── */
+function TaskDetailModal({ task, orders, now, isAdminOrPM, estStart, onClose, onEdit, onOpenOrder, onTimer, onMarkDone, onRemind, onRemote, onApprove, onReject, onDelete }) {
   const sm = STATUS_META[task.status] || STATUS_META.pending;
   const elapsed = getElapsed(task, now);
   const linkedOrder = orders.find((o) => o.id === task.order_id);
   const handleOpenOrder = () => onOpenOrder(linkedOrder);
+  const isDone = task.status === "done";
+  const isFailed = task.status === "failed";
+  const isReview = task.status === "menunggu_review";
+  const isRevision = task.status === "in_revision";
+  const isFinished = isDone || isFailed;
+  const isActive = task.status === "pending" || task.status === "in progress" || isRevision;
   const isRunning = !!task.timer_started && (!task.date || task.date >= todayStr());
-  const elapsed2 = getElapsed(task, now);
   const countdown = getCountdown(task, now);
-  const hasStarted2 = elapsed2 > 0 || !!task.timer_started;
-  const isOverdue = countdown !== null && countdown <= 0 && hasStarted2 && !["done","failed"].includes(task.status);
-  const isUrgent  = countdown !== null && countdown > 0 && countdown <= 1800 && hasStarted2 && !["done","failed"].includes(task.status);
+  const hasStarted = elapsed > 0 || !!task.timer_started;
+  const isOverdue = countdown !== null && countdown <= 0 && hasStarted && !isFinished;
+  const isUrgent  = countdown !== null && countdown > 0 && countdown <= 1800 && hasStarted && !isFinished;
 
   const [orderTotal, setOrderTotal] = useState(null);
   useEffect(() => {
@@ -1494,17 +1687,24 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit, onOp
     }
   };
 
+  const badge = isOverdue
+    ? { bg: "bg-rose-500", text: "text-white", label: `Overdue +${fmtCountdown(Math.abs(countdown))}` }
+    : isUrgent
+    ? { bg: "bg-amber-400", text: "text-amber-950", label: `${fmtCountdown(countdown)} lagi` }
+    : { bg: sm.bg, text: sm.text, label: sm.label };
+
   return (
     <div className="fixed inset-0 z-[300] overflow-y-auto bg-slate-950/50 backdrop-blur-sm" onClick={onClose}>
       <div className="flex min-h-full items-center justify-center px-4 py-6">
-      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between gap-3 px-6 py-4 border-b border-slate-100">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className={`h-1.5 ${isOverdue ? "bg-rose-500" : isUrgent ? "bg-amber-400" : sm.dot}`} />
+        <div className="flex items-start justify-between gap-3 px-6 pt-4 pb-4 border-b border-slate-100">
           <div className="min-w-0 flex-1">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${sm.bg} ${sm.text}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${sm.dot}`} /> {sm.label}
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${badge.bg} ${badge.text}`}>
+              {badge.label}
             </span>
-            <h2 className={`mt-2 text-base font-bold leading-snug break-words ${task.status === "done" ? "line-through text-slate-400" : "text-slate-900"}`}>
-              {displayTitle(task)}
+            <h2 className={`mt-2 text-lg font-extrabold leading-snug break-words ${isDone ? "line-through text-slate-400" : "text-slate-900"}`}>
+              {toTitleCase(displayTitle(task))}
             </h2>
             <p className="mt-0.5 text-xs text-slate-400">{task.assignee} · {task.date}</p>
           </div>
@@ -1513,25 +1713,39 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit, onOp
           </button>
         </div>
 
-        <div className="px-6 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
-          {/* Countdown block — shown once timer has been started */}
-          {countdown !== null && hasStarted2 && (
-            <div className={`rounded-2xl border px-4 py-3 ${isOverdue ? "border-rose-200 bg-rose-50" : isUrgent ? "border-orange-200 bg-orange-50" : "border-sky-100 bg-sky-50"}`}>
-              <div className="flex items-center gap-2">
-                <AlarmClock size={14} className={isOverdue ? "text-rose-500" : isUrgent ? "text-orange-500" : "text-sky-500"} />
-                <div className="flex-1">
-                  <p className={`text-[10px] font-bold uppercase tracking-widest ${isOverdue ? "text-rose-400" : isUrgent ? "text-orange-400" : "text-sky-400"}`}>
-                    {isOverdue ? "Waktu Terlewat" : "Sisa Waktu"}
-                  </p>
-                  <p className={`text-base font-mono font-bold ${isOverdue ? "text-rose-600" : isUrgent ? "text-orange-600" : "text-sky-600"}`}>
-                    {isOverdue ? `+${fmtCountdown(Math.abs(countdown))}` : fmtCountdown(countdown)}
-                  </p>
-                </div>
-                <p className="text-xs text-slate-400 font-mono">dari {Math.floor(task.duration_seconds / 3600)}j {Math.floor((task.duration_seconds % 3600) / 60)}m</p>
+        <div className="px-6 py-4 space-y-3 max-h-[55vh] overflow-y-auto">
+          {estStart && !isFinished && !isRunning && !isOverdue && !isUrgent && (
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+              <span className="text-lg leading-none">🕐</span>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Estimasi Mulai</p>
+                <p className="text-sm font-mono font-bold text-slate-700">{estStart}</p>
               </div>
             </div>
           )}
-          {/* Target progress */}
+
+          <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Clock size={14} className="text-slate-400 shrink-0" />
+              <div className="flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Waktu Pengerjaan Hari Ini</p>
+                <p className={`text-sm font-mono font-semibold ${isRunning ? "text-sky-600" : "text-slate-700"}`}>
+                  {elapsed > 0 ? fmtElapsed(elapsed) : "Belum dimulai"}
+                  {task.duration_seconds ? ` / ${fmtBudget(task.duration_seconds)}` : ""}
+                  {isRunning && <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse" />}
+                </p>
+              </div>
+            </div>
+            {task.duration_seconds ? (
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className={`h-full rounded-full ${isOverdue ? "bg-rose-500" : isUrgent ? "bg-amber-400" : "bg-sky-500"}`}
+                  style={{ width: `${Math.min(100, Math.round((elapsed / task.duration_seconds) * 100))}%` }}
+                />
+              </div>
+            ) : null}
+          </div>
+
           {task.target_progress && (
             <div className="rounded-2xl border border-violet-100 bg-violet-50 px-4 py-3">
               <p className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-violet-400">Target Progres</p>
@@ -1556,11 +1770,17 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit, onOp
                   <button
                     onClick={handleOpenOrder}
                     title="Buka & edit order ini (kayak di halaman Order)"
-                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition">
+                    className="shrink-0 inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition">
                     <Link2 size={12} /> Edit Order
                   </button>
                 )}
               </div>
+              {orderTotal !== null && (
+                <p className="mt-2 border-t border-indigo-100 pt-2 text-[11.5px] text-indigo-500">
+                  ⏱ Total pengerjaan order ini (semua hari):{" "}
+                  <span className="font-mono font-bold text-indigo-800">{orderTotal > 0 ? fmtElapsed(orderTotal) : "belum ada"}</span>
+                </p>
+              )}
             </div>
           )}
 
@@ -1583,7 +1803,7 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit, onOp
               <p className="flex-1 min-w-0 text-sm font-mono font-semibold text-emerald-800 break-all">{dailyCode}</p>
               <button
                 onClick={handleCopyCode}
-                className="shrink-0 flex items-center gap-1 rounded-lg bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-200"
+                className="shrink-0 flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-200"
               >
                 {codeCopied ? <Check size={12} /> : <Copy size={12} />}
                 {codeCopied ? "Tersalin" : "Copy"}
@@ -1603,39 +1823,79 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, onClose, onEdit, onOp
               </button>
             )}
           </div>
-
-          <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
-            <div className="flex items-center gap-3">
-              <Clock size={14} className="text-slate-400 shrink-0" />
-              <div className="flex-1">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Waktu Kerja Hari Ini</p>
-                <p className={`text-sm font-mono font-semibold ${isRunning ? "text-sky-600" : "text-slate-700"}`}>
-                  {elapsed > 0 ? fmtElapsed(elapsed) : "Belum dimulai"}
-                  {isRunning && <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse" />}
-                </p>
-              </div>
-            </div>
-            {/* Total lintas hari + lintas assignee, per order */}
-            {orderTotal !== null && (
-              <div className="mt-3 border-t border-slate-200 pt-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Total Waktu Pengerjaan</p>
-                <p className="text-base font-mono font-bold text-indigo-700">
-                  {orderTotal > 0 ? fmtElapsed(orderTotal) : "Belum ada waktu tercatat"}
-                </p>
-                <p className="text-xs text-indigo-300 font-mono mt-0.5">{linkedOrder?.folder_code || task.order_id?.slice(-6)}</p>
-              </div>
-            )}
-          </div>
         </div>
 
-        <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
-          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+        {/* Aksi utama — satu tombol paling relevan sesuai status task */}
+        {(isReview || isActive || (isFailed && isAdminOrPM)) && (
+          <div className="flex flex-wrap gap-2 border-t border-slate-100 px-6 py-4">
+            {isReview ? (
+              isAdminOrPM ? (
+                <>
+                  <button onClick={() => { onApprove(task); onClose(); }} className="flex-1 rounded-2xl bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-600 transition">
+                    ✓ Setuju
+                  </button>
+                  <button onClick={() => { onReject(task); onClose(); }} className="flex-1 rounded-2xl bg-rose-50 py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-100 transition">
+                    Kembalikan
+                  </button>
+                </>
+              ) : (
+                <div className="flex-1 rounded-2xl border border-orange-200 bg-orange-50 py-2.5 text-center text-sm font-semibold text-orange-600">
+                  ⏳ Menunggu review admin
+                </div>
+              )
+            ) : (
+              <>
+                {isActive && (
+                  <button
+                    onClick={() => onTimer(task)}
+                    className={`flex-1 rounded-2xl py-2.5 text-sm font-bold text-white transition ${isRunning ? "bg-sky-500 hover:bg-sky-600" : "bg-indigo-600 hover:bg-indigo-700"}`}
+                  >
+                    {isRunning ? `Pause · ${fmtClock(elapsed)}` : elapsed > 0 ? "Lanjutkan" : "Mulai"}
+                  </button>
+                )}
+                {isActive && (
+                  <button onClick={() => { onMarkDone(task); onClose(); }} className="flex-1 rounded-2xl bg-emerald-100 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-200 transition">
+                    {isAdminOrPM ? "Tandai Selesai" : "Kirim Review"}
+                  </button>
+                )}
+                {isFailed && isAdminOrPM && (
+                  <button onClick={() => { onApprove(task); onClose(); }} className="flex-1 rounded-2xl bg-emerald-100 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-200 transition">
+                    Tandai Selesai
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Utilitas admin — ingatkan / remote, cuma buat task yang masih aktif */}
+        {isAdminOrPM && isActive && (
+          <div className="flex gap-2 px-6 pb-4">
+            <button onClick={() => onRemind(task)} className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-amber-50 py-2 text-xs font-bold text-amber-700 hover:bg-amber-100 transition">
+              <Bell size={12} /> Ingatkan
+            </button>
+            <button onClick={() => onRemote(task)} className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-sky-50 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100 transition">
+              <Monitor size={12} /> Remote
+            </button>
+          </div>
+        )}
+
+        <div className="flex gap-2 border-t border-slate-100 px-6 py-4">
+          <button onClick={onClose} className="flex-1 rounded-2xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">
             Tutup
           </button>
           {isAdminOrPM && (
-            <button onClick={() => onEdit(task)} className="flex-1 rounded-2xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">
-              Edit Task
-            </button>
+            <>
+              <button onClick={() => onEdit(task)} className="flex-1 rounded-2xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 transition">
+                Edit
+              </button>
+              <button
+                onClick={() => { if (confirm("Hapus task ini?")) { onDelete(task.id); onClose(); } }}
+                title="Hapus"
+                className="rounded-2xl border border-rose-200 px-4 py-2.5 text-sm font-bold text-rose-500 hover:bg-rose-50 transition">
+                Hapus
+              </button>
+            </>
           )}
         </div>
       </div>
