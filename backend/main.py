@@ -4308,13 +4308,14 @@ async def _handle_order_screenshot(msg: dict, thread_id: str):
 
     await broadcast_all({"type": "orders_updated"})
 
-    market_note = f"Market: {market['name']}" if market else "⚠️ Market belum ke-mapping — isi manual di web (Settings > Kelola Market buat atur username Telegram)"
+    market_value = market["name"] if market else "⚠️ belum ke-mapping (atur di Settings > Kelola Market)"
     summary = (
-        f"✅ Draft order dibuat dari screenshot:\n"
-        f"📁 {payload['project']}\n"
-        f"👤 Klien: {payload['client']}\n"
-        f"💰 ${payload['total']}\n"
-        f"{market_note}\n\n"
+        f"✅ Draft order dibuat dari screenshot:\n\n"
+        f"Nama Project : {payload['project']}\n"
+        f"Client : {payload['client']}\n"
+        f"Budget : ${payload['total']}\n"
+        f"Marketer : {payload['marketer']}\n"
+        f"Market : {market_value}\n\n"
         f"Cek & lengkapi di halaman Orders (masih ditandai draft sampai di-edit/konfirmasi)."
     )
     await _telegram_reply(message_id, thread_id, summary)
