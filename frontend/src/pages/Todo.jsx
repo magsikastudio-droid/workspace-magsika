@@ -1352,7 +1352,7 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, isDra
           estStart={schedule[featured.id] ?? null}
           isBig={activeId === featured.id}
           onHoverStart={handleHoverStart} onHoverEnd={handleHoverEnd}
-          onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+          onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject} onDelete={onDelete}
           onDetail={(t, est) => onDetail(t, est ?? schedule[t.id] ?? null)}
           onDragStart={onDragStart} onDragOver={onDragOver}
         />
@@ -1368,7 +1368,7 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, isDra
             estStart={schedule[task.id] ?? null}
             isBig={activeId === task.id}
             onHoverStart={handleHoverStart} onHoverEnd={handleHoverEnd}
-            onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject}
+            onTimer={onTimer} onMarkDone={onMarkDone} onApprove={onApprove} onReject={onReject} onDelete={onDelete}
             onDetail={onDetail}
             onDragStart={onDragStart} onDragOver={onDragOver}
           />
@@ -1386,7 +1386,7 @@ function PersonLane({ assignee, tasks, orders, now, isAdminOrPM, presence, isDra
    grid-rows), dipicu hover (lihat `activeId` di PersonLane). Saat besar,
    durasi pengerjaan & kode folder ikut kebuka (sebelumnya cuma keliatan
    di detail modal). ── */
-function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHoverStart, onHoverEnd, onTimer, onMarkDone, onApprove, onReject, onDetail, onDragStart, onDragOver }) {
+function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHoverStart, onHoverEnd, onTimer, onMarkDone, onApprove, onReject, onDelete, onDetail, onDragStart, onDragOver }) {
   const isDone = task.status === "done";
   const isFailed = task.status === "failed";
   const isReview = task.status === "menunggu_review";
@@ -1524,8 +1524,26 @@ function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHove
             </button>
           ) : null
         )}
+        {!isBig && isAdminOrPM && (
+          <button
+            onClick={stopProp(() => onDelete(task.id))}
+            title="Hapus task"
+            className="shrink-0 rounded-full p-1 text-slate-300 transition hover:bg-rose-50 hover:text-rose-500"
+          >
+            <X size={13} />
+          </button>
+        )}
         {isBig && streamAllowed && (
           <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">🔴 LIVE</span>
+        )}
+        {isBig && isAdminOrPM && (
+          <button
+            onClick={stopProp(() => onDelete(task.id))}
+            title="Hapus task"
+            className={`shrink-0 rounded-full p-1 transition hover:bg-black/10 ${tone.sub}`}
+          >
+            <X size={14} />
+          </button>
         )}
       </div>
 
