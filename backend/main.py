@@ -7,6 +7,7 @@ import uuid
 import random
 import hashlib
 import smtplib
+import httpx
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime, timezone, timedelta
@@ -71,6 +72,12 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_GROUP_CHAT_ID = os.getenv("TELEGRAM_GROUP_CHAT_ID", "-1003611845591")
 TELEGRAM_UPDATE_TOPIC_ID = os.getenv("TELEGRAM_UPDATE_TOPIC_ID", "2")
 TELEGRAM_TOPIC_LINK = "https://t.me/c/3611845591/2"
+
+# Topic terpisah tempat admin kirim screenshot order Fiverr -- bot baca
+# gambarnya (vision AI, pakai ANTHROPIC_API_KEY yang sama kayak fitur AI
+# lain di atas), ekstrak data order, terus otomatis bikin draft order di
+# web. Kosong = fitur ini nonaktif (belum di-setting topic-nya).
+TELEGRAM_ORDER_TOPIC_ID = os.getenv("TELEGRAM_ORDER_TOPIC_ID", "")
 
 
 def _telegram_chat_internal_id() -> str:
@@ -226,6 +233,16 @@ def format_order(record: dict) -> dict:
         "stream_allowed": record.get("stream_allowed", False),
         "status_auto_updated": record.get("status_auto_updated", False),
         "status_auto_source": record.get("status_auto_source", ""),
+        "is_draft": record.get("is_draft", False),
+    }
+
+
+def format_market(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")) if record.get("_id") else record.get("id"),
+        "name": record.get("name", ""),
+        "telegram_usernames": record.get("telegram_usernames", []),
+        "color": record.get("color", "#7c3aed"),
     }
 
 
@@ -373,6 +390,7 @@ class OrderCreate(BaseModel):
     completed_at: Optional[str] = None
     milestones: Optional[List[Dict[str, Any]]] = []
     stream_allowed: Optional[bool] = False
+    is_draft: Optional[bool] = False
 
 
 class LayoutTaskCreate(BaseModel):
@@ -417,6 +435,19 @@ class OrderUpdate(BaseModel):
     completed_at: Optional[str] = None
     milestones: Optional[List[Dict[str, Any]]] = None
     stream_allowed: Optional[bool] = None
+    is_draft: Optional[bool] = None
+
+
+class MarketCreate(BaseModel):
+    name: str
+    telegram_usernames: Optional[List[str]] = []
+    color: Optional[str] = "#7c3aed"
+
+
+class MarketUpdate(BaseModel):
+    name: Optional[str] = None
+    telegram_usernames: Optional[List[str]] = None
+    color: Optional[str] = None
 
 
 class ChatEntryCreate(BaseModel):
@@ -2039,6 +2070,72 @@ async def delete_order(order_id: str, current_user: dict = Depends(get_current_u
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete order")
     await broadcast_all({"type": "orders_updated"})
+    return {"deleted": True}
+
+
+# ─── Markets (unit bisnis: Magsika/Eirene/dll) ────────────────────────────────
+# Dulu daftar market cuma di-hardcode di frontend (constants.js) -- sekarang
+# jadi data beneran di DB biar superadmin bisa tambah market baru & atur
+# mapping username Telegram -> market lewat halaman Settings (dipakai bot
+# buat nebak market dari siapa yang ngirim screenshot order).
+_DEFAULT_MARKETS = [
+    {"name": "Magsika", "telegram_usernames": [], "color": "#7c3aed"},
+    {"name": "Eirene", "telegram_usernames": [], "color": "#0ea5e9"},
+    {"name": "Lolicharm", "telegram_usernames": [], "color": "#e11d48"},
+]
+
+
+async def _ensure_default_markets():
+    try:
+        count = await db.markets.count_documents({})
+        if count == 0:
+            await db.markets.insert_many([dict(m) for m in _DEFAULT_MARKETS])
+    except Exception:
+        pass
+
+
+@app.get("/markets")
+async def list_markets(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") not in ["admin", "pm"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    await _ensure_default_markets()
+    records = await db.markets.find().sort("name", 1).to_list(200)
+    return {"markets": [format_market(r) for r in records]}
+
+
+@app.post("/markets")
+async def create_market(market: MarketCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    payload = market.dict()
+    result = await db.markets.insert_one(payload)
+    created = await db.markets.find_one({"_id": result.inserted_id})
+    return {"market": format_market(created)}
+
+
+@app.patch("/markets/{market_id}")
+async def update_market(market_id: str, market: MarketUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    payload = {k: v for k, v in market.dict(exclude_unset=True).items()}
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
+    object_id = to_object_id(market_id)
+    await db.markets.update_one({"_id": object_id}, {"$set": payload})
+    updated = await db.markets.find_one({"_id": object_id})
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Market not found")
+    return {"market": format_market(updated)}
+
+
+@app.delete("/markets/{market_id}")
+async def delete_market(market_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    object_id = to_object_id(market_id)
+    result = await db.markets.delete_one({"_id": object_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Market not found")
     return {"deleted": True}
 
 
@@ -4069,6 +4166,175 @@ def _parse_daily_update_text(text: str):
     return date_code, project_name
 
 
+# ─── Baca screenshot order Fiverr lewat Telegram (vision AI) ─────────────────
+async def _telegram_download_photo(file_id: str):
+    """Ambil bytes foto dari Telegram lewat 2 langkah Bot API: getFile buat
+    dapetin path-nya, terus download langsung dari server file Telegram."""
+    if not TELEGRAM_BOT_TOKEN:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile", params={"file_id": file_id})
+            r.raise_for_status()
+            file_path = r.json()["result"]["file_path"]
+            file_resp = await client.get(f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}")
+            file_resp.raise_for_status()
+            return file_resp.content
+    except Exception as e:
+        print(f"[Order screenshot] gagal download foto: {e}", flush=True)
+        return None
+
+
+async def _extract_order_from_image(image_bytes: bytes) -> Optional[dict]:
+    """Kirim screenshot ke Claude (vision) buat diekstrak jadi data order
+    terstruktur. Pakai Haiku -- ekstraksi data dari gambar gak butuh model
+    yang lebih mahal/pintar."""
+    if not ANTHROPIC_API_KEY:
+        return None
+    image_b64 = base64.b64encode(image_bytes).decode()
+    prompt = (
+        "Ini screenshot halaman order Fiverr. Baca dan keluarkan HANYA JSON valid "
+        "(tanpa markdown, tanpa penjelasan) dengan field ini persis:\n"
+        '{"project": string, "client": string, "total": number, '
+        '"order_date": "YYYY-MM-DD atau null", "deadline": "YYYY-MM-DD atau null", '
+        '"order_id": string atau null, "notes": string (ringkasan requirement/brief kalau ada, boleh kosong)}\n'
+        "Field project diisi judul spesifik order-nya (bukan judul gig generik). "
+        "Field total angka murni tanpa simbol mata uang. Kalau ada field yang beneran "
+        "gak kelihatan di gambar, isi null (jangan mengarang)."
+    )
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": 1024,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
+                            {"type": "text", "text": prompt},
+                        ],
+                    }],
+                },
+            )
+            resp.raise_for_status()
+            text = resp.json()["content"][0]["text"].strip()
+            # Kadang model masih bungkus jawabannya pakai ```json ... ``` walau udah diminta jangan.
+            text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+            return json.loads(text)
+    except Exception as e:
+        print(f"[Order screenshot] gagal ekstrak via Claude: {e}", flush=True)
+        return None
+
+
+async def _find_market_by_telegram_username(username: str) -> Optional[dict]:
+    if not username:
+        return None
+    try:
+        doc = await db.markets.find_one({"telegram_usernames": {"$regex": f"^{re.escape(username)}$", "$options": "i"}})
+        return format_market(doc) if doc else None
+    except Exception:
+        return None
+
+
+async def _handle_order_screenshot(msg: dict, thread_id: str):
+    """Foto masuk di topic 'Order Masuk' -> ekstrak data order lewat Claude,
+    tebak market dari username pengirim, bikin draft order (is_draft=True)
+    biar admin tinggal cek & lengkapi field yang gak kebaca (market kalau gak
+    ke-mapping, assignee, fee_freelance) di halaman Orders."""
+    photos = msg.get("photo") or []
+    if not photos:
+        return
+    file_id = photos[-1]["file_id"]  # resolusi terbesar ada di elemen terakhir
+    message_id = msg.get("message_id")
+    sender = msg.get("from", {})
+    sender_username = sender.get("username", "")
+    sender_name = sender_username or sender.get("first_name") or "unknown"
+
+    image_bytes = await _telegram_download_photo(file_id)
+    if not image_bytes:
+        await _telegram_reply(message_id, thread_id, "⚠️ Gagal download gambar dari Telegram, coba kirim ulang.")
+        return
+
+    extracted = await _extract_order_from_image(image_bytes)
+    if not extracted:
+        await _telegram_reply(message_id, thread_id, "⚠️ Gagal baca screenshot-nya (AI vision belum di-setting atau error). Input order-nya manual dulu ya di web.")
+        return
+
+    market = await _find_market_by_telegram_username(sender_username)
+
+    payload = {
+        "project": extracted.get("project") or "Order dari screenshot",
+        "client": extracted.get("client") or "Unknown",
+        "total": float(extracted.get("total") or 0),
+        "order_date": extracted.get("order_date"),
+        "deadline": extracted.get("deadline"),
+        "order_id": extracted.get("order_id") or "",
+        "notes": extracted.get("notes") or "",
+        "platform": "Fiverr",
+        "status": "Pending",
+        "payment_status": "Lunas",
+        "market": market["name"] if market else None,
+        "marketer": sender_name,
+        "artists": [],
+        "artist_contributions": [],
+        "fee_freelance": 0,
+        "is_draft": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        result = await db.orders.insert_one(payload)
+    except Exception as e:
+        print(f"[Order screenshot] gagal simpan order draft: {e}", flush=True)
+        await _telegram_reply(message_id, thread_id, "⚠️ Data kebaca tapi gagal disimpan ke web, coba lagi.")
+        return
+
+    await broadcast_all({"type": "orders_updated"})
+
+    market_note = f"Market: {market['name']}" if market else "⚠️ Market belum ke-mapping — isi manual di web (Settings > Kelola Market buat atur username Telegram)"
+    summary = (
+        f"✅ Draft order dibuat dari screenshot:\n"
+        f"📁 {payload['project']}\n"
+        f"👤 Klien: {payload['client']}\n"
+        f"💰 ${payload['total']}\n"
+        f"{market_note}\n\n"
+        f"Cek & lengkapi di halaman Orders (masih ditandai draft sampai di-edit/konfirmasi)."
+    )
+    await _telegram_reply(message_id, thread_id, summary)
+    if TELEGRAM_BOT_TOKEN and message_id:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setMessageReaction",
+                    json={"chat_id": int(TELEGRAM_GROUP_CHAT_ID), "message_id": message_id, "reaction": [{"type": "emoji", "emoji": "✅"}]},
+                )
+        except Exception:
+            pass
+
+
+async def _telegram_reply(reply_to_message_id, thread_id: str, text: str):
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    try:
+        payload = {
+            "chat_id": TELEGRAM_GROUP_CHAT_ID,
+            "text": text,
+            "reply_to_message_id": reply_to_message_id,
+        }
+        if thread_id:
+            payload["message_thread_id"] = int(thread_id)
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json=payload)
+    except Exception as e:
+        print(f"[Order screenshot] gagal kirim balasan: {e}", flush=True)
+
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(update: Dict[str, Any], request: Request):
     """Endpoint publik dipanggil Telegram tiap ada pesan baru (di-set
@@ -4087,6 +4353,13 @@ async def telegram_webhook(update: Dict[str, Any], request: Request):
             return {"ok": True}
 
         thread_id = str(msg.get("message_thread_id", "")) if msg.get("message_thread_id") is not None else ""
+
+        # Topic "Order Masuk" -- screenshot order Fiverr, ditangani jalur
+        # terpisah (baca lewat vision AI), bukan logika update harian di bawah.
+        if TELEGRAM_ORDER_TOPIC_ID and thread_id == TELEGRAM_ORDER_TOPIC_ID and msg.get("photo"):
+            await _handle_order_screenshot(msg, thread_id)
+            return {"ok": True}
+
         if TELEGRAM_UPDATE_TOPIC_ID and thread_id != TELEGRAM_UPDATE_TOPIC_ID:
             return {"ok": True}
 

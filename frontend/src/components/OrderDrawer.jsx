@@ -41,6 +41,11 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
   const [saving, setSaving] = useState(false);
   const [dynamicContribs, setDynamicContribs] = useState(null);
   const [totalCurrency, setTotalCurrency] = useState("USD");
+  const [markets, setMarkets] = useState([]);
+
+  useEffect(() => {
+    api.get("/markets").then((r) => setMarkets(r.data.markets || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!order.id) return;
@@ -156,7 +161,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
     e.preventDefault();
     setSaving(true);
     try {
-      await onSave({ ...form, folder_code: manualFolder ? form.folder_code : autoFolderCode });
+      await onSave({ ...form, folder_code: manualFolder ? form.folder_code : autoFolderCode, is_draft: false });
       setEditing(false);
     } catch {
       toast.error("Gagal menyimpan order");
@@ -194,6 +199,11 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
               {order.stream_allowed && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-600">
                   🔴 Live Stream
+                </span>
+              )}
+              {order.is_draft && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
+                  🤖 Draft dari Telegram
                 </span>
               )}
               {order.payment_status === "DP" && order.dp_paid > 0 && (
@@ -406,6 +416,7 @@ export default function OrderDrawer({ order, ordersOnDay, onClose, onSave, onDel
                   <label className="space-y-1 text-xs font-medium text-slate-500">Deadline<input type="date" value={form.deadline || ""} onChange={set("deadline")} className={inp} /></label>
                   <label className="space-y-1 text-xs font-medium text-slate-500">Platform<select value={form.platform} onChange={set("platform")} className={inp}>{PLATFORM_OPTIONS.map((p) => <option key={p}>{p}</option>)}</select></label>
                   <label className="space-y-1 text-xs font-medium text-slate-500">Marketer<select value={form.marketer || ""} onChange={set("marketer")} className={inp}><option value="">-</option>{MARKETER_OPTIONS.map((m) => <option key={m}>{m}</option>)}</select></label>
+                  <label className="space-y-1 text-xs font-medium text-slate-500">Market<select value={form.market || ""} onChange={set("market")} className={inp}><option value="">-</option>{markets.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}</select></label>
                   <label className="space-y-1 text-xs font-medium text-slate-500">Order ID<input value={form.order_id || ""} onChange={set("order_id")} className={inp} /></label>
                   <label className="space-y-1 text-xs font-medium text-slate-500">Klien<input value={form.client} onChange={set("client")} required className={inp} /></label>
                 </div>

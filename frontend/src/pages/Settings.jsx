@@ -1029,6 +1029,7 @@ export default function SettingsPage() {
           )}
 
           {isAdmin && <TelegramSection />}
+          {isAdmin && <MarketSection />}
 
           <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-xl font-semibold mb-2">Versi App</h2>
@@ -1194,6 +1195,152 @@ function TelegramSection() {
         <button onClick={handleTest} disabled={testing || !cfg.bot_token || !cfg.chat_id}
           className="inline-flex items-center gap-2 rounded-2xl border border-sky-200 px-5 py-2.5 text-sm font-semibold text-sky-600 hover:bg-sky-50 disabled:opacity-40 transition">
           <Send size={14} /> {testing ? "Mengirim..." : "Test Kirim Pesan"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── MarketSection ────────────────────────────────────────────────
+   Market dulu cuma hardcode di kode (Magsika/Eirene/Lolicharm) --
+   sekarang jadi data beneran biar superadmin bisa tambah market baru
+   dan atur mapping username Telegram -> market. Mapping ini yang
+   dipakai bot buat nebak market+marketer otomatis pas admin kirim
+   screenshot order Fiverr ke topic "Order Masuk". ── */
+function MarketSection() {
+  const [markets, setMarkets] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [newMarketName, setNewMarketName] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const fetchMarkets = useCallback(async () => {
+    try {
+      const res = await api.get("/markets");
+      setMarkets(res.data.markets || []);
+    } catch {}
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => { fetchMarkets(); }, [fetchMarkets]);
+
+  const handleAddMarket = async () => {
+    if (!newMarketName.trim()) { toast.error("Nama market gak boleh kosong"); return; }
+    setAdding(true);
+    try {
+      const res = await api.post("/markets", { name: newMarketName.trim() });
+      setMarkets((prev) => [...prev, res.data.market].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewMarketName("");
+      toast.success("Market ditambahkan");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Gagal menambah market");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleDeleteMarket = async (market) => {
+    if (!window.confirm(`Hapus market "${market.name}"? Order lama yang udah pakai nama ini gak berubah, cuma gak bisa dipilih lagi buat order baru.`)) return;
+    try {
+      await api.delete(`/markets/${market.id}`);
+      setMarkets((prev) => prev.filter((m) => m.id !== market.id));
+      toast.success("Market dihapus");
+    } catch {
+      toast.error("Gagal menghapus market");
+    }
+  };
+
+  const handleAddUsername = async (market, username) => {
+    const clean = username.trim().replace(/^@/, "");
+    if (!clean) return;
+    const updated = [...new Set([...(market.telegram_usernames || []), clean])];
+    try {
+      const res = await api.patch(`/markets/${market.id}`, { telegram_usernames: updated });
+      setMarkets((prev) => prev.map((m) => (m.id === market.id ? res.data.market : m)));
+    } catch {
+      toast.error("Gagal menyimpan");
+    }
+  };
+
+  const handleRemoveUsername = async (market, username) => {
+    const updated = (market.telegram_usernames || []).filter((u) => u !== username);
+    try {
+      const res = await api.patch(`/markets/${market.id}`, { telegram_usernames: updated });
+      setMarkets((prev) => prev.map((m) => (m.id === market.id ? res.data.market : m)));
+    } catch {
+      toast.error("Gagal menyimpan");
+    }
+  };
+
+  if (!loaded) return <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm animate-pulse h-40" />;
+
+  return (
+    <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-2 mb-1">
+        <Briefcase size={18} className="text-violet-500" />
+        <h2 className="text-lg font-semibold">Kelola Market</h2>
+      </div>
+      <p className="text-sm text-slate-500 mb-5">
+        Unit bisnis (Magsika/Eirene/dll). Username Telegram di sini dipakai bot buat nebak market
+        otomatis saat admin kirim screenshot order — siapa yang kirim, itu yang jadi market &amp; marketer-nya.
+      </p>
+      <div className="space-y-3">
+        {markets.map((m) => (
+          <MarketRow key={m.id} market={m} onAddUsername={handleAddUsername} onRemoveUsername={handleRemoveUsername} onDelete={handleDeleteMarket} />
+        ))}
+        {markets.length === 0 && <p className="text-sm text-slate-400">Belum ada market.</p>}
+      </div>
+      <div className="mt-5 flex gap-2">
+        <input
+          value={newMarketName}
+          onChange={(e) => setNewMarketName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleAddMarket()}
+          placeholder="Nama market baru..."
+          className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-violet-400"
+        />
+        <button onClick={handleAddMarket} disabled={adding}
+          className="inline-flex items-center gap-2 rounded-2xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+          <Plus size={14} /> {adding ? "Menambah..." : "Tambah Market"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MarketRow({ market, onAddUsername, onRemoveUsername, onDelete }) {
+  const [newUsername, setNewUsername] = useState("");
+  const submit = () => { onAddUsername(market, newUsername); setNewUsername(""); };
+  return (
+    <div className="rounded-2xl border border-slate-200 p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full" style={{ background: market.color }} />
+          <span className="font-semibold text-slate-800">{market.name}</span>
+        </div>
+        <button onClick={() => onDelete(market)} className="rounded-full p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition">
+          <Trash2 size={14} />
+        </button>
+      </div>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {(market.telegram_usernames || []).map((u) => (
+          <span key={u} className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">
+            @{u}
+            <button onClick={() => onRemoveUsername(market, u)} className="text-sky-400 hover:text-sky-700"><X size={11} /></button>
+          </span>
+        ))}
+        {(market.telegram_usernames || []).length === 0 && (
+          <span className="text-xs italic text-slate-400">Belum ada username Telegram yang di-mapping ke market ini.</span>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={newUsername}
+          onChange={(e) => setNewUsername(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="username telegram (tanpa @)"
+          className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs outline-none focus:border-sky-400"
+        />
+        <button onClick={submit} className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition">
+          + Tambah
         </button>
       </div>
     </div>
