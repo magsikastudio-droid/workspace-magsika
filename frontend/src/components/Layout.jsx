@@ -6,6 +6,7 @@ import {
   Settings as SettingsIcon, LogOut, Search, Menu, X,
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
   Send, Loader2, Receipt, Database, ExternalLink, Monitor,
+  LayoutGrid, Wallet, UsersRound,
 } from "lucide-react";
 import PresenceToggle from "./PresenceToggle";
 import { useAuth } from "../context/AuthContext";
@@ -55,6 +56,7 @@ const LockCharCount = ({ val }) => {
 const NAV_SECTIONS = [
   {
     label: "Main Menu",
+    labelIcon: LayoutGrid,
     items: [
       { to: "/dashboard",    label: "Dashboard",    icon: LayoutDashboard, roles: ["admin", "pm", "talent"] },
       { to: "/daily-chat",   label: "Daily Chat",   icon: MessageSquare,   roles: ["admin"] },
@@ -69,6 +71,7 @@ const NAV_SECTIONS = [
   },
   {
     label: "Keuangan",
+    labelIcon: Wallet,
     items: [
       { to: "/invoice",      label: "Invoice",      icon: FileText,        roles: ["admin"] },
       { to: "/earnings",     label: "Earnings",     icon: DollarSign,      roles: ["admin"] },
@@ -79,6 +82,7 @@ const NAV_SECTIONS = [
   },
   {
     label: "Tim",
+    labelIcon: UsersRound,
     items: [
       { to: "/pengumuman",   label: "Pengumuman",   icon: Megaphone,       roles: ["admin", "pm", "talent"] },
       { to: "/schedule",     label: "Schedule",     icon: CalendarDays,    roles: ["admin", "pm", "talent"] },
@@ -264,9 +268,12 @@ export default function Layout({ children }) {
             {filteredItems.length === 0 && <p className="px-3 py-2 text-xs text-slate-400 dark:text-slate-600">Tidak ditemukan.</p>}
           </div>
         ) : (
-          visibleSections.map((section) => (
-            <div key={section.label} className="mb-4">
-              <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-600">{section.label}</p>
+          visibleSections.map((section, idx) => (
+            <div key={section.label} className={`mb-2 ${idx > 0 ? "mt-6 border-t border-slate-100 pt-5 dark:border-white/[0.06]" : ""}`}>
+              <p className="mb-2.5 flex items-center gap-1.5 px-3 text-[10.5px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-600">
+                {section.labelIcon && <section.labelIcon size={12} className="shrink-0 opacity-70" />}
+                {section.label}
+              </p>
               <div className="space-y-0.5">
                 {section.items.map((item) => <NavItem key={item.to} item={item} badge={
     item.to === "/notifications" ? unreadCounts.notifications
