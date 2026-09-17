@@ -4411,7 +4411,20 @@ async def telegram_webhook(update: Dict[str, Any], request: Request):
         date_code, project_name = parsed
         project_name_norm = project_name.strip().upper()
 
-        active_tasks = await db.tasks.find({"status": {"$nin": ["done", "failed"]}}).to_list(1000)
+        # date_code (YYMMDD) di caption itu sendiri nunjukin task dari TANGGAL
+        # BERAPA yang lagi dikonfirmasi -- sebelumnya query ini gak mem-filter
+        # tanggal sama sekali, cuma cocokin judul ke SEMUA task aktif lintas
+        # hari. Begitu order.project yang sama ke-generate task baru tiap hari
+        # (apalagi sekarang judulnya dilanjutkan dari hari sebelumnya, jadi
+        # makin sering ke-ulang persis sama), konfirmasi bisa nyangkut ke task
+        # dari hari YANG SALAH -- akibatnya checklist "Update Hari Ini" gak
+        # pernah ke-centang buat task hari ini yang sebenarnya (task_id-nya
+        # beda sama yang ke-tulis di daily_updates).
+        task_query = {"status": {"$nin": ["done", "failed"]}}
+        if len(date_code) == 6 and date_code.isdigit():
+            task_date_str = f"20{date_code[0:2]}-{date_code[2:4]}-{date_code[4:6]}"
+            task_query["date"] = task_date_str
+        active_tasks = await db.tasks.find(task_query).to_list(1000)
         hits = [
             t for t in active_tasks
             if _strip_assignee_suffix(t.get("title", ""), t.get("assignee", "")).strip().upper() == project_name_norm

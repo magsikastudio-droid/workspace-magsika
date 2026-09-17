@@ -219,6 +219,44 @@ export default function DashboardPage() {
     return Object.values(map).sort((a, b) => b.revenue - a.revenue)[0] || null;
   }, [filteredOrders]);
 
+  // Rekomendasi prioritas -- skor urgensi murni dari data (deadline, ada/gak
+  // progress hari ini, jumlah revisi), BUKAN dari AI. Dihitung tiap render
+  // dari data yang sudah ada, jadi selalu real-time & nol biaya.
+  const priorityRecommendations = useMemo(() => {
+    const today = todayStr();
+    const hasTaskTodayIds = new Set(tasks.filter((t) => t.date === today && t.order_id).map((t) => t.order_id));
+    return orders
+      .filter((o) => normalizeStatus(o.status) !== "Done" && normalizeStatus(o.status) !== "Cancel")
+      .map((o) => {
+        let score = 0;
+        const reasons = [];
+        let daysLeft = null;
+        if (o.deadline) {
+          daysLeft = Math.ceil((new Date(o.deadline) - new Date()) / 86400000);
+          if (daysLeft < 0) { score += 100 + Math.min(Math.abs(daysLeft) * 10, 100); reasons.push(`Lewat deadline ${Math.abs(daysLeft)} hari`); }
+          else if (daysLeft === 0) { score += 90; reasons.push("Deadline hari ini"); }
+          else if (daysLeft <= 1) { score += 80; reasons.push(`Deadline ${daysLeft} hari lagi`); }
+          else if (daysLeft <= 3) { score += 60; reasons.push(`Deadline ${daysLeft} hari lagi`); }
+          else if (daysLeft <= 7) { score += 30; reasons.push(`Deadline ${daysLeft} hari lagi`); }
+          else { score += 10; }
+        }
+        if (!hasTaskTodayIds.has(o.id)) { score += 15; reasons.push("Belum ada progress hari ini"); }
+        if ((o.revision_count || 0) > 0) { score += Math.min(o.revision_count * 5, 15); reasons.push(`Sudah ${o.revision_count}x revisi`); }
+        return { order: o, score, reasons, daysLeft };
+      })
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8);
+  }, [orders, tasks]);
+
+  const countdownBadge = (daysLeft) => {
+    if (daysLeft === null) return null;
+    if (daysLeft < 0) return { text: `Overdue ${Math.abs(daysLeft)}h`, cls: "bg-rose-50 text-rose-600" };
+    if (daysLeft === 0) return { text: "Hari ini", cls: "bg-rose-50 text-rose-600" };
+    if (daysLeft <= 3) return { text: `${daysLeft}h lagi`, cls: "bg-amber-50 text-amber-700" };
+    return { text: `${daysLeft}h lagi`, cls: "bg-slate-100 text-slate-500" };
+  };
+
   const STATUS_BADGE = {
     "Done":     "bg-emerald-50 text-emerald-700",
     "Cancel":   "bg-slate-100 text-slate-500",
@@ -266,6 +304,42 @@ export default function DashboardPage() {
           <div>
             <span className="font-semibold">{deadlineAlerts.length} deadline ≤ 3 hari: </span>
             {deadlineAlerts.map((o) => o.project).join(", ")}
+          </div>
+        </div>
+      )}
+
+      {/* Rekomendasi Prioritas -- skor urgensi dihitung dari deadline, progress hari ini, & revisi (bukan AI) */}
+      {priorityRecommendations.length > 0 && (
+        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <div>
+              <p className="font-semibold text-slate-900">Rekomendasi Prioritas Hari Ini</p>
+              <p className="text-xs text-slate-400">Urutan berdasarkan urgensi deadline, progress, &amp; revisi</p>
+            </div>
+            <button onClick={() => navigate("/todo")} className="flex items-center gap-1 text-xs font-semibold text-violet-600 hover:text-violet-700">
+              Buka To Do <ArrowUpRight size={13} />
+            </button>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {priorityRecommendations.map(({ order, reasons, daysLeft }, idx) => {
+              const badge = countdownBadge(daysLeft);
+              return (
+                <div key={order.id} onClick={() => navigate("/orders")} className="flex cursor-pointer items-center gap-4 px-5 py-3.5 hover:bg-slate-50 transition">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-50 text-xs font-bold text-violet-600">
+                    {idx + 1}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-900">{order.project}</p>
+                    <p className="truncate text-xs text-slate-400">{reasons.join(" · ")}</p>
+                  </div>
+                  {badge && (
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-bold font-mono ${badge.cls}`}>
+                      {badge.text}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -344,23 +418,33 @@ export default function DashboardPage() {
               </button>
             </div>
             <div className="divide-y divide-slate-50">
-              {recentOrders.map((order) => (
-                <div key={order.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50 transition">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-50 text-sm font-bold text-violet-600">
-                    {order.client?.charAt(0)?.toUpperCase() || "?"}
+              {recentOrders.map((order) => {
+                const daysLeft = order.deadline ? Math.ceil((new Date(order.deadline) - new Date()) / 86400000) : null;
+                const badge = countdownBadge(daysLeft);
+                const showBadge = badge && normalizeStatus(order.status) !== "Done" && normalizeStatus(order.status) !== "Cancel";
+                return (
+                  <div key={order.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50 transition">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-50 text-sm font-bold text-violet-600">
+                      {order.client?.charAt(0)?.toUpperCase() || "?"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900">{order.project}</p>
+                      <p className="truncate text-xs text-slate-400">{order.client} · {order.platform || "Direct"}</p>
+                    </div>
+                    {showBadge && (
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold font-mono ${badge.cls}`}>
+                        {badge.text}
+                      </span>
+                    )}
+                    <div className="text-right">
+                      <p className="font-mono text-sm font-semibold text-slate-900">{formatMoney(order.total)}</p>
+                      <span className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBadge(order.status)}`}>
+                        {normalizeStatus(order.status)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-slate-900">{order.project}</p>
-                    <p className="truncate text-xs text-slate-400">{order.client} · {order.platform || "Direct"}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono text-sm font-semibold text-slate-900">{formatMoney(order.total)}</p>
-                    <span className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBadge(order.status)}`}>
-                      {normalizeStatus(order.status)}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {recentOrders.length === 0 && (
                 <div className="px-5 py-10 text-center text-sm text-slate-400">Belum ada order.</div>
               )}
