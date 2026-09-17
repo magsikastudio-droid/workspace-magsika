@@ -274,12 +274,12 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-[28px] border border-indigo-100 bg-indigo-50 p-5 shadow-sm">
           <p className="text-sm font-medium text-slate-500">Total Revenue</p>
-          <p className="mt-2 text-3xl font-bold text-indigo-600">{formatMoney(revenue)}</p>
+          <p className="mt-2 font-mono text-3xl font-bold text-indigo-600">{formatMoney(revenue)}</p>
           <p className="mt-1 text-sm text-slate-400">Akumulasi semua order bulan ini</p>
         </div>
         <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-sm font-medium text-slate-500">Pending Payment</p>
-          <p className="mt-2 text-3xl font-bold text-rose-600">{formatMoney(unpaid)}</p>
+          <p className="mt-2 font-mono text-3xl font-bold text-rose-600">{formatMoney(unpaid)}</p>
           <p className="mt-1 text-sm text-slate-400">Belum lunas dari klien</p>
         </div>
       </div>
@@ -321,11 +321,10 @@ export default function DashboardPage() {
           label="Cancelled Orders"
           value={cancelOrders}
           sub="Order dibatalkan"
-          accent="border-l-rose-400"
+          accent="border-l-slate-300"
           icon={Clock3}
-          iconBg="bg-rose-50 text-rose-600"
+          iconBg="bg-slate-50 text-slate-400"
           trend={`${Math.round((cancelOrders / Math.max(totalOrders, 1)) * 100)}% cancel rate`}
-          negative
           onClick={() => navigate("/orders")}
         />
       </div>
@@ -355,7 +354,7 @@ export default function DashboardPage() {
                     <p className="truncate text-xs text-slate-400">{order.client} · {order.platform || "Direct"}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-slate-900">{formatMoney(order.total)}</p>
+                    <p className="font-mono text-sm font-semibold text-slate-900">{formatMoney(order.total)}</p>
                     <span className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${getBadge(order.status)}`}>
                       {normalizeStatus(order.status)}
                     </span>
@@ -377,12 +376,12 @@ export default function DashboardPage() {
               </div>
               <div className="flex gap-1.5">
                 {sixMonthGrowth.revenue !== null && (
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-bold ${sixMonthGrowth.revenue >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-bold font-mono ${sixMonthGrowth.revenue >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
                     Revenue 6bln {sixMonthGrowth.revenue >= 0 ? "▲" : "▼"} {Math.abs(sixMonthGrowth.revenue)}%
                   </span>
                 )}
                 {sixMonthGrowth.order !== null && (
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-bold ${sixMonthGrowth.order >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-bold font-mono ${sixMonthGrowth.order >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
                     Order 6bln {sixMonthGrowth.order >= 0 ? "▲" : "▼"} {Math.abs(sixMonthGrowth.order)}%
                   </span>
                 )}
@@ -395,13 +394,13 @@ export default function DashboardPage() {
               {monthlyTrend.map((m, idx) => (
                 <div key={`${m.label}-${idx}`} className={`contents ${idx === 0 ? "font-bold text-indigo-600" : "text-slate-700"}`}>
                   <span className={`flex items-center px-5 py-2.5 border-t border-slate-50 ${idx === 0 ? "bg-indigo-50" : ""}`}>{m.label}</span>
-                  <span className={`flex items-center py-2.5 border-t border-slate-50 font-semibold ${idx === 0 ? "bg-indigo-50" : ""}`}>{formatMoney(m.revenue)}</span>
-                  <span className={`flex items-center py-2.5 border-t border-slate-50 font-semibold ${idx === 0 ? "bg-indigo-50" : ""}`}>{m.count}</span>
+                  <span className={`flex items-center py-2.5 border-t border-slate-50 font-mono font-semibold ${idx === 0 ? "bg-indigo-50" : ""}`}>{formatMoney(m.revenue)}</span>
+                  <span className={`flex items-center py-2.5 border-t border-slate-50 font-mono font-semibold ${idx === 0 ? "bg-indigo-50" : ""}`}>{m.count}</span>
                   <span className={`flex items-center py-2.5 border-t border-slate-50 ${idx === 0 ? "bg-indigo-50" : ""}`}>
                     {m.delta === null ? (
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-bold text-slate-400">—</span>
                     ) : (
-                      <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${m.delta >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+                      <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold font-mono ${m.delta >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
                         {m.delta >= 0 ? "▲" : "▼"} {Math.abs(m.delta)}%
                       </span>
                     )}
@@ -431,7 +430,7 @@ export default function DashboardPage() {
                     <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
                       <div className="h-full rounded-full" style={{ width: `${item.share}%`, background: item.color }} />
                     </div>
-                    <span className="w-8 text-right text-xs font-semibold text-slate-700">{item.share}%</span>
+                    <span className="w-8 text-right font-mono text-xs font-semibold text-slate-700">{item.share}%</span>
                   </div>
                 </div>
               ))}
@@ -452,22 +451,22 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 divide-x divide-y divide-slate-100">
             <div className="p-4">
               <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Turnaround</p>
-              <p className="mt-1 text-lg font-bold text-slate-900">{avgTurnaroundDays !== null ? `${avgTurnaroundDays.toFixed(1)} hari` : "—"}</p>
+              <p className="mt-1 font-mono text-lg font-bold text-slate-900">{avgTurnaroundDays !== null ? `${avgTurnaroundDays.toFixed(1)} hari` : "—"}</p>
               <p className="text-[10px] text-slate-400">order → selesai</p>
             </div>
             <div className="p-4">
               <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Tingkat Revisi</p>
-              <p className="mt-1 text-lg font-bold text-slate-900">{revisionRate !== null ? `${revisionRate}%` : "—"}</p>
+              <p className="mt-1 font-mono text-lg font-bold text-slate-900">{revisionRate !== null ? `${revisionRate}%` : "—"}</p>
               <p className="text-[10px] text-slate-400">order kena revisi</p>
             </div>
             <div className="p-4">
               <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Repeat Client</p>
-              <p className="mt-1 text-lg font-bold text-slate-900">{repeatClientRate !== null ? `${repeatClientRate}%` : "—"}</p>
+              <p className="mt-1 font-mono text-lg font-bold text-slate-900">{repeatClientRate !== null ? `${repeatClientRate}%` : "—"}</p>
               <p className="text-[10px] text-slate-400">klien order ulang</p>
             </div>
             <div className="p-4">
               <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Rata-rata Nilai Order</p>
-              <p className="mt-1 text-lg font-bold text-slate-900">{formatMoney(avgOrderValue)}</p>
+              <p className="mt-1 font-mono text-lg font-bold text-slate-900">{formatMoney(avgOrderValue)}</p>
               <p className="text-[10px] text-slate-400">per order bulan ini</p>
             </div>
           </div>
@@ -485,7 +484,7 @@ export default function DashboardPage() {
                   {t.name.charAt(0).toUpperCase()}
                 </div>
                 <span className="flex-1 truncate text-sm font-semibold text-slate-800">{t.name}</span>
-                <span className="text-xs text-slate-400">{t.active} aktif</span>
+                <span className="font-mono text-xs text-slate-400">{t.active} aktif</span>
                 {t.overdue > 0 && (
                   <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">{t.overdue} overdue</span>
                 )}
@@ -507,7 +506,7 @@ export default function DashboardPage() {
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
                   <div className="h-full rounded-full bg-emerald-500" style={{ width: `${m.marginPct ?? 0}%` }} />
                 </div>
-                <span className="w-9 text-right text-xs font-bold text-slate-700">{m.marginPct !== null ? `${m.marginPct}%` : "—"}</span>
+                <span className="w-9 text-right font-mono text-xs font-bold text-slate-700">{m.marginPct !== null ? `${m.marginPct}%` : "—"}</span>
               </div>
             ))}
             {marketMargins.length === 0 && <p className="py-4 text-center text-sm text-slate-400">Belum ada data.</p>}
@@ -519,7 +518,7 @@ export default function DashboardPage() {
               </div>
               <div className="min-w-0">
                 <p className="text-[9px] font-bold uppercase tracking-wide text-indigo-500">Marketer Terbaik</p>
-                <p className="truncate text-xs font-semibold text-slate-800">{topMarketer.marketer} — {topMarketer.count} order · {formatMoney(topMarketer.revenue)}</p>
+                <p className="truncate text-xs font-semibold text-slate-800">{topMarketer.marketer} — <span className="font-mono">{topMarketer.count} order · {formatMoney(topMarketer.revenue)}</span></p>
               </div>
             </div>
           )}
@@ -545,13 +544,13 @@ export default function DashboardPage() {
                 <div className="flex-1 min-w-0">
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <p className="truncate text-sm font-semibold text-slate-900">{item.client}</p>
-                    <p className="shrink-0 text-sm font-bold text-slate-900">{formatMoney(item.total)}</p>
+                    <p className="shrink-0 font-mono text-sm font-bold text-slate-900">{formatMoney(item.total)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
                       <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${pct}%` }} />
                     </div>
-                    <span className="text-[10px] text-slate-400">{item.count} order</span>
+                    <span className="font-mono text-[10px] text-slate-400">{item.count} order</span>
                   </div>
                 </div>
               </div>
@@ -570,7 +569,7 @@ function MetricCard({ label, value, sub, accent, icon: Icon, iconBg, trend, posi
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{value}</p>
+          <p className="mt-2 font-mono text-3xl font-bold text-slate-900">{value}</p>
           <p className="mt-1 text-xs text-slate-400">{sub}</p>
         </div>
         <div className={`rounded-2xl p-2.5 ${iconBg}`}>
@@ -603,7 +602,7 @@ function PieChart({ data }) {
     <div className="flex justify-center">
       <svg width={size} height={size}>
         {slices.map((s) => <path key={s.platform} d={arc(s.startAngle, s.endAngle, r, inner)} fill={s.color} />)}
-        <text x={cx} y={cy - 5} textAnchor="middle" fontSize="14" fontWeight="700" fill="#0f172a">{total}</text>
+        <text x={cx} y={cy - 5} textAnchor="middle" fontFamily="Sora, sans-serif" fontSize="16" fontWeight="800" fill="#0f172a">{total}</text>
         <text x={cx} y={cy + 10} textAnchor="middle" fontSize="9" fill="#94a3b8">order</text>
       </svg>
     </div>
