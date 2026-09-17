@@ -113,7 +113,7 @@ export default function DashboardPage() {
           <p className="mt-0.5 text-sm text-slate-500">Ringkasan produksi Magsika Studio.</p>
         </div>
         {/* Month selector */}
-        <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
           <button onClick={prevMonth} className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"><ChevronLeft size={16} /></button>
           <div className="flex items-center gap-2 min-w-[160px] justify-center">
             <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="rounded-lg bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
@@ -195,12 +195,12 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-600 to-indigo-600 p-5 text-white shadow-sm">
+        <div className="rounded-[28px] border border-violet-200 bg-gradient-to-br from-violet-600 to-indigo-600 p-5 text-white shadow-sm">
           <p className="text-sm font-medium text-violet-200">Total Revenue</p>
           <p className="mt-2 text-3xl font-bold">{formatMoney(revenue)}</p>
           <p className="mt-1 text-sm text-violet-200">Akumulasi semua order</p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-sm font-medium text-slate-500">Pending Payment</p>
           <p className="mt-2 text-3xl font-bold text-rose-600">{formatMoney(unpaid)}</p>
           <p className="mt-1 text-sm text-slate-400">Belum lunas dari klien</p>
@@ -210,7 +210,7 @@ export default function DashboardPage() {
       {/* Table + Platform */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
         {/* Recent orders table */}
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <div>
               <p className="font-semibold text-slate-900">Order Terbaru</p>
@@ -223,7 +223,7 @@ export default function DashboardPage() {
           <div className="divide-y divide-slate-50">
             {recentOrders.map((order) => (
               <div key={order.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50 transition">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-sm font-bold text-violet-600">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-50 text-sm font-bold text-violet-600">
                   {order.client?.charAt(0)?.toUpperCase() || "?"}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -245,7 +245,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Platform distribution */}
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-5 py-4">
             <p className="font-semibold text-slate-900">Per Platform</p>
             <p className="text-xs text-slate-400">Distribusi {totalOrders} order</p>
@@ -274,7 +274,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Top clients */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 py-4">
           <p className="font-semibold text-slate-900">Top Klien</p>
           <p className="text-xs text-slate-400">Berdasarkan total nilai order</p>
@@ -313,14 +313,14 @@ export default function DashboardPage() {
 
 function MetricCard({ label, value, sub, accent, icon: Icon, iconBg, trend, positive, negative, onClick }) {
   return (
-    <div onClick={onClick} className={`rounded-2xl border-l-4 border border-slate-200 bg-white p-5 shadow-sm ${accent} ${onClick ? "cursor-pointer hover:shadow-md transition-shadow" : ""}`}>
+    <div onClick={onClick} className={`rounded-3xl border-l-4 border border-slate-200 bg-white p-5 shadow-sm transition ${accent} ${onClick ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-md" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">{label}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
           <p className="mt-2 text-3xl font-bold text-slate-900">{value}</p>
           <p className="mt-1 text-xs text-slate-400">{sub}</p>
         </div>
-        <div className={`rounded-xl p-2.5 ${iconBg}`}>
+        <div className={`rounded-2xl p-2.5 ${iconBg}`}>
           <Icon size={18} />
         </div>
       </div>
