@@ -2274,43 +2274,50 @@ function UnhandledSection({ orders, isAdminOrPM, isAdmin, onOpenOrder, onAddTask
       </button>
 
       {!collapsed && (
-        <div className="space-y-3 px-[18px] pb-[18px]">
-          {grouped.map(({ status, items }) => {
-            const sc = STATUS_COLORS[status] || { bg: "#f1f5f9", text: "#64748b" };
-            return (
-              <div key={status}>
-                <div className="mb-1.5 flex items-center gap-2 px-0.5">
-                  <span className="rounded-full px-2.5 py-0.5 text-[10.5px] font-bold" style={{ background: sc.bg, color: sc.text }}>
-                    {status}
-                  </span>
-                  <span className="text-[11px] text-slate-400">{items.length} order</span>
+        // Grid multi-kolom + tinggi dibatasi (scroll internal) biar makin
+        // banyak grup status makin lebar/scroll ke bawah DI DALAM kartu ini,
+        // bukan mendorong seluruh halaman ke bawah ("memanjang kebawah").
+        <div className="max-h-[420px] overflow-y-auto px-[18px] pb-[18px]">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {grouped.map(({ status, items }) => {
+              const sc = STATUS_COLORS[status] || { bg: "#f1f5f9", text: "#64748b" };
+              return (
+                <div key={status} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-2.5">
+                  <div className="mb-1.5 flex items-center gap-2 px-0.5">
+                    <span className="rounded-full px-2.5 py-0.5 text-[10.5px] font-bold" style={{ background: sc.bg, color: sc.text }}>
+                      {status}
+                    </span>
+                    <span className="text-[11px] text-slate-400">{items.length} order</span>
+                  </div>
+                  <div className="flex flex-col gap-[6px]">
+                    {items.map((order) => (
+                      <div
+                        key={order.id}
+                        onClick={isAdmin ? () => onOpenOrder(order) : undefined}
+                        title={isAdmin ? "Klik buat buka & edit order ini" : undefined}
+                        className={`flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 transition ${
+                          isAdmin ? "cursor-pointer hover:border-indigo-300" : ""
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12.5px] font-semibold text-slate-800 truncate">{order.project || "Unnamed"}</p>
+                          <p className="font-mono text-[10px] text-slate-400 truncate">{order.folder_code || order.client || ""}</p>
+                        </div>
+                        {isAdminOrPM && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onAddTask(order); }}
+                            className="shrink-0 rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-600 hover:bg-indigo-100 transition"
+                          >
+                            + Task
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex gap-[9px] overflow-x-auto pb-1">
-                  {items.map((order) => (
-                    <div
-                      key={order.id}
-                      onClick={isAdmin ? () => onOpenOrder(order) : undefined}
-                      title={isAdmin ? "Klik buat buka & edit order ini" : undefined}
-                      className={`flex shrink-0 flex-col gap-0.5 rounded-2xl border border-slate-200 bg-slate-50 px-[15px] py-[10px] min-w-[150px] transition ${
-                        isAdmin ? "cursor-pointer hover:border-indigo-300 hover:-translate-y-0.5" : ""
-                      }`}
-                    >
-                      <p className="text-[12.5px] font-semibold text-slate-800 truncate max-w-[170px]">{order.project || "Unnamed"}</p>
-                      <p className="font-mono text-[10.5px] text-slate-400 truncate max-w-[170px]">{order.folder_code || order.client || ""}</p>
-                      {isAdminOrPM && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onAddTask(order); }}
-                          className="mt-1 self-start rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-600 hover:bg-indigo-100 transition"
-                        >
-                          + Task
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
