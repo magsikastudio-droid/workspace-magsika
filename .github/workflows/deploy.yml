@@ -188,6 +188,10 @@ jobs:
           ssh vps "echo 'SMTP_PASS=${{ secrets.SMTP_PASS }}' >> /root/admin-dashboard/backend/.env"
           ssh vps "echo 'TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}' >> /root/admin-dashboard/backend/.env"
 
+      - name: TEMP - set TELEGRAM_ORDER_TOPIC_ID
+        run: |
+          ssh vps "grep -q '^TELEGRAM_ORDER_TOPIC_ID=' /root/admin-dashboard/backend/.env && sed -i 's/^TELEGRAM_ORDER_TOPIC_ID=.*/TELEGRAM_ORDER_TOPIC_ID=10148/' /root/admin-dashboard/backend/.env || echo 'TELEGRAM_ORDER_TOPIC_ID=10148' >> /root/admin-dashboard/backend/.env"
+
       - name: Install Python dependencies on VPS
         run: |
           ssh vps "/root/admin-dashboard/backend/.venv/bin/pip install -r /root/admin-dashboard/backend/requirements.txt -q"
