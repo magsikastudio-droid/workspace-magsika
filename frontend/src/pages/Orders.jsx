@@ -780,10 +780,10 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
               </label>
               <label className="space-y-1.5 text-xs font-medium text-slate-600">
                 Market
-                <select value={form.market || ""} onChange={set("market")} className={inp}>
-                  <option value="">-</option>
-                  {markets.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
-                </select>
+                <input list="market-suggestions" value={form.market || ""} onChange={set("market")} placeholder="Magsika / Eirene / dll" className={inp} />
+                <datalist id="market-suggestions">
+                  {markets.map((m) => <option key={m.id} value={m.name} />)}
+                </datalist>
               </label>
               <label className="space-y-1.5 text-xs font-medium text-slate-600">
                 Order ID (manual)
