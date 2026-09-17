@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useState } from "react";
+import React, { useRef, useMemo, useState, useEffect } from "react";
 import { Plus, Search, Edit3, Trash2, Upload, Download, Columns, FolderOpen, User, Flame, Info, UserPlus, X, Calendar, CheckCircle2, AlertCircle, FileText } from "lucide-react";
 import ExportReportModal from "../components/ExportReportModal";
 import OrderDrawer from "../components/OrderDrawer";
@@ -399,6 +399,9 @@ export default function OrdersPage() {
                           {order.stream_allowed && (
                             <span className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-600">🔴 LIVE</span>
                           )}
+                          {order.is_draft && (
+                            <span title="Draft dari screenshot Telegram, belum dicek admin" className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">🤖 Draft</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <p className="text-xs text-slate-400">{order.work_type || "Modeling"}</p>
@@ -495,6 +498,9 @@ export default function OrdersPage() {
                                 <p className="max-w-[150px] truncate font-semibold text-slate-900">{order.project}</p>
                                 {order.stream_allowed && (
                                   <span className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-600">🔴 LIVE</span>
+                                )}
+                                {order.is_draft && (
+                                  <span title="Draft dari screenshot Telegram, belum dicek admin" className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">🤖 Draft</span>
                                 )}
                               </div>
                               <div className="flex items-center gap-1.5 mt-0.5">
@@ -645,6 +651,11 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
   const [sendingTg, setSendingTg] = useState(false);
   const [totalCurrency, setTotalCurrency] = useState("USD");
+  const [markets, setMarkets] = useState([]);
+
+  useEffect(() => {
+    api.get("/markets").then((res) => setMarkets(res.data.markets || [])).catch(() => {});
+  }, []);
 
   const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
   const modalDisplayTotal = totalCurrency === "IDR"
@@ -696,7 +707,9 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await onSave({ ...form, folder_code: manualFolder ? form.folder_code : autoFolderCode });
+      // Order draft hasil bot Telegram otomatis "lulus review" begitu admin
+      // ngedit & simpan manual lewat form ini.
+      await onSave({ ...form, folder_code: manualFolder ? form.folder_code : autoFolderCode, is_draft: false });
     } catch {
       toast.error("Gagal menyimpan order");
     } finally {
@@ -718,7 +731,14 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-7 py-5">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+              {form.is_draft && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10.5px] font-bold text-amber-700">
+                  🤖 Draft dari Telegram — cek & simpan buat konfirmasi
+                </span>
+              )}
+            </div>
             <div className="mt-2 flex items-center gap-3">
               <div className="h-1.5 flex-1 rounded-full bg-slate-100">
                 <div className="h-1.5 rounded-full bg-indigo-500 transition-all" style={{ width: `${completion}%` }} />
@@ -756,6 +776,13 @@ function OrderFormModal({ title, initial, ordersOnDay, onClose, onSave }) {
                 <select value={form.marketer || ""} onChange={set("marketer")} className={inp}>
                   <option value="">-</option>
                   {MARKETER_OPTIONS.map((m) => <option key={m}>{m}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-xs font-medium text-slate-600">
+                Market
+                <select value={form.market || ""} onChange={set("market")} className={inp}>
+                  <option value="">-</option>
+                  {markets.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
                 </select>
               </label>
               <label className="space-y-1.5 text-xs font-medium text-slate-600">
