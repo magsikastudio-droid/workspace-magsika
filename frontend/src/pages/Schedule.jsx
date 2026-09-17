@@ -105,7 +105,7 @@ function DayDetailPanel({ dateStr, events, deadlines, isAdmin, onClose, onAdd, o
         {isAdmin && (
           <div className="flex justify-end pt-4 shrink-0">
             <button onClick={() => { onClose(); onAdd(); }}
-              className="flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition">
+              className="flex items-center gap-2 rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-violet-700">
               <Plus size={15} /> Tambah Event
             </button>
           </div>
@@ -237,9 +237,9 @@ function EventModal({ initial, selectedDate, onClose, onSaved }) {
             </div>
           )}
           <div className="flex gap-2 justify-end pt-1">
-            <button type="button" onClick={onClose} className="rounded-2xl px-5 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">Batal</button>
+            <button type="button" onClick={onClose} className="rounded-full px-5 py-2 text-sm text-slate-600 transition hover:bg-slate-100">Batal</button>
             <button type="submit" disabled={loading}
-              className="rounded-2xl bg-violet-600 px-5 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+              className="rounded-full bg-violet-600 px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-violet-700 disabled:opacity-60">
               {loading ? "Menyimpan..." : isEdit ? "Simpan" : "Tambah"}
             </button>
           </div>
@@ -378,7 +378,7 @@ export default function SchedulePage() {
         </div>
         {isAdmin && (
           <button onClick={() => { setEditItem(null); setSelectedDate(todayStr); setShowModal(true); }}
-            className="flex items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 transition">
+            className="flex items-center gap-2 rounded-full bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-violet-700">
             <Plus size={16} /> Tambah Event
           </button>
         )}

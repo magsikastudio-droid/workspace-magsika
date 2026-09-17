@@ -77,7 +77,7 @@ export default function Board() {
         draggable={canEdit}
         onDragStart={canEdit ? (e) => { dragIdRef.current = order.id; e.dataTransfer.effectAllowed = "move"; } : undefined}
         onDragEnd={canEdit ? () => { dragIdRef.current = null; } : undefined}
-        className={`group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md ${canEdit ? "cursor-grab active:cursor-grabbing" : "cursor-default"}`}
+        className={`group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${canEdit ? "cursor-grab active:cursor-grabbing" : "cursor-default"}`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

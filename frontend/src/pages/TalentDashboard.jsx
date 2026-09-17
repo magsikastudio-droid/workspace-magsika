@@ -26,10 +26,10 @@ export default function TalentDashboard() {
   }, []);
 
   if (loading) {
-    return <div className="rounded-2xl border border-slate-200 bg-white py-20 text-center text-sm text-slate-400">Memuat dashboard...</div>;
+    return <div className="rounded-[28px] border border-slate-200 bg-white py-20 text-center text-sm text-slate-400">Memuat dashboard...</div>;
   }
   if (!data) {
-    return <div className="rounded-2xl border border-slate-200 bg-white py-20 text-center text-sm text-slate-400">Gagal memuat data.</div>;
+    return <div className="rounded-[28px] border border-slate-200 bg-white py-20 text-center text-sm text-slate-400">Gagal memuat data.</div>;
   }
 
   const { week, today, week_summary, approval, announcements } = data;
@@ -54,7 +54,7 @@ export default function TalentDashboard() {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         {/* Jam kerja mingguan */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
           <p className="font-semibold text-slate-900">Jam Kerja 7 Hari Terakhir</p>
           <p className="text-xs text-slate-400 mb-5">Total waktu tercatat per hari</p>
           <div className="flex items-end justify-between gap-2 h-36">
@@ -79,7 +79,7 @@ export default function TalentDashboard() {
         </div>
 
         {/* Approval history */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
           <p className="font-semibold text-slate-900">Riwayat Approval</p>
           <p className="text-xs text-slate-400 mb-4">Task selesai bulan ini</p>
           {totalApproval === 0 ? (
@@ -108,7 +108,7 @@ export default function TalentDashboard() {
       </div>
 
       {/* Announcements */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div className="flex items-center gap-2">
             <Megaphone size={16} className="text-violet-500" />
@@ -136,13 +136,13 @@ export default function TalentDashboard() {
 
 function MetricCard({ label, value, icon: Icon, iconBg, onClick }) {
   return (
-    <div onClick={onClick} className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+    <div onClick={onClick} className="cursor-pointer rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
           <p className="mt-2 text-3xl font-bold text-slate-900">{value}</p>
         </div>
-        <div className={`rounded-xl p-2.5 ${iconBg}`}>
+        <div className={`rounded-2xl p-2.5 ${iconBg}`}>
           <Icon size={18} />
         </div>
       </div>
