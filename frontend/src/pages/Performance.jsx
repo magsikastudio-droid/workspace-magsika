@@ -1100,9 +1100,7 @@ function AdminPerformance() {
               <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
                 <Sparkles size={28} className="text-slate-200" />
                 <p className="text-sm font-semibold text-slate-400">Belum ada laporan</p>
-                <p className="text-xs text-slate-400">
-                  {aiPeriod === "daily" ? "Laporan harian dibuat otomatis jam 17.00 WIB." : "Klik Generate untuk membuat."}
-                </p>
+                <p className="text-xs text-slate-400">Klik Generate untuk membuat.</p>
               </div>
             )}
           </div>

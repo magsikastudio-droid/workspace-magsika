@@ -971,11 +971,19 @@ async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
 
         last_assignee = None
         last_type = "tim"
+        carry_title = None
         if prev_tasks:
             # Prefer someone who actually worked (time_elapsed > 0)
             worked = [t for t in prev_tasks if (t.get("time_elapsed") or 0) > 0]
             base = worked[0] if worked else prev_tasks[0]
             last_assignee = _normalize_name(base.get("assignee", ""), known_names)
+            # Lanjutkan judul task TERAKHIR (biasanya udah spesifik per-tahap,
+            # misal "Rigging - ClientX"), JANGAN reset ke nama project polos --
+            # kalau di-reset, dan nama project-nya kebetulan mengandung frasa
+            # kayak "need designer", pas task hari ini di-"Mulai" bakal salah
+            # kedeteksi ulang sebagai status "Need Designer" walau kemarin
+            # order-nya udah lebih maju (lihat detect_order_status_from_title).
+            carry_title = base.get("title", "").strip() or None
             # Look up assignee_type from contributions
             for c in contributions:
                 if _normalize_name(c.get("name", ""), known_names).lower() == last_assignee.lower():
@@ -996,7 +1004,7 @@ async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
         result = await db.tasks.update_one(
             {"order_id": order_id_str, "date": today},          # 1 task per order per day
             {"$setOnInsert": {
-                "title": order.get("project", ""),
+                "title": carry_title or order.get("project", ""),
                 "assignee": last_assignee,
                 "assignee_type": last_type,
                 "status": "pending",
@@ -1070,7 +1078,12 @@ async def on_startup():
         scheduler.add_job(check_not_started_tasks, IntervalTrigger(minutes=1), id="check_not_started")
         scheduler.add_job(check_not_streaming_tasks, IntervalTrigger(minutes=1), id="check_not_streaming")
         scheduler.add_job(auto_revert_stale_break, IntervalTrigger(minutes=10), id="auto_revert_stale_break")
-        scheduler.add_job(auto_daily_ai_reports, CronTrigger(hour=17, minute=0, timezone="Asia/Jakarta"))
+        # Laporan AI harian (overall & per-member) SENGAJA gak lagi auto-generate
+        # tiap hari (hemat saldo token AI, gak semua hari dicek admin) -- sekarang
+        # cuma bisa dibuat lewat tombol "Generate" manual di Performance.jsx,
+        # yang manggil endpoint /ai/reports/overall/generate & /member/generate
+        # yang sudah ada dari awal. Weekly & monthly dibiarkan tetap otomatis
+        # karena frekuensinya jauh lebih jarang (gak seboros yang harian).
         # Load deadline from DB (default 16:30)
         _deadline = {"hour": 16, "minute": 30}
         try:
@@ -2671,13 +2684,24 @@ async def get_daily_update_status_bulk(ids: str, current_user: dict = Depends(ge
 @app.get("/tasks/{task_id}/daily-update-status")
 async def get_daily_update_status(task_id: str, current_user: dict = Depends(get_current_user)):
     """Dipakai frontend buat nampilin status 'sudah/belum kirim update hari
-    ini' di modal task, sebelum talent coba submit ke review."""
-    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
-    today_code = jkt_now.strftime("%y%m%d")
-    doc = await db.daily_updates.find_one({"task_id": task_id, "date_code": today_code})
+    ini' di modal task (sebelum talent submit ke review), DAN buat tombol
+    'Cek Update' di kartu task yang udah selesai -- yang kedua ini bisa
+    dipanggil buat task dari HARI KAPAN AJA (bukan cuma hari ini), jadi
+    date_code yang dicari harus ikut tanggal task-nya sendiri, bukan
+    tanggal sekarang -- kalau dipaksa pakai "hari ini", task yang selesai
+    kemarin bakal selalu "gak ketemu" begitu tanggal berganti, makanya
+    link Telegram-nya jatuh ke fallback (gak nge-highlight pesan)."""
+    task_doc = await db.tasks.find_one({"_id": to_object_id(task_id)})
+    task_date = (task_doc or {}).get("date", "")
+    if task_date and len(task_date) == 10:
+        date_code = task_date[2:4] + task_date[5:7] + task_date[8:10]
+    else:
+        jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+        date_code = jkt_now.strftime("%y%m%d")
+    doc = await db.daily_updates.find_one({"task_id": task_id, "date_code": date_code})
     return {
         "confirmed": bool(doc),
-        "date_code": today_code,
+        "date_code": date_code,
         "filenames": (doc or {}).get("filenames", []),
         "telegram_link": _telegram_message_link((doc or {}).get("message_id"), (doc or {}).get("thread_id", "")),
     }
@@ -5582,8 +5606,9 @@ async def submit_daily_report(body: DailyReportBody, current_user: dict = Depend
         doc["created_at"] = now_iso
         ins = await db.daily_reports.insert_one(doc)
         result = await db.daily_reports.find_one({"_id": ins.inserted_id})
-    # Trigger AI daily report generation in background using the report content
-    _asyncio.get_event_loop().create_task(_generate_daily_ai_after_report(full_name, doc))
+    # Laporan AI personal gak lagi auto-generate tiap submit (hemat token) --
+    # admin generate manual lewat tombol "Generate" di Performance.jsx kalau
+    # memang perlu dilihat.
     return {"report": _fmt_daily_report(result)}
 
 @app.get("/daily-reports/today-status")
