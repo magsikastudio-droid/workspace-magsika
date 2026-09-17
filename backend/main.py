@@ -4198,9 +4198,20 @@ async def _extract_order_from_image(image_bytes: bytes) -> Optional[dict]:
         '{"project": string, "client": string, "total": number, '
         '"order_date": "YYYY-MM-DD atau null", "deadline": "YYYY-MM-DD atau null", '
         '"order_id": string atau null, "notes": string (ringkasan requirement/brief kalau ada, boleh kosong)}\n'
-        "Field project diisi judul spesifik order-nya (bukan judul gig generik). "
-        "Field total angka murni tanpa simbol mata uang. Kalau ada field yang beneran "
-        "gak kelihatan di gambar, isi null (jangan mengarang)."
+        "\n"
+        "PENTING soal field 'project' -- halaman order Fiverr punya DUA judul yang beda, jangan sampai ketuker:\n"
+        "1. Judul GIG (jangan dipakai): ada di kotak ringkasan 'Order details' di sisi kanan, "
+        "selalu ada thumbnail gambar kecil di sampingnya, teksnya generik gaya jualan dan biasanya "
+        "diawali 'I will ...' (atau versi terjemahannya). INI BUKAN project.\n"
+        "2. Judul ORDER CUSTOM (pakai ini): teks polos tanpa thumbnail, letaknya di area utama/tengah "
+        "halaman, PERSIS DI ATAS tabel rincian item/harga (kolom Item/Qty/Duration/Price). Ini judul "
+        "spesifik yang ditulis pembeli buat order ini, contoh: 'Vesper Facial Rig + Upgrade ARKit 52 "
+        "blendshape'. INI yang harus diisi ke field project.\n"
+        "Kalau cuma ada satu judul yang kelihatan (gak ada judul custom terpisah), baru boleh pakai judul gig.\n"
+        "\n"
+        "Field total angka murni tanpa simbol mata uang (ambil dari 'Total price' atau baris 'Total' di "
+        "tabel item, keduanya harusnya sama). Kalau ada field yang beneran gak kelihatan di gambar, isi "
+        "null (jangan mengarang)."
     )
     try:
         async with httpx.AsyncClient(timeout=45) as client:
