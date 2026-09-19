@@ -2243,7 +2243,10 @@ function NeedDailyUpdateModal({ task, onClose }) {
 
 /* ─── UnhandledSection ──────────────────────────────────────────── */
 function UnhandledSection({ orders, isAdminOrPM, isAdmin, onOpenOrder, onAddTask }) {
-  const [collapsed, setCollapsed] = useState(false);
+  // Default tertutup -- section ini gampang jadi panjang (order aktif tanpa
+  // task numpuk terus), jadi biar gak langsung mendominasi layar tiap buka
+  // To Do, admin/PM buka manual pas emang butuh liat.
+  const [collapsed, setCollapsed] = useState(true);
 
   // Kelompokkan per status produksi (Need Designer, Modeling, Revisi, dst)
   // biar admin bisa langsung lihat order mana yang nyangkut di tahap mana,
