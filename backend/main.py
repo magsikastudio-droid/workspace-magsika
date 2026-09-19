@@ -1412,8 +1412,14 @@ async def verify_public_stream(data: PublicStreamVerify):
     matched = next((r for r in records if build_public_code(r) == data.public_code), None)
     if not matched:
         raise HTTPException(status_code=404, detail="Order tidak ditemukan")
-    stored_id = (matched.get("order_id") or "").strip()
-    if not stored_id or stored_id.lower() != secret.lower():
+    # order_id sering ke-input admin persis kayak tampilan Fiverr (pakai "#"
+    # di depan, mis. "#FO52A135B58C7"), sedangkan widget publik selalu
+    # nyopot "#" dari input client sebelum dikirim -- kalau cuma satu sisi
+    # yang di-strip, kode yang sama persis tetap dianggap gak cocok. Strip
+    # "#" di kedua sisi biar konsisten gak peduli gimana format aslinya.
+    stored_id = (matched.get("order_id") or "").strip().lstrip("#").strip()
+    secret_norm = secret.lstrip("#").strip()
+    if not stored_id or stored_id.lower() != secret_norm.lower():
         raise HTTPException(status_code=403, detail="Kode tidak cocok")
     order_key_val = str(matched.get("_id")) if matched.get("_id") else matched.get("id", "")
     if not frame_relay.has_stream_for_order(order_key_val):
