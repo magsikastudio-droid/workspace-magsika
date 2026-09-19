@@ -2669,16 +2669,35 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
 
 @app.get("/tasks/daily-update-status-bulk")
 async def get_daily_update_status_bulk(ids: str, current_user: dict = Depends(get_current_user)):
-    """Versi bulk buat checklist freelance di To Do — hindari N request
-    terpisah per task. `ids` dipisah koma."""
+    """Versi bulk buat checklist "Update Hari Ini" di To Do — hindari N
+    request terpisah per task. `ids` dipisah koma.
+
+    Widget ini juga dipanggil buat nampilin checklist hari-hari SEBELUMNYA
+    kalau admin/PM pindah tanggal di To Do -- sebelumnya endpoint ini selalu
+    ngecek date_code hari INI buat semua task_id yang dikirim, jadi checklist
+    task dari hari kemarin/lusa selalu keliatan 0/N kosong walau sebenarnya
+    udah dikonfirmasi di harinya. Sekarang date_code yang dicocokin ikut
+    tanggal masing-masing task (sama kayak /tasks/{id}/daily-update-status)."""
     task_ids = [i for i in ids.split(",") if i]
     if not task_ids:
         return {}
+    object_ids = [to_object_id(tid) for tid in task_ids]
+    task_docs = await db.tasks.find({"_id": {"$in": object_ids}}).to_list(len(task_ids))
+    task_date_by_id = {str(t["_id"]): t.get("date", "") for t in task_docs}
+
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
-    today_code = jkt_now.strftime("%y%m%d")
-    docs = await db.daily_updates.find({"task_id": {"$in": task_ids}, "date_code": today_code}).to_list(len(task_ids))
-    confirmed_ids = {d["task_id"] for d in docs}
-    return {tid: (tid in confirmed_ids) for tid in task_ids}
+    fallback_code = jkt_now.strftime("%y%m%d")
+    date_code_by_task = {}
+    for tid in task_ids:
+        task_date = task_date_by_id.get(tid, "")
+        if task_date and len(task_date) == 10:
+            date_code_by_task[tid] = task_date[2:4] + task_date[5:7] + task_date[8:10]
+        else:
+            date_code_by_task[tid] = fallback_code
+
+    docs = await db.daily_updates.find({"task_id": {"$in": task_ids}}).to_list(len(task_ids))
+    confirmed_date_by_task = {d["task_id"]: d["date_code"] for d in docs}
+    return {tid: (confirmed_date_by_task.get(tid) == date_code_by_task[tid]) for tid in task_ids}
 
 
 @app.get("/tasks/{task_id}/daily-update-status")
