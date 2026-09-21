@@ -40,6 +40,7 @@
     font-variant-numeric: tabular-nums; letter-spacing: 0.3px;
     margin-top: 1px;
   }
+  .timer.overdue { color: #fca5a5; }
 </style>
 </head>
 <body>
@@ -55,22 +56,43 @@
   const projectEl = document.getElementById("project");
   const timerEl = document.getElementById("timer");
   let startedAt = null;
+  let baseElapsed = 0;    // detik yang udah kepakai dari sesi sebelumnya (pause/resume)
+  let durationSecs = null; // budget waktu dari task (null = gak ada budget, fallback hitung maju)
   let tickHandle = null;
 
   function pad(n) { return String(n).padStart(2, "0"); }
 
+  function fmtClock(totalSeconds) {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }
+
   function tick() {
     if (!startedAt) return;
-    const elapsedSec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-    const h = Math.floor(elapsedSec / 3600);
-    const m = Math.floor((elapsedSec % 3600) / 60);
-    const s = elapsedSec % 60;
-    timerEl.textContent = `${pad(h)}:${pad(m)}:${pad(s)}`;
+    const elapsedSec = baseElapsed + Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    if (durationSecs !== null) {
+      // Hitung MUNDUR dari sisa waktu yang dikasih PM/admin, bukan hitung maju
+      // dari nol -- biar tim langsung lihat berapa lama lagi jatahnya, bukan
+      // harus ngitung sendiri dari elapsed vs budget.
+      const remaining = durationSecs - elapsedSec;
+      const overdue = remaining <= 0;
+      timerEl.textContent = (overdue ? "-" : "") + fmtClock(Math.abs(remaining));
+      timerEl.classList.toggle("overdue", overdue);
+    } else {
+      // Task ini gak dikasih durasi/budget -- gak ada yang bisa dihitung mundur,
+      // fallback nunjukin durasi kerja yang udah lewat aja.
+      timerEl.textContent = fmtClock(elapsedSec);
+      timerEl.classList.remove("overdue");
+    }
   }
 
   window.desktopApp.onOverlayUpdate((data) => {
     projectEl.textContent = data.project || data.title || "Task";
     startedAt = data.timer_started ? new Date(data.timer_started).getTime() : Date.now();
+    baseElapsed = data.time_elapsed || 0;
+    durationSecs = typeof data.duration_seconds === "number" ? data.duration_seconds : null;
     tick();
     clearInterval(tickHandle);
     tickHandle = setInterval(tick, 1000);

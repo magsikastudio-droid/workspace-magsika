@@ -3921,6 +3921,8 @@ async def get_my_active_task(current_user: dict = Depends(get_current_user)):
         "title": task.get("title", ""),
         "project": project,
         "timer_started": task.get("timer_started"),
+        "time_elapsed": task.get("time_elapsed", 0) or 0,
+        "duration_seconds": task.get("duration_seconds"),
     }
 
 
