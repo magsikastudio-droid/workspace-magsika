@@ -162,6 +162,16 @@ jobs:
           ssh vps "mkdir -p /root/admin-dashboard/public-queue"
           scp -r public-queue/* vps:/root/admin-dashboard/public-queue/
 
+      # Static file, gak butuh di-build kayak installer — di-upload di sini
+      # (job yang selalu jalan) daripada di build-desktop-app (yang di-skip
+      # kalau desktop-app/ gak berubah), biar tim bisa download tool
+      # bersih-bersih ini dari link publik yang sama kayak installer tanpa
+      # perlu akses ke repo, dan gak nunggu ada perubahan desktop-app lain dulu.
+      - name: Copy uninstall/cleanup tool to VPS
+        run: |
+          ssh vps "mkdir -p /root/admin-dashboard/desktop-app-dist"
+          scp "desktop-app/tools/Bersihkan-Magsika-Reminder.bat" vps:/root/admin-dashboard/desktop-app-dist/
+
       - name: Copy backend to VPS
         run: |
           scp backend/main.py vps:/root/admin-dashboard/backend/
