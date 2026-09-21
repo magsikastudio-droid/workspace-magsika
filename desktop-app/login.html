@@ -25,6 +25,7 @@
   button:hover { background: #4338ca; }
   button:disabled { opacity: 0.6; cursor: default; }
   #err { color: #f87171; font-size: 12px; margin-top: 12px; min-height: 14px; }
+  #version { text-align: center; color: #475569; font-size: 10.5px; margin-top: 18px; }
 </style>
 </head>
 <body>
@@ -39,12 +40,17 @@
       <button id="btn" type="submit">Masuk</button>
       <div id="err"></div>
     </form>
+    <p id="version"></p>
   </div>
 
 <script>
   const form = document.getElementById("form");
   const btn = document.getElementById("btn");
   const err = document.getElementById("err");
+
+  window.desktopApp.getAppVersion().then((v) => {
+    document.getElementById("version").textContent = `v${v}`;
+  });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();

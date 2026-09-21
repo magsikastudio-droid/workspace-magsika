@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("desktopApp", {
   loginSuccess: (data) => ipcRenderer.send("login-success", data),
   openDashboard: () => ipcRenderer.send("open-dashboard"),
   getBackendUrl: () => ipcRenderer.invoke("get-backend-url"),
+  getAppVersion: () => ipcRenderer.invoke("get-app-version"),
   getTtsAudio: (text) => ipcRenderer.invoke("get-tts-audio", text),
 
   // Alarm "belum mulai" → langsung start timer + buka picker layar
