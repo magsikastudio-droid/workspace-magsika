@@ -62,7 +62,6 @@ const BACKEND_URL = process.env.MAGSIKA_BACKEND_URL || "https://workspace.magsik
 const WEB_URL = process.env.MAGSIKA_WEB_URL || "https://workspace.magsikastudio.com";
 const WS_URL = BACKEND_URL.replace(/^http/, "ws") + "/ws";
 
-const CONFIG_PATH = path.join(app.getPath("userData"), "session.json");
 const REMOTE_ACCESS_MARKER = path.join(app.getPath("userData"), "remote-access-configured.json");
 const RUSTDESK_HOST = "workspace.magsikastudio.com";
 const RUSTDESK_KEY = "W4jqtZ9xAHzpwD1O0J9WPS+mOxfkvz7dXDMthPe5Ioo=";
@@ -90,23 +89,6 @@ if (!gotLock) {
     if (loginWin) loginWin.focus();
     else if (alarmWin) alarmWin.focus();
   });
-}
-
-/* ── session persist (token + user) ke userData, biar auto-login tiap laptop nyala ── */
-function loadSession() {
-  try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
-  } catch {
-    return null;
-  }
-}
-function saveSession(s) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(s));
-}
-function clearSession() {
-  try {
-    fs.unlinkSync(CONFIG_PATH);
-  } catch {}
 }
 
 /* ── tray icon ─────────────────────────────────────────────────────── */
@@ -256,7 +238,6 @@ async function setupRemoteAccess() {
 }
 
 function doLogout() {
-  clearSession();
   session = null;
   if (ws) { try { ws.close(); } catch {} ws = null; }
   app.setLoginItemSettings({ openAtLogin: false });
@@ -371,7 +352,6 @@ function showAlarm(msg) {
 /* ── IPC dari renderer (login.html / alarm.html via preload.js) ─────── */
 ipcMain.on("login-success", (event, { token, user }) => {
   session = { token, user };
-  saveSession(session);
   app.setLoginItemSettings({ openAtLogin: true });
   updateTrayMenu();
   connectWS();
@@ -535,13 +515,13 @@ app.on("window-all-closed", () => {});
 
 app.whenReady().then(() => {
   createTray();
-  session = loadSession();
-  if (session) {
-    connectWS();
-    notify("🔔 Magsika Reminder aktif", `Login sebagai ${session.user.full_name}. Cek tray kalau perlu.`);
-  } else {
-    showLoginWindow();
-  }
+  // Sengaja SELALU minta login manual tiap app dibuka (gak ada auto-login
+  // dari sesi tersimpan) -- laptop/PC kerja sering gantian dipakai orang
+  // beda, jadi identitas siapa yang lagi login tidak boleh diasumsikan dari
+  // sesi terakhir yang nempel di device. Token juga jadi tidak pernah
+  // ditulis ke disk sama sekali, biar tidak ada kredensial nyangkut di PC
+  // begitu orangnya selesai pakai.
+  showLoginWindow();
   checkForUpdates();
   setInterval(checkForUpdates, 4 * 60 * 60 * 1000); // cek update tiap 4 jam
 });
