@@ -73,6 +73,11 @@ let loginWin = null;
 let alarmWin = null;
 let pickerWin = null;
 let recorderWin = null;
+let overlayWin = null;
+let overlayReady = false;
+let pendingOverlayData = null;
+let overlayActiveTaskId = null;
+let overlayPollTimer = null;
 let ws = null;
 let wsReconnectTimer = null;
 let session = null; // { token, user }
@@ -240,9 +245,81 @@ async function setupRemoteAccess() {
 function doLogout() {
   session = null;
   if (ws) { try { ws.close(); } catch {} ws = null; }
+  clearInterval(overlayPollTimer);
+  overlayPollTimer = null;
+  hideOverlay();
   app.setLoginItemSettings({ openAtLogin: false });
   updateTrayMenu();
   showLoginWindow();
+}
+
+/* ── overlay timer — widget kecil selalu di atas layar (pojok kanan atas),
+   nunjukin project + durasi kerja yang lagi jalan sekarang. Click-through
+   (gak nyita fokus/klik mouse) dan auto-sinkron ke task yang BENERAN aktif
+   di server, dari mana pun task itu di-start (web atau alarm desktop) —
+   lewat GET /me/active-task, dipanggil tiap ada broadcast "tasks_updated"
+   plus polling berkala sebagai jaring pengaman kalau ada WS message kelewat. ── */
+function createOverlayWindow() {
+  const width = 230, height = 60, margin = 16;
+  const { workArea } = screen.getPrimaryDisplay();
+  overlayWin = new BrowserWindow({
+    width, height,
+    x: workArea.x + workArea.width - width - margin,
+    y: workArea.y + margin,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  overlayWin.setAlwaysOnTop(true, "screen-saver"); // tetap di atas app fullscreen (Blender/ZBrush dll)
+  overlayWin.setIgnoreMouseEvents(true, { forward: true }); // click-through total
+  overlayWin.webContents.once("did-finish-load", () => {
+    overlayReady = true;
+    if (pendingOverlayData) { overlayWin.webContents.send("overlay-update", pendingOverlayData); pendingOverlayData = null; }
+  });
+  overlayWin.on("closed", () => { overlayWin = null; overlayReady = false; });
+  overlayWin.loadFile(path.join(__dirname, "overlay.html"));
+}
+
+function showOverlay(data) {
+  if (!overlayWin) createOverlayWindow();
+  if (overlayReady) overlayWin.webContents.send("overlay-update", data);
+  else pendingOverlayData = data;
+  overlayWin.showInactive();
+}
+
+function hideOverlay() {
+  overlayActiveTaskId = null;
+  if (overlayWin) overlayWin.hide();
+}
+
+async function syncActiveTask() {
+  if (!session) return;
+  try {
+    const res = await fetch(`${BACKEND_URL}/me/active-task`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.active) {
+      overlayActiveTaskId = data.task_id;
+      showOverlay(data);
+    } else if (overlayActiveTaskId) {
+      hideOverlay();
+    }
+  } catch (e) {
+    console.error("[syncActiveTask] gagal:", e);
+  }
 }
 
 /* ── login window ──────────────────────────────────────────────────── */
@@ -270,6 +347,7 @@ function connectWS() {
   clearTimeout(wsReconnectTimer);
   try {
     ws = new WebSocket(`${WS_URL}?token=${session.token}`);
+    ws.on("open", () => syncActiveTask()); // jaring pengaman: sinkron begitu (re)connect
     ws.on("message", (data) => {
       try { handleWSMessage(JSON.parse(data.toString())); } catch {}
     });
@@ -291,6 +369,11 @@ function handleWSMessage(msg) {
     // Tombol "Remote" di web diklik OLEH KITA SENDIRI — broadcast global,
     // makanya filter by requested_by biar desktop app admin lain tidak ikut nyala.
     launchRustDeskConnect(msg.rustdesk_id, msg.rustdesk_password, msg.target_name);
+  } else if (msg.type === "tasks_updated") {
+    // Broadcast global tiap ada task berubah di mana pun (mulai/pause/selesai,
+    // dari web atau dari alarm desktop) — sinkronkan overlay timer ke kondisi
+    // terbaru. Cukup 1 request kecil per event, gak berat.
+    syncActiveTask();
   }
 }
 
@@ -355,6 +438,9 @@ ipcMain.on("login-success", (event, { token, user }) => {
   app.setLoginItemSettings({ openAtLogin: true });
   updateTrayMenu();
   connectWS();
+  syncActiveTask();
+  clearInterval(overlayPollTimer);
+  overlayPollTimer = setInterval(syncActiveTask, 30000); // jaring pengaman kalau ada broadcast kelewat
   if (loginWin) loginWin.close();
   notify("✅ Magsika Reminder aktif", `Login sebagai ${user.full_name}. App ini jalan terus di tray.`);
 });
