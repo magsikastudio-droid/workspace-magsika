@@ -3882,13 +3882,26 @@ async def get_my_active_task(current_user: dict = Depends(get_current_user)):
     task mana (kalau ada) yang lagi beneran jalan buat user ini SEKARANG.
     Desktop app poll ini tiap kali dapet broadcast 'tasks_updated' (jadi
     langsung nyambung ke aksi mulai/pause/selesai dari mana pun, web atau
-    alarm desktop), plus polling berkala sebagai jaring pengaman."""
-    full_name = current_user.get("full_name") or current_user.get("username", "")
-    task = await db.tasks.find_one({
-        "assignee": full_name,
-        "status": "in progress",
-        "timer_started": {"$ne": None},
-    })
+    alarm desktop), plus polling berkala sebagai jaring pengaman.
+
+    Dua hal yang PENTING beda dari asumsi awal:
+    1. Task dianggap "lagi jalan" itu murni dari timer_started ada isinya
+       (persis logic `isRunning` di Todo.jsx) -- status TIDAK selalu ikut
+       jadi "in progress" pas timer di-start (cuma di-set kalau sebelumnya
+       "pending", lihat handleTimer di Todo.jsx), jadi task yang timer-nya
+       jalan tapi status-nya masih "revisi"/lainnya kelewat kalau di-filter
+       status juga.
+    2. Field 'assignee' itu teks bebas (kadang cuma nama depan, mis. "Ivo"
+       padahal akun aslinya "Ivo Febrian") -- exact-match ke full_name gagal
+       buat kasus itu, makanya dicocokkan pakai _resolve_user_by_assignee
+       yang sama kayak logic alert supaya konsisten."""
+    candidates = await db.tasks.find({"timer_started": {"$nin": [None, ""]}}).to_list(500)
+    task = None
+    for t in candidates:
+        user_doc = await _resolve_user_by_assignee(t.get("assignee", ""))
+        if user_doc and user_doc.get("username") == current_user.get("username"):
+            task = t
+            break
     if not task:
         return {"active": False}
 
