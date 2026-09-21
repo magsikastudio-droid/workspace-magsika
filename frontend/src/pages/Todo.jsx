@@ -1557,7 +1557,11 @@ function TalentTaskRow({ task, orders, now, isAdminOrPM, estStart, isBig, onHove
                 <div className={`h-[7px] max-w-[180px] flex-1 overflow-hidden rounded-full ${tone.barTrack}`}>
                   <div className={`h-full rounded-full ${tone.barFill}`} style={{ width: `${Math.min(100, Math.round((elapsed / task.duration_seconds) * 100))}%` }} />
                 </div>
-                <span className={`shrink-0 font-mono text-[11.5px] font-semibold ${tone.sub}`}>{fmtElapsed(elapsed)} / {fmtBudget(task.duration_seconds)}</span>
+                <span className={`shrink-0 font-mono text-[11.5px] font-semibold ${tone.sub}`}>
+                  {!hasStarted
+                    ? fmtBudget(task.duration_seconds)
+                    : isOverdue ? `Overdue +${fmtCountdown(Math.abs(countdown))}` : fmtCountdown(countdown)}
+                </span>
               </>
             ) : <span />}
             {isReview ? (
@@ -1969,9 +1973,12 @@ function TaskDetailModal({ task, orders, now, isAdminOrPM, isAdmin, estStart, on
               <Clock size={14} className="text-slate-400 shrink-0" />
               <div className="flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Waktu Pengerjaan Hari Ini</p>
-                <p className={`text-sm font-mono font-semibold ${isRunning ? "text-sky-600" : "text-slate-700"}`}>
-                  {elapsed > 0 ? fmtElapsed(elapsed) : "Belum dimulai"}
-                  {task.duration_seconds ? ` / ${fmtBudget(task.duration_seconds)}` : ""}
+                <p className={`text-sm font-mono font-semibold ${isRunning ? "text-sky-600" : isOverdue ? "text-rose-600" : "text-slate-700"}`}>
+                  {!hasStarted
+                    ? (task.duration_seconds ? fmtBudget(task.duration_seconds) : "Belum dimulai")
+                    : isOverdue ? `Overdue +${fmtCountdown(Math.abs(countdown))}`
+                    : countdown !== null ? fmtCountdown(countdown)
+                    : fmtElapsed(elapsed)}
                   {isRunning && <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse" />}
                 </p>
               </div>
