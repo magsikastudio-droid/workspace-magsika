@@ -342,6 +342,7 @@ def format_task(record: dict) -> dict:
         "id": str(record.get("_id")) if record.get("_id") else record.get("id"),
         "title": record.get("title", "Untitled Task"),
         "assignee": record.get("assignee", "Unassigned"),
+        "assignee_username": record.get("assignee_username", ""),
         "assignee_type": record.get("assignee_type", "tim"),
         "status": record.get("status", "pending"),
         "date": record.get("date"),
@@ -660,6 +661,46 @@ async def _resolve_user_by_assignee(name: str) -> Optional[dict]:
     return None
 
 
+async def _resolve_task_assignee_user(task: dict) -> Optional[dict]:
+    """Cocokkan task ke akun user-nya. Kalau task ini sudah punya
+    'assignee_username' (di-resolve & disimpan otomatis tiap task
+    dibuat/diupdate, lihat create_task/update_task), pakai itu -- exact
+    match by username, jadi typo/beda kapitalisasi/nama panggilan di teks
+    'assignee' TIDAK bikin data ke-lempar ke orang lain atau gak ketemu
+    sama sekali. Task lama yang belum ke-backfill fallback ke fuzzy-match
+    teks seperti biasa."""
+    username = (task.get("assignee_username") or "").strip()
+    if username:
+        try:
+            return await db.users.find_one({"username": username})
+        except Exception:
+            return None
+    return await _resolve_user_by_assignee(task.get("assignee", ""))
+
+
+async def _backfill_assignee_usernames():
+    """Sekali jalan pas startup -- isi assignee_username buat task LAMA yang
+    dibuat sebelum field ini ada, biar langsung kepakai tanpa nunggu task
+    itu diedit dulu. Di-grup per teks assignee biar gak resolve berkali-kali
+    buat nama yang sama."""
+    try:
+        distinct_names = await db.tasks.distinct("assignee", {"assignee_username": {"$exists": False}})
+    except Exception:
+        return
+    for name in distinct_names:
+        if not name:
+            continue
+        user_doc = await _resolve_user_by_assignee(name)
+        username = user_doc.get("username") if user_doc else ""
+        try:
+            await db.tasks.update_many(
+                {"assignee": name, "assignee_username": {"$exists": False}},
+                {"$set": {"assignee_username": username}},
+            )
+        except Exception:
+            pass
+
+
 def _is_working_hours(jkt_now: datetime) -> bool:
     """Jam kerja tim (diatur admin di Settings > Pengaturan, lihat
     _work_hours_cache) — reminder 'belum mulai'/'belum live stream' jangan
@@ -705,7 +746,7 @@ async def check_not_started_tasks():
         if not pending or any(t.get("timer_started") for t in pending):
             continue  # tidak ada task pending, atau sedang jalan → bukan idle
 
-        user_doc = await _resolve_user_by_assignee(assignee)
+        user_doc = await _resolve_task_assignee_user(a_tasks[0])
         if user_doc and user_doc.get("work_status") == "break":
             continue  # lagi "Istirahat" — jangan hitung idle sama sekali, jangan nge-nag
 
@@ -807,7 +848,7 @@ async def check_not_streaming_tasks():
         if not assignee:
             continue
 
-        user_doc = await _resolve_user_by_assignee(assignee)
+        user_doc = await _resolve_task_assignee_user(t)
         if user_doc and user_doc.get("work_status") == "break":
             continue  # lagi istirahat, jangan nge-nag
 
@@ -909,9 +950,14 @@ async def carry_forward_tasks():
             if existing:
                 continue
             count = await db.tasks.count_documents({"assignee": assignee, "date": today_str})
+            assignee_username = t.get("assignee_username")
+            if assignee_username is None:  # task lama belum ke-backfill -- resolve sekali di sini
+                resolved = await _resolve_user_by_assignee(assignee)
+                assignee_username = resolved.get("username") if resolved else ""
             await db.tasks.insert_one({
                 "title": t.get("title", ""),
                 "assignee": assignee,
+                "assignee_username": assignee_username,
                 "assignee_type": t.get("assignee_type", "tim"),
                 "status": "pending",
                 "date": today_str,
@@ -1018,11 +1064,13 @@ async def auto_generate_daily_tasks(target_date: Optional[str] = None) -> dict:
             continue
 
         count = await db.tasks.count_documents({"assignee": last_assignee, "date": today})
+        assignee_user = await _resolve_user_by_assignee(last_assignee)
         result = await db.tasks.update_one(
             {"order_id": order_id_str, "date": today},          # 1 task per order per day
             {"$setOnInsert": {
                 "title": carry_title or order.get("project", ""),
                 "assignee": last_assignee,
+                "assignee_username": assignee_user.get("username") if assignee_user else "",
                 "assignee_type": last_type,
                 "status": "pending",
                 "date": today,
@@ -1083,6 +1131,14 @@ async def on_startup():
     except Exception as _e:
         print(f"[Migration] Password reset error: {_e}", flush=True)
     # ────────────────────────────────────────────────────────────────
+
+    # Backfill assignee_username buat task lama yang dibuat sebelum field
+    # ini ada (lihat _resolve_task_assignee_user) -- idempotent, cuma isi
+    # task yang belum punya field-nya, jadi aman dijalanin tiap restart.
+    try:
+        await _backfill_assignee_usernames()
+    except Exception as _e:
+        print(f"[Migration] Backfill assignee_username error: {_e}", flush=True)
 
     await _load_work_hours_cache()
     await _load_reminder_interval_cache()
@@ -2531,6 +2587,14 @@ async def list_tasks(date: Optional[str] = None, month: Optional[str] = None, cu
 @app.post("/tasks")
 async def create_task(task: TaskCreate, current_user: dict = Depends(get_current_user)):
     payload = task.dict()
+    # Resolve assignee text -> kode akun (username) sekali di sini, disimpan
+    # bareng task-nya, biar semua logic yang match-in "task ini punya siapa"
+    # (reminder, overlay timer, dll) gak perlu nebak-nebak dari teks lagi
+    # tiap kali -- lihat _resolve_task_assignee_user.
+    assignee_text = (payload.get("assignee") or "").strip()
+    if assignee_text:
+        matched_user = await _resolve_user_by_assignee(assignee_text)
+        payload["assignee_username"] = matched_user.get("username") if matched_user else ""
     try:
         result = await db.tasks.insert_one(payload)
         result_task = format_task({**payload, "_id": result.inserted_id})
@@ -2592,6 +2656,14 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
     payload = task.dict(exclude_unset=True)
     if not payload:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
+
+    # Assignee-nya ganti (mis. PM re-assign task ke orang lain) -> resolve
+    # ulang kode akunnya juga, biar assignee_username gak nyangkut ke akun
+    # LAMA -- sama kayak create_task, lihat _resolve_task_assignee_user.
+    if "assignee" in payload:
+        assignee_text = (payload.get("assignee") or "").strip()
+        matched_user = await _resolve_user_by_assignee(assignee_text) if assignee_text else None
+        payload["assignee_username"] = matched_user.get("username") if matched_user else ""
 
     # Talent (dan PM yang submit task-nya SENDIRI, PM gak boleh approve
     # task sendiri) mau submit ke review → wajib udah kirim preview hari
@@ -2793,7 +2865,7 @@ async def remind_task(task_id: str, current_user: dict = Depends(get_current_use
     if not assignee:
         raise HTTPException(status_code=400, detail="Task ini tidak punya assignee")
 
-    user_doc = await _resolve_user_by_assignee(assignee)
+    user_doc = await _resolve_task_assignee_user(task)
     if not user_doc:
         # Jangan klaim "terkirim" kalau sebenarnya tidak nyampe ke siapa pun —
         # ini penyebab paling umum reminder "diam-diam gagal": nama assignee
@@ -3825,7 +3897,11 @@ async def get_my_dashboard(current_user: dict = Depends(get_current_user)):
     days = [(jkt_now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
 
     try:
-        week_tasks = await db.tasks.find({"assignee": full_name, "date": {"$in": days}}).to_list(2000)
+        # $or dengan assignee_username (kode akun, stabil) DULUAN, fallback
+        # exact-match teks buat task lama yang belum ke-backfill -- lihat
+        # _resolve_task_assignee_user buat penjelasan lengkap masalahnya.
+        assignee_query = {"$or": [{"assignee_username": current_user.get("username", "")}, {"assignee": full_name}]}
+        week_tasks = await db.tasks.find({**assignee_query, "date": {"$in": days}}).to_list(2000)
     except Exception:
         week_tasks = []
 
@@ -3859,7 +3935,7 @@ async def get_my_dashboard(current_user: dict = Depends(get_current_user)):
     month_prefix = jkt_now.strftime("%Y-%m")
     try:
         month_tasks = await db.tasks.find(
-            {"assignee": full_name, "date": {"$regex": f"^{month_prefix}"}, "status": "done"}
+            {**assignee_query, "date": {"$regex": f"^{month_prefix}"}, "status": "done"}
         ).to_list(2000)
     except Exception:
         month_tasks = []
@@ -3899,12 +3975,13 @@ async def get_my_active_task(current_user: dict = Depends(get_current_user)):
        status juga.
     2. Field 'assignee' itu teks bebas (kadang cuma nama depan, mis. "Ivo"
        padahal akun aslinya "Ivo Febrian") -- exact-match ke full_name gagal
-       buat kasus itu, makanya dicocokkan pakai _resolve_user_by_assignee
-       yang sama kayak logic alert supaya konsisten."""
+       buat kasus itu, makanya dicocokkan pakai assignee_username (kode
+       akun yang di-resolve & disimpan otomatis tiap task dibuat/diupdate)
+       lewat _resolve_task_assignee_user, konsisten sama logic alert."""
     candidates = await db.tasks.find({"timer_started": {"$nin": [None, ""]}}).to_list(500)
     task = None
     for t in candidates:
-        user_doc = await _resolve_user_by_assignee(t.get("assignee", ""))
+        user_doc = await _resolve_task_assignee_user(t)
         if user_doc and user_doc.get("username") == current_user.get("username"):
             task = t
             break
@@ -5086,18 +5163,22 @@ async def _fetch_member_data(name: str, period: str, month: str):
     now_wib = datetime.now(timezone.utc) + timedelta(hours=7)
     today_str = now_wib.strftime("%Y-%m-%d")
     week_ago_str = (now_wib - timedelta(days=6)).strftime("%Y-%m-%d")
+    # assignee_username (kode akun) dulu, fallback exact-match teks buat task
+    # lama yang belum ke-backfill -- lihat _resolve_task_assignee_user.
+    account = await _resolve_user_by_assignee(name)
+    assignee_query = {"$or": [{"assignee_username": account.get("username")}, {"assignee": name}]} if account else {"assignee": name}
     if period == "daily":
-        tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{today_str}"}}).to_list(300)
+        tasks = await db.tasks.find({**assignee_query, "date": {"$regex": f"^{today_str}"}}).to_list(300)
         all_orders = await db.orders.find({"artists": name}).to_list(200)
         period_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "") == today_str]
         period_label = f"Hari ini ({today_str})"
     elif period == "weekly":
-        tasks = await db.tasks.find({"assignee": name, "date": {"$gte": week_ago_str, "$lte": today_str}}).to_list(500)
+        tasks = await db.tasks.find({**assignee_query, "date": {"$gte": week_ago_str, "$lte": today_str}}).to_list(500)
         all_orders = await db.orders.find({"artists": name}).to_list(200)
         period_orders = [o for o in all_orders if week_ago_str <= (o.get("order_date") or o.get("created_at", "")[:10] or "") <= today_str]
         period_label = f"Minggu ini ({week_ago_str} s.d. {today_str})"
     else:
-        tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
+        tasks = await db.tasks.find({**assignee_query, "date": {"$regex": f"^{month}"}}).to_list(300)
         all_orders = await db.orders.find({"artists": name}).to_list(100)
         period_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
         period_label = f"Bulan {month}"
@@ -5540,18 +5621,20 @@ async def ai_member_insight(name: str, month: str, period: str = "monthly", curr
     week_ago_str = (now_wib - timedelta(days=6)).strftime("%Y-%m-%d")
 
     try:
+        account = await _resolve_user_by_assignee(name)
+        assignee_query = {"$or": [{"assignee_username": account.get("username")}, {"assignee": name}]} if account else {"assignee": name}
         if period == "daily":
-            tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{today_str}"}}).to_list(300)
+            tasks = await db.tasks.find({**assignee_query, "date": {"$regex": f"^{today_str}"}}).to_list(300)
             all_orders = await db.orders.find({"artists": name}).to_list(200)
             period_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "") == today_str]
             period_label = f"Hari ini ({today_str})"
         elif period == "weekly":
-            tasks = await db.tasks.find({"assignee": name, "date": {"$gte": week_ago_str, "$lte": today_str}}).to_list(500)
+            tasks = await db.tasks.find({**assignee_query, "date": {"$gte": week_ago_str, "$lte": today_str}}).to_list(500)
             all_orders = await db.orders.find({"artists": name}).to_list(200)
             period_orders = [o for o in all_orders if week_ago_str <= (o.get("order_date") or o.get("created_at", "")[:10] or "") <= today_str]
             period_label = f"Minggu ini ({week_ago_str} s.d. {today_str})"
         else:
-            tasks = await db.tasks.find({"assignee": name, "date": {"$regex": f"^{month}"}}).to_list(300)
+            tasks = await db.tasks.find({**assignee_query, "date": {"$regex": f"^{month}"}}).to_list(300)
             all_orders = await db.orders.find({"artists": name}).to_list(100)
             period_orders = [o for o in all_orders if (o.get("order_date") or o.get("created_at", "")[:10] or "").startswith(month)]
             period_label = f"Bulan {month}"
