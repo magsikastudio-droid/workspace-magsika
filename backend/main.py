@@ -703,6 +703,17 @@ async def check_not_started_tasks():
         if user_doc and user_doc.get("work_status") == "break":
             continue  # lagi "Istirahat" — jangan hitung idle sama sekali, jangan nge-nag
 
+        # Jam kerja di atas itu SATU jendela global buat semua orang, padahal
+        # sebagian tim shift-nya beda (mis. mulai sore) -- kalau cuma dicek
+        # jam kerja global, orang shift sore ke-anggap "idle" sejak jendela
+        # global itu buka, padahal dia memang belum masuk sama sekali. Sinyal
+        # "sudah online" yang lebih akurat: desktop app-nya udah konek ke WS
+        # (yang sekarang cuma kejadian abis dia login manual hari itu, lihat
+        # desktop-app/main.js). Belum konek sama sekali → jangan hitung idle
+        # dulu, tunggu dia login duluan baru mulai hitung dari situ.
+        if user_doc and not manager.is_username_connected(user_doc.get("username", "")):
+            continue
+
         still_idle.add(assignee)
         started_idle_at = _idle_since.setdefault(assignee, jkt_now)
         idle_minutes = (jkt_now - started_idle_at).total_seconds() / 60
