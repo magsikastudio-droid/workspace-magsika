@@ -1,6 +1,6 @@
 {
   "name": "magsika-reminder",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Desktop reminder — notifikasi native + alarm full-screen buat tim Magsika Studio, jalan di background walau browser tidak dibuka.",
   "main": "main.js",
   "private": true,
@@ -26,6 +26,7 @@
     ],
     "win": {
       "target": "nsis",
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
