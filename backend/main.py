@@ -3876,6 +3876,41 @@ async def get_my_dashboard(current_user: dict = Depends(get_current_user)):
     }
 
 
+@app.get("/me/active-task")
+async def get_my_active_task(current_user: dict = Depends(get_current_user)):
+    """Dipakai desktop app buat nyalain/matiin overlay timer di layar --
+    task mana (kalau ada) yang lagi beneran jalan buat user ini SEKARANG.
+    Desktop app poll ini tiap kali dapet broadcast 'tasks_updated' (jadi
+    langsung nyambung ke aksi mulai/pause/selesai dari mana pun, web atau
+    alarm desktop), plus polling berkala sebagai jaring pengaman."""
+    full_name = current_user.get("full_name") or current_user.get("username", "")
+    task = await db.tasks.find_one({
+        "assignee": full_name,
+        "status": "in progress",
+        "timer_started": {"$ne": None},
+    })
+    if not task:
+        return {"active": False}
+
+    project = task.get("title", "")
+    order_id = (task.get("order_id") or "").strip()
+    if order_id:
+        try:
+            order = await db.orders.find_one({"_id": ObjectId(order_id)})
+            if order and order.get("project"):
+                project = order["project"]
+        except Exception:
+            pass
+
+    return {
+        "active": True,
+        "task_id": str(task["_id"]),
+        "title": task.get("title", ""),
+        "project": project,
+        "timer_started": task.get("timer_started"),
+    }
+
+
 @app.post("/announcements")
 async def create_announcement(data: AnnouncementCreate, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":

@@ -22,4 +22,7 @@ contextBridge.exposeInMainWorld("desktopApp", {
   reportRecordingError: (msg) => ipcRenderer.send("recording-error", msg),
   reportStreamEnded: () => ipcRenderer.send("stream-ended-remotely"),
   onStopRecording: (cb) => ipcRenderer.on("stop-recording", cb),
+
+  // Dipakai overlay.html (widget timer selalu di atas layar)
+  onOverlayUpdate: (cb) => ipcRenderer.on("overlay-update", (event, data) => cb(data)),
 });
