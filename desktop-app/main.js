@@ -129,7 +129,7 @@ function updateTrayMenu() {
     { label: "Keluar", click: () => { app.isQuitting = true; app.quit(); } }
   );
   tray.setContextMenu(Menu.buildFromTemplate(items));
-  tray.setToolTip(activeRecording ? `Magsika Reminder — 🔴 Merekam: ${activeRecording.taskTitle}` : "Magsika Reminder");
+  tray.setToolTip(activeRecording ? `Magsika Reminder v${app.getVersion()} — 🔴 Merekam: ${activeRecording.taskTitle}` : `Magsika Reminder v${app.getVersion()}`);
 }
 
 /* ── "Setup Remote Access" — install+config RustDesk lewat tray, sekali
@@ -447,6 +447,7 @@ ipcMain.on("login-success", (event, { token, user }) => {
 
 ipcMain.on("open-dashboard", () => shell.openExternal(WEB_URL));
 ipcMain.handle("get-backend-url", () => BACKEND_URL);
+ipcMain.handle("get-app-version", () => app.getVersion());
 
 // TTS server-side (gTTS lang=id) — dijamin suara Indonesia beneran, tidak
 // gantung ke voice OS yang belum tentu terinstall di laptop baru.
