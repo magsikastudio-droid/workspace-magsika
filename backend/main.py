@@ -79,6 +79,12 @@ TELEGRAM_TOPIC_LINK = "https://t.me/c/3611845591/2"
 # web. Kosong = fitur ini nonaktif (belum di-setting topic-nya).
 TELEGRAM_ORDER_TOPIC_ID = os.getenv("TELEGRAM_ORDER_TOPIC_ID", "")
 
+# Topic "Sistem Update" -- dipakai POST /admin/notify-update buat ngasih
+# tau tim kalau ada update BESAR di web/app (fitur baru/perbaikan penting),
+# bukan tiap deploy kecil. Dipicu manual (bukan otomatis tiap commit),
+# soalnya "besar atau enggak" itu keputusan yang butuh judgment.
+TELEGRAM_SYSTEM_UPDATE_TOPIC_ID = os.getenv("TELEGRAM_SYSTEM_UPDATE_TOPIC_ID", "10231")
+
 
 def _telegram_chat_internal_id() -> str:
     """Strip prefix -100 dari chat_id supergroup buat dipakai di link t.me/c/.
@@ -4455,6 +4461,44 @@ async def _telegram_reply(reply_to_message_id, thread_id: str, text: str):
             await client.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json=payload)
     except Exception as e:
         print(f"[Order screenshot] gagal kirim balasan: {e}", flush=True)
+
+
+async def _telegram_send_to_topic(topic_id: str, text: str):
+    """Kirim pesan BARU (bukan balasan) ke topic tertentu -- dipakai buat
+    pengumuman satu arah kayak notifikasi update, bukan konfirmasi/balasan
+    ke pesan orang."""
+    if not TELEGRAM_BOT_TOKEN:
+        return False
+    try:
+        payload = {"chat_id": TELEGRAM_GROUP_CHAT_ID, "text": text}
+        if topic_id:
+            payload["message_thread_id"] = int(topic_id)
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage", json=payload)
+        return res.status_code == 200
+    except Exception as e:
+        print(f"[notify-update] gagal kirim ke Telegram: {e}", flush=True)
+        return False
+
+
+class UpdateAnnouncement(BaseModel):
+    title: str
+    changes: List[str]
+
+
+@app.post("/admin/notify-update")
+async def notify_update(data: UpdateAnnouncement, current_user: dict = Depends(get_current_user)):
+    """Kirim ringkasan update BESAR ke topic 'Sistem Update' di Telegram.
+    Dipicu manual (bukan tiap deploy) -- cuma buat perubahan yang beneran
+    perlu diketahui tim, bukan printilan/bugfix kecil."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    lines = "\n".join(f"• {c}" for c in data.changes)
+    text = f"🚀 Update: {data.title}\n\n{lines}"
+    sent = await _telegram_send_to_topic(TELEGRAM_SYSTEM_UPDATE_TOPIC_ID, text)
+    if not sent:
+        raise HTTPException(status_code=502, detail="Gagal kirim ke Telegram")
+    return {"ok": True}
 
 
 @app.post("/telegram/webhook")
