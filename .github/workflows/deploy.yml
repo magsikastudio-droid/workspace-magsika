@@ -335,3 +335,19 @@ jobs:
             https://workspace.magsikastudio.com/api/ws/rtc \
             2>&1 | head -15
           ENDSSH
+
+      - name: TEMP - send first system-update announcement to Telegram
+        run: |
+          cat > /tmp/update_msg.txt << 'MSGEOF'
+          🚀 Update: Magsika Reminder & Workspace
+
+          • Magsika Reminder sekarang wajib login manual tiap dibuka (gak auto-login lagi) — biar aman kalau PC dipakai gantian orang
+          • Ada widget timer di pojok kanan atas layar pas lagi ngerjain task, hitung mundur dari durasi yang dikasih
+          • Reminder "belum mulai kerja" gak lagi salah nge-nag tim shift sore sebelum mereka login
+          • Nomor versi app sekarang keliatan di layar login & tray icon
+          • Tampilan waktu di card To Do disederhanakan (durasi sebelum start, countdown pas jalan)
+          MSGEOF
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="-1003611845591" \
+            -d message_thread_id="10231" \
+            --data-urlencode text@/tmp/update_msg.txt
