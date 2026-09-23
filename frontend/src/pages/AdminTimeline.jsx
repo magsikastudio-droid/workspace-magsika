@@ -21,6 +21,21 @@ const fmtDateLabel = (dateStr) => {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 };
 
+/* Kategori kerjaan admin — bukan cuma buat rapi-rapi tampilan, tapi juga
+   biar keliatan pola: bulan ini paling banyak waktu abis ke mana (client,
+   tim, freelance, atau pengembangan market). Warna sengaja beda-beda &
+   cukup kontras biar tiap kartu kategori langsung kebaca dari jauh, bukan
+   deretan kartu putih polos yang bikin ngantuk. */
+const CATEGORIES = [
+  { key: "market",    label: "Pengembangan Market", emoji: "🚀", bg: "bg-violet-50",  border: "border-violet-200",  text: "text-violet-700",  dot: "bg-violet-500",  chipActive: "bg-violet-600 text-white" },
+  { key: "client",    label: "Client",              emoji: "🤝", bg: "bg-sky-50",     border: "border-sky-200",     text: "text-sky-700",     dot: "bg-sky-500",     chipActive: "bg-sky-600 text-white" },
+  { key: "tim",       label: "Tim",                 emoji: "👥", bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-500", chipActive: "bg-emerald-600 text-white" },
+  { key: "freelance", label: "Freelance",           emoji: "🧑‍💻", bg: "bg-amber-50",   border: "border-amber-200",   text: "text-amber-700",   dot: "bg-amber-500",   chipActive: "bg-amber-600 text-white" },
+  { key: "lainnya",   label: "Lainnya",             emoji: "📌", bg: "bg-slate-50",   border: "border-slate-200",   text: "text-slate-600",   dot: "bg-slate-400",   chipActive: "bg-slate-700 text-white" },
+];
+const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map((c) => [c.key, c]));
+const catOf = (key) => CATEGORY_MAP[key] || CATEGORY_MAP.lainnya;
+
 export default function AdminTimeline() {
   const { user } = useAuth();
   const isSuperadmin = !!user?.is_superadmin;
@@ -29,6 +44,7 @@ export default function AdminTimeline() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newTitle, setNewTitle] = useState("");
+  const [newCategory, setNewCategory] = useState("market");
   const [submitting, setSubmitting] = useState(false);
 
   const load = () => {
@@ -48,7 +64,7 @@ export default function AdminTimeline() {
     if (!title) return;
     setSubmitting(true);
     try {
-      const res = await api.post("/admin-tasks", { title, date });
+      const res = await api.post("/admin-tasks", { title, category: newCategory, date });
       setItems((prev) => [...prev, res.data.task]);
       setNewTitle("");
     } catch {
@@ -78,7 +94,13 @@ export default function AdminTimeline() {
     }
   };
 
-  const grouped = useMemo(() => {
+  const byCategory = useMemo(() => {
+    const map = {};
+    items.forEach((t) => { (map[t.category || "lainnya"] = map[t.category || "lainnya"] || []).push(t); });
+    return CATEGORIES.map((c) => ({ ...c, items: map[c.key] || [] })).filter((c) => c.items.length > 0);
+  }, [items]);
+
+  const byAdmin = useMemo(() => {
     if (view !== "team") return null;
     const map = {};
     items.forEach((t) => {
@@ -90,37 +112,39 @@ export default function AdminTimeline() {
 
   const doneCount = items.filter((t) => t.done).length;
 
-  const renderItem = (item, readonly) => (
-    <div
-      key={item.id}
-      className="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3 transition hover:border-slate-200"
-    >
+  const ItemRow = ({ item, readonly }) => (
+    <div className="group flex items-center gap-3.5 rounded-2xl bg-white/70 px-4 py-3.5 transition hover:bg-white">
       <button
         onClick={() => !readonly && handleToggle(item)}
         disabled={readonly}
-        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${
           item.done ? "border-emerald-500 bg-emerald-500" : "border-slate-300 hover:border-indigo-400"
         } ${readonly ? "cursor-default" : "cursor-pointer"}`}
       >
-        {item.done && <span className="text-[10px] font-bold text-white">✓</span>}
+        {item.done && <span className="text-xs font-bold text-white">✓</span>}
       </button>
       <div className="min-w-0 flex-1">
-        <p className={`text-[13.5px] font-medium ${item.done ? "text-slate-400 line-through" : "text-slate-800"}`}>
+        <p className={`text-[15px] font-medium leading-snug ${item.done ? "text-slate-400 line-through" : "text-slate-800"}`}>
           {item.title}
         </p>
         {item.carried_from && (
-          <p className="mt-0.5 flex items-center gap-1 text-[10.5px] text-amber-600">
-            <CornerDownRight size={11} /> Lanjutan dari {fmtDateLabel(item.carried_from).toLowerCase()}, belum selesai
+          <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-amber-600">
+            <CornerDownRight size={12} /> Lanjutan dari {fmtDateLabel(item.carried_from).toLowerCase()}
           </p>
         )}
       </div>
+      {readonly && (
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-bold ${catOf(item.category).bg} ${catOf(item.category).text}`}>
+          {catOf(item.category).emoji} {catOf(item.category).label}
+        </span>
+      )}
       {!readonly && (
         <button
           onClick={() => handleDelete(item)}
-          className="shrink-0 rounded-full p-1 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
+          className="shrink-0 rounded-full p-1.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
           title="Hapus"
         >
-          <X size={15} />
+          <X size={16} />
         </button>
       )}
     </div>
@@ -174,54 +198,92 @@ export default function AdminTimeline() {
       </div>
 
       {view === "mine" ? (
-        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-            <p className="font-semibold text-slate-900">Checklist Kamu</p>
-            <span className="text-xs text-slate-400">{doneCount}/{items.length} selesai</span>
+        <>
+          {/* Form tambah -- kartu sendiri di atas, pilih kategori dulu (pill besar
+              berwarna) baru ketik judulnya, biar kategorisasi kerasa cepat & gak
+              kayak ngisi form birokrasi. */}
+          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-400">Tambah kerjaan baru</p>
+            <div className="mb-4 flex flex-wrap gap-2">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => setNewCategory(c.key)}
+                  className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition ${
+                    newCategory === c.key ? c.chipActive : `${c.bg} ${c.text} hover:opacity-80`
+                  }`}
+                >
+                  <span>{c.emoji}</span> {c.label}
+                </button>
+              ))}
+            </div>
+            <form onSubmit={handleAdd} className="flex items-center gap-2.5">
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Tulis kerjaan yang mau dilakukan..."
+                className="flex-1 rounded-full border border-slate-200 px-5 py-3 text-[15px] outline-none focus:border-indigo-300"
+              />
+              <button
+                type="submit"
+                disabled={submitting || !newTitle.trim()}
+                className="flex shrink-0 items-center gap-1.5 rounded-full bg-indigo-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+              >
+                <Plus size={16} /> Tambah
+              </button>
+            </form>
           </div>
-          <div className="space-y-2.5 p-5">
-            {loading ? (
-              <p className="py-8 text-center text-sm text-slate-400">Memuat...</p>
-            ) : (
-              <>
-                {items.map((item) => renderItem(item, false))}
-                {items.length === 0 && (
-                  <p className="py-6 text-center text-sm text-slate-400">Belum ada item — tambahkan di bawah.</p>
-                )}
-              </>
-            )}
-          </div>
-          <form onSubmit={handleAdd} className="flex items-center gap-2 border-t border-slate-100 px-5 py-4">
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Tulis kerjaan yang mau dilakukan..."
-              className="flex-1 rounded-full border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-indigo-300"
-            />
-            <button
-              type="submit"
-              disabled={submitting || !newTitle.trim()}
-              className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:opacity-50"
-            >
-              <Plus size={15} /> Tambah
-            </button>
-          </form>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+
+          {/* Grid kategori -- tiap kategori yang ada isinya jadi kartu sendiri
+              berwarna, side-by-side (bukan satu list panjang ke bawah), biar
+              cepat kebaca fokusnya hari ini paling banyak ke mana. */}
           {loading ? (
-            <p className="col-span-full py-8 text-center text-sm text-slate-400">Memuat...</p>
-          ) : grouped.length === 0 ? (
-            <p className="col-span-full py-8 text-center text-sm text-slate-400">Belum ada admin yang isi checklist di tanggal ini.</p>
+            <p className="py-10 text-center text-sm text-slate-400">Memuat...</p>
+          ) : byCategory.length === 0 ? (
+            <div className="rounded-[28px] border border-dashed border-slate-200 bg-white py-16 text-center">
+              <p className="text-4xl">🗒️</p>
+              <p className="mt-3 text-sm font-medium text-slate-400">Belum ada kerjaan buat tanggal ini — tambahkan di atas.</p>
+            </div>
           ) : (
-            grouped.map(([name, tasks]) => (
-              <div key={name} className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
-                  <p className="font-semibold text-slate-800">{name}</p>
-                  <span className="text-xs text-slate-400">{tasks.filter((t) => t.done).length}/{tasks.length}</span>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {byCategory.map((cat) => (
+                <div key={cat.key} className={`overflow-hidden rounded-[28px] border ${cat.border} ${cat.bg} shadow-sm`}>
+                  <div className="flex items-center justify-between px-5 py-4">
+                    <p className={`flex items-center gap-2 text-base font-bold ${cat.text}`}>
+                      <span className="text-xl">{cat.emoji}</span> {cat.label}
+                    </p>
+                    <span className={`rounded-full bg-white/70 px-3 py-1 text-xs font-bold ${cat.text}`}>
+                      {cat.items.filter((t) => t.done).length}/{cat.items.length}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 px-3 pb-3">
+                    {cat.items.map((item) => <ItemRow key={item.id} item={item} readonly={false} />)}
+                  </div>
                 </div>
-                <div className="space-y-2 p-4">
-                  {tasks.map((item) => renderItem(item, true))}
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-center gap-2 text-sm text-slate-400">
+            <span>{doneCount}/{items.length} kerjaan selesai hari ini</span>
+          </div>
+        </>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {loading ? (
+            <p className="col-span-full py-10 text-center text-sm text-slate-400">Memuat...</p>
+          ) : byAdmin.length === 0 ? (
+            <p className="col-span-full py-10 text-center text-sm text-slate-400">Belum ada admin yang isi checklist di tanggal ini.</p>
+          ) : (
+            byAdmin.map(([name, tasks]) => (
+              <div key={name} className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                  <p className="text-base font-bold text-slate-800">{name}</p>
+                  <span className="text-xs font-bold text-slate-400">{tasks.filter((t) => t.done).length}/{tasks.length}</span>
+                </div>
+                <div className="space-y-1.5 p-3">
+                  {tasks.map((item) => <ItemRow key={item.id} item={item} readonly={true} />)}
                 </div>
               </div>
             ))

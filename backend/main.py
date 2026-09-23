@@ -4021,11 +4021,13 @@ async def get_my_active_task(current_user: dict = Depends(get_current_user)):
 
 class AdminTaskCreate(BaseModel):
     title: str
+    category: str = "lainnya"
     date: Optional[str] = None  # default hari ini kalau kosong
 
 
 class AdminTaskUpdate(BaseModel):
     title: Optional[str] = None
+    category: Optional[str] = None
     done: Optional[bool] = None
 
 
@@ -4033,6 +4035,7 @@ def format_admin_task(record: dict) -> dict:
     return {
         "id": str(record.get("_id")),
         "title": record.get("title", ""),
+        "category": record.get("category", "lainnya"),
         "date": record.get("date"),
         "done": record.get("done", False),
         "done_at": record.get("done_at"),
@@ -4050,6 +4053,7 @@ async def create_admin_task(data: AdminTaskCreate, current_user: dict = Depends(
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
     doc = {
         "title": data.title.strip(),
+        "category": data.category or "lainnya",
         "date": data.date or jkt_now.strftime("%Y-%m-%d"),
         "done": False,
         "done_at": None,
@@ -4142,6 +4146,7 @@ async def carry_forward_admin_tasks():
                 continue
             await db.admin_tasks.insert_one({
                 "title": t.get("title", ""),
+                "category": t.get("category", "lainnya"),
                 "date": today_str,
                 "done": False,
                 "done_at": None,
