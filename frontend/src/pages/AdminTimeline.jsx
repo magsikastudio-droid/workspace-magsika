@@ -27,11 +27,11 @@ const fmtDateLabel = (dateStr) => {
    cukup kontras biar tiap kartu kategori langsung kebaca dari jauh, bukan
    deretan kartu putih polos yang bikin ngantuk. */
 const CATEGORIES = [
-  { key: "market",    label: "Pengembangan Market", emoji: "🚀", bg: "bg-violet-50",  border: "border-violet-200",  text: "text-violet-700",  dot: "bg-violet-500",  chipActive: "bg-violet-600 text-white" },
-  { key: "client",    label: "Client",              emoji: "🤝", bg: "bg-sky-50",     border: "border-sky-200",     text: "text-sky-700",     dot: "bg-sky-500",     chipActive: "bg-sky-600 text-white" },
-  { key: "tim",       label: "Tim",                 emoji: "👥", bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-500", chipActive: "bg-emerald-600 text-white" },
-  { key: "freelance", label: "Freelance",           emoji: "🧑‍💻", bg: "bg-amber-50",   border: "border-amber-200",   text: "text-amber-700",   dot: "bg-amber-500",   chipActive: "bg-amber-600 text-white" },
-  { key: "lainnya",   label: "Lainnya",             emoji: "📌", bg: "bg-slate-50",   border: "border-slate-200",   text: "text-slate-600",   dot: "bg-slate-400",   chipActive: "bg-slate-700 text-white" },
+  { key: "market",    label: "Pengembangan Market", emoji: "🚀", bg: "bg-violet-50",  text: "text-violet-700",  chipActive: "bg-violet-600 text-white", solid: "bg-violet-600",  ring: "bg-violet-100" },
+  { key: "client",    label: "Client",              emoji: "🤝", bg: "bg-sky-50",     text: "text-sky-700",     chipActive: "bg-sky-600 text-white",    solid: "bg-sky-500",     ring: "bg-sky-100" },
+  { key: "tim",       label: "Tim",                 emoji: "👥", bg: "bg-emerald-50", text: "text-emerald-700", chipActive: "bg-emerald-600 text-white", solid: "bg-emerald-600", ring: "bg-emerald-100" },
+  { key: "freelance", label: "Freelance",           emoji: "🧑‍💻", bg: "bg-amber-50",   text: "text-amber-700",   chipActive: "bg-amber-600 text-white",  solid: "bg-amber-500",   ring: "bg-amber-100" },
+  { key: "lainnya",   label: "Lainnya",             emoji: "📌", bg: "bg-slate-50",   text: "text-slate-600",   chipActive: "bg-slate-700 text-white",  solid: "bg-slate-600",   ring: "bg-slate-100" },
 ];
 const CATEGORY_MAP = Object.fromEntries(CATEGORIES.map((c) => [c.key, c]));
 const catOf = (key) => CATEGORY_MAP[key] || CATEGORY_MAP.lainnya;
@@ -246,18 +246,20 @@ export default function AdminTimeline() {
               <p className="mt-3 text-sm font-medium text-slate-400">Belum ada kerjaan buat tanggal ini — tambahkan di atas.</p>
             </div>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(360px,1fr))] gap-5">
               {byCategory.map((cat) => (
-                <div key={cat.key} className={`overflow-hidden rounded-[28px] border ${cat.border} ${cat.bg} shadow-sm`}>
-                  <div className="flex items-center justify-between px-5 py-4">
-                    <p className={`flex items-center gap-2 text-base font-bold ${cat.text}`}>
+                <div key={cat.key} className={`overflow-hidden rounded-[28px] ${cat.bg} shadow-sm`}>
+                  {/* Header warna solid (bukan cuma tint tipis) biar tiap kategori
+                      langsung punya identitas kuat & kartu gak keliatan pucat/datar. */}
+                  <div className={`flex items-center justify-between px-5 py-4 ${cat.solid}`}>
+                    <p className="flex items-center gap-2 text-base font-bold text-white">
                       <span className="text-xl">{cat.emoji}</span> {cat.label}
                     </p>
-                    <span className={`rounded-full bg-white/70 px-3 py-1 text-xs font-bold ${cat.text}`}>
+                    <span className="rounded-full bg-white/25 px-3 py-1 text-xs font-bold text-white">
                       {cat.items.filter((t) => t.done).length}/{cat.items.length}
                     </span>
                   </div>
-                  <div className="space-y-1.5 px-3 pb-3">
+                  <div className="space-y-1.5 p-3">
                     {cat.items.map((item) => <ItemRow key={item.id} item={item} readonly={false} />)}
                   </div>
                 </div>
