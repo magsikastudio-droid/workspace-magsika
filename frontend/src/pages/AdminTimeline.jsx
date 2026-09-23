@@ -113,28 +113,28 @@ export default function AdminTimeline() {
   const doneCount = items.filter((t) => t.done).length;
 
   const ItemRow = ({ item, readonly }) => (
-    <div className="group flex items-center gap-3.5 rounded-2xl bg-white/70 px-4 py-3.5 transition hover:bg-white">
+    <div className="group flex items-center gap-4 rounded-2xl bg-white/70 px-5 py-4 transition hover:bg-white">
       <button
         onClick={() => !readonly && handleToggle(item)}
         disabled={readonly}
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition ${
           item.done ? "border-emerald-500 bg-emerald-500" : "border-slate-300 hover:border-indigo-400"
         } ${readonly ? "cursor-default" : "cursor-pointer"}`}
       >
-        {item.done && <span className="text-xs font-bold text-white">✓</span>}
+        {item.done && <span className="text-sm font-bold text-white">✓</span>}
       </button>
       <div className="min-w-0 flex-1">
-        <p className={`text-[15px] font-medium leading-snug ${item.done ? "text-slate-400 line-through" : "text-slate-800"}`}>
+        <p className={`font-display text-lg font-extrabold leading-snug ${item.done ? "text-slate-400 line-through" : "text-slate-900"}`}>
           {item.title}
         </p>
         {item.carried_from && (
-          <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-amber-600">
-            <CornerDownRight size={12} /> Lanjutan dari {fmtDateLabel(item.carried_from).toLowerCase()}
+          <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-600">
+            <CornerDownRight size={13} /> Lanjutan dari {fmtDateLabel(item.carried_from).toLowerCase()}
           </p>
         )}
       </div>
       {readonly && (
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-bold ${catOf(item.category).bg} ${catOf(item.category).text}`}>
+        <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${catOf(item.category).bg} ${catOf(item.category).text}`}>
           {catOf(item.category).emoji} {catOf(item.category).label}
         </span>
       )}
@@ -144,7 +144,7 @@ export default function AdminTimeline() {
           className="shrink-0 rounded-full p-1.5 text-slate-300 opacity-0 transition hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
           title="Hapus"
         >
-          <X size={16} />
+          <X size={18} />
         </button>
       )}
     </div>
@@ -251,11 +251,11 @@ export default function AdminTimeline() {
                 <div key={cat.key} className={`overflow-hidden rounded-[28px] ${cat.bg} shadow-sm`}>
                   {/* Header warna solid (bukan cuma tint tipis) biar tiap kategori
                       langsung punya identitas kuat & kartu gak keliatan pucat/datar. */}
-                  <div className={`flex items-center justify-between px-5 py-4 ${cat.solid}`}>
-                    <p className="flex items-center gap-2 text-base font-bold text-white">
-                      <span className="text-xl">{cat.emoji}</span> {cat.label}
+                  <div className={`flex items-center justify-between px-5 py-5 ${cat.solid}`}>
+                    <p className="font-display flex items-center gap-2.5 text-xl font-extrabold text-white">
+                      <span className="text-2xl">{cat.emoji}</span> {cat.label}
                     </p>
-                    <span className="rounded-full bg-white/25 px-3 py-1 text-xs font-bold text-white">
+                    <span className="rounded-full bg-white/25 px-3.5 py-1.5 text-sm font-bold text-white">
                       {cat.items.filter((t) => t.done).length}/{cat.items.length}
                     </span>
                   </div>
@@ -281,7 +281,7 @@ export default function AdminTimeline() {
             byAdmin.map(([name, tasks]) => (
               <div key={name} className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-                  <p className="text-base font-bold text-slate-800">{name}</p>
+                  <p className="font-display text-lg font-extrabold text-slate-800">{name}</p>
                   <span className="text-xs font-bold text-slate-400">{tasks.filter((t) => t.done).length}/{tasks.length}</span>
                 </div>
                 <div className="space-y-1.5 p-3">
