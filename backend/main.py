@@ -1148,6 +1148,7 @@ async def on_startup():
         scheduler.add_job(auto_generate_daily_tasks, CronTrigger(hour=0, minute=0, timezone="Asia/Jakarta"))
         scheduler.add_job(auto_fail_tasks, CronTrigger(hour=23, minute=59, timezone="Asia/Jakarta"))
         scheduler.add_job(carry_forward_tasks, CronTrigger(hour=0, minute=1, timezone="Asia/Jakarta"))
+        scheduler.add_job(carry_forward_admin_tasks, CronTrigger(hour=0, minute=2, timezone="Asia/Jakarta"))
         scheduler.add_job(check_not_started_tasks, IntervalTrigger(minutes=1), id="check_not_started")
         scheduler.add_job(check_not_streaming_tasks, IntervalTrigger(minutes=1), id="check_not_streaming")
         scheduler.add_job(auto_revert_stale_break, IntervalTrigger(minutes=10), id="auto_revert_stale_break")
@@ -4007,6 +4008,152 @@ async def get_my_active_task(current_user: dict = Depends(get_current_user)):
         "time_elapsed": task.get("time_elapsed", 0) or 0,
         "duration_seconds": task.get("duration_seconds"),
     }
+
+
+# ── Admin Timeline ────────────────────────────────────────────────────────
+# Checklist harian PERSONAL buat admin sendiri -- beda total dari To Do
+# produksi (gak ada order/timer/live-stream). Tiap admin isi & centang
+# sendiri; superadmin doang yang bisa intip punya admin lain (buat
+# ngecek tim). Item yang belum kecentang pas hari ganti otomatis dibikin
+# salinannya di hari berikutnya (carry_forward_admin_tasks) biar gak
+# kelupaan, sementara item ASLI di hari kemarin dibiarkan apa adanya
+# (tetap kecatat "belum selesai" di riwayat -- jujur buat laporan manual).
+
+class AdminTaskCreate(BaseModel):
+    title: str
+    date: Optional[str] = None  # default hari ini kalau kosong
+
+
+class AdminTaskUpdate(BaseModel):
+    title: Optional[str] = None
+    done: Optional[bool] = None
+
+
+def format_admin_task(record: dict) -> dict:
+    return {
+        "id": str(record.get("_id")),
+        "title": record.get("title", ""),
+        "date": record.get("date"),
+        "done": record.get("done", False),
+        "done_at": record.get("done_at"),
+        "created_at": record.get("created_at"),
+        "carried_from": record.get("carried_from"),
+        "owner_username": record.get("owner_username"),
+        "owner_full_name": record.get("owner_full_name"),
+    }
+
+
+@app.post("/admin-tasks")
+async def create_admin_task(data: AdminTaskCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    doc = {
+        "title": data.title.strip(),
+        "date": data.date or jkt_now.strftime("%Y-%m-%d"),
+        "done": False,
+        "done_at": None,
+        "created_at": jkt_now.isoformat(),
+        "carried_from": None,
+        "owner_username": current_user["username"],
+        "owner_full_name": current_user.get("full_name", current_user["username"]),
+    }
+    result = await db.admin_tasks.insert_one(doc)
+    return {"task": format_admin_task({**doc, "_id": result.inserted_id})}
+
+
+@app.get("/admin-tasks")
+async def list_admin_tasks(date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    query_date = date or jkt_now.strftime("%Y-%m-%d")
+    records = await db.admin_tasks.find(
+        {"owner_username": current_user["username"], "date": query_date}
+    ).sort("created_at", 1).to_list(200)
+    return {"tasks": [format_admin_task(r) for r in records]}
+
+
+@app.get("/admin-tasks/team")
+async def list_team_admin_tasks(date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Superadmin-only -- lihat checklist SEMUA admin buat satu tanggal,
+    dipakai buat ngecek tim (bukan buat edit punya orang lain)."""
+    if not current_user.get("is_superadmin"):
+        raise HTTPException(status_code=403, detail="Superadmin only")
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    query_date = date or jkt_now.strftime("%Y-%m-%d")
+    records = await db.admin_tasks.find({"date": query_date}).sort([("owner_full_name", 1), ("created_at", 1)]).to_list(500)
+    return {"tasks": [format_admin_task(r) for r in records]}
+
+
+@app.patch("/admin-tasks/{task_id}")
+async def update_admin_task(task_id: str, data: AdminTaskUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    existing = await db.admin_tasks.find_one({"_id": to_object_id(task_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task tidak ditemukan")
+    if existing.get("owner_username") != current_user["username"]:
+        raise HTTPException(status_code=403, detail="Bukan checklist kamu")
+
+    payload = data.dict(exclude_unset=True)
+    if "title" in payload:
+        payload["title"] = (payload["title"] or "").strip()
+    if "done" in payload:
+        payload["done_at"] = datetime.now(timezone.utc).isoformat() if payload["done"] else None
+    if payload:
+        await db.admin_tasks.update_one({"_id": existing["_id"]}, {"$set": payload})
+    updated = await db.admin_tasks.find_one({"_id": existing["_id"]})
+    return {"task": format_admin_task(updated)}
+
+
+@app.delete("/admin-tasks/{task_id}")
+async def delete_admin_task(task_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    existing = await db.admin_tasks.find_one({"_id": to_object_id(task_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task tidak ditemukan")
+    if existing.get("owner_username") != current_user["username"]:
+        raise HTTPException(status_code=403, detail="Bukan checklist kamu")
+    await db.admin_tasks.delete_one({"_id": existing["_id"]})
+    return {"ok": True}
+
+
+async def carry_forward_admin_tasks():
+    """Jam 00:02 WIB -- checklist admin yang belum kecentang kemarin
+    disalin ke hari ini (item ASLI kemarin dibiarkan, tetap 'belum
+    selesai' apa adanya di riwayat). Idempotent: pakai upsert biar aman
+    kalau job ini somehow kejalan dobel."""
+    jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+    today_str = jkt_now.strftime("%Y-%m-%d")
+    yesterday_str = (jkt_now - timedelta(days=1)).strftime("%Y-%m-%d")
+    try:
+        unfinished = await db.admin_tasks.find({"date": yesterday_str, "done": False}).to_list(1000)
+        carried = 0
+        for t in unfinished:
+            existing = await db.admin_tasks.find_one({
+                "owner_username": t.get("owner_username"),
+                "date": today_str,
+                "title": t.get("title"),
+                "carried_from": yesterday_str,
+            })
+            if existing:
+                continue
+            await db.admin_tasks.insert_one({
+                "title": t.get("title", ""),
+                "date": today_str,
+                "done": False,
+                "done_at": None,
+                "created_at": jkt_now.isoformat(),
+                "carried_from": yesterday_str,
+                "owner_username": t.get("owner_username"),
+                "owner_full_name": t.get("owner_full_name"),
+            })
+            carried += 1
+        print(f"[carry_forward_admin_tasks] {carried} checklist item dibawa ke {today_str}")
+    except Exception as e:
+        print(f"[carry_forward_admin_tasks] Error: {e}")
 
 
 @app.post("/announcements")

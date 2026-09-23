@@ -6,7 +6,7 @@ import {
   Settings as SettingsIcon, LogOut, Search, Menu, X,
   Megaphone, CalendarDays, Bell, Zap, Target, BookOpen,
   Send, Loader2, Receipt, Database, ExternalLink, Monitor,
-  LayoutGrid, Wallet, Info,
+  LayoutGrid, Wallet, Info, ListTodo,
 } from "lucide-react";
 import PresenceToggle from "./PresenceToggle";
 import { useAuth } from "../context/AuthContext";
@@ -64,6 +64,7 @@ const NAV_SECTIONS = [
       { to: "https://queue.magsikastudio.com", label: "Public Queue", icon: ExternalLink, roles: ["admin", "pm"], external: true },
       { to: "/board",        label: "Board",        icon: Kanban,          roles: ["admin", "pm", "talent"] },
       { to: "/todo",          label: "To Do",         icon: CheckSquare,  roles: ["admin", "pm", "talent"] },
+      { to: "/admin-timeline", label: "Timeline Admin", icon: ListTodo,   roles: ["admin"] },
       { to: "/daily-report",  label: "Daily Report",  icon: BookOpen,     roles: ["admin", "pm", "talent"] },
       { to: "/performance",   label: "Performance",   icon: TrendingUp,   roles: ["admin", "pm", "talent"] },
       { to: "/live",          label: "Live Monitor",  icon: Monitor,      roles: ["admin", "pm", "talent"] },

@@ -35,6 +35,7 @@ import DailyReport from "./pages/DailyReport";
 import SlipGaji from "./pages/SlipGaji";
 import TimDatabase from "./pages/TimDatabase";
 import LiveMonitor from "./pages/LiveMonitor";
+import AdminTimeline from "./pages/AdminTimeline";
 import DebugOpenMic from "./pages/DebugOpenMic";
 import NotFound from "./pages/NotFound";
 import { useAuth } from "./context/AuthContext";
@@ -112,6 +113,7 @@ function App() {
                               <Route path="/settings" element={<Settings />} />
                               <Route path="/board" element={<Board />} />
                               <Route path="/todo" element={<Todo />} />
+                              <Route path="/admin-timeline" element={<RoleGuard allowedRoles={["admin"]}><AdminTimeline /></RoleGuard>} />
                               <Route path="/performance" element={<Performance />} />
                               <Route path="/performance/team/:artistName" element={<TeamMemberPage />} />
                               <Route path="/daily-report" element={<DailyReport />} />
