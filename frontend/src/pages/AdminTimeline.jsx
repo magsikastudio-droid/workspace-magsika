@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, X, Users, User as UserIcon, CornerDownRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, X, Users, User as UserIcon, CornerDownRight, Send } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { toast } from "sonner";
@@ -45,7 +45,17 @@ export default function AdminTimeline() {
   const [loading, setLoading] = useState(true);
   const [newTitle, setNewTitle] = useState("");
   const [newCategory, setNewCategory] = useState("market");
+  const [newAssignee, setNewAssignee] = useState(user?.username || "");
+  const [otherAdmins, setOtherAdmins] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Buat opsi "kasih ke admin lain" -- daftar admin selain diri sendiri.
+  useEffect(() => {
+    api.get("/users")
+      .then((r) => setOtherAdmins((r.data.users || []).filter((u) => u.role === "admin" && u.username !== user?.username)))
+      .catch(() => {});
+    // eslint-disable-next-line
+  }, []);
 
   const load = () => {
     setLoading(true);
@@ -64,8 +74,14 @@ export default function AdminTimeline() {
     if (!title) return;
     setSubmitting(true);
     try {
-      const res = await api.post("/admin-tasks", { title, category: newCategory, date });
-      setItems((prev) => [...prev, res.data.task]);
+      const res = await api.post("/admin-tasks", { title, category: newCategory, date, assignee_username: newAssignee });
+      // Kalau dikasih ke admin lain, item-nya masuk ke checklist ORANG ITU,
+      // bukan punya kita -- jangan dimasukkan ke list yang lagi ditampilkan.
+      if (newAssignee === user?.username) setItems((prev) => [...prev, res.data.task]);
+      else {
+        const target = otherAdmins.find((a) => a.username === newAssignee);
+        toast.success(`Kerjaan dikirim ke checklist ${target?.full_name || newAssignee}`);
+      }
       setNewTitle("");
     } catch {
       toast.error("Gagal menambah item");
@@ -130,6 +146,11 @@ export default function AdminTimeline() {
         {item.carried_from && (
           <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-600">
             <CornerDownRight size={13} /> Lanjutan dari {fmtDateLabel(item.carried_from).toLowerCase()}
+          </p>
+        )}
+        {item.assigned_by_full_name && (
+          <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-indigo-500">
+            <Send size={12} /> Titipan dari {item.assigned_by_full_name}
           </p>
         )}
       </div>
@@ -218,13 +239,26 @@ export default function AdminTimeline() {
                 </button>
               ))}
             </div>
-            <form onSubmit={handleAdd} className="flex items-center gap-2.5">
+            <form onSubmit={handleAdd} className="flex flex-wrap items-center gap-2.5">
               <input
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="Tulis kerjaan yang mau dilakukan..."
-                className="flex-1 rounded-full border border-slate-200 px-5 py-3 text-[15px] outline-none focus:border-indigo-300"
+                className="min-w-[220px] flex-1 rounded-full border border-slate-200 px-5 py-3 text-[15px] outline-none focus:border-indigo-300"
               />
+              {otherAdmins.length > 0 && (
+                <select
+                  value={newAssignee}
+                  onChange={(e) => setNewAssignee(e.target.value)}
+                  title="Kasih kerjaan ini ke siapa"
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 outline-none focus:border-indigo-300"
+                >
+                  <option value={user?.username}>Buat saya sendiri</option>
+                  {otherAdmins.map((a) => (
+                    <option key={a.username} value={a.username}>Kasih ke {a.full_name}</option>
+                  ))}
+                </select>
+              )}
               <button
                 type="submit"
                 disabled={submitting || !newTitle.trim()}
