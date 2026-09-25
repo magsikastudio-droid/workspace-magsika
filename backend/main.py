@@ -2082,7 +2082,13 @@ async def get_turn_credentials(current_user: dict = Depends(get_current_user)):
 async def list_orders(current_user: dict = Depends(get_current_user)):
     role = current_user.get("role")
     try:
-        records = await db.orders.find().to_list(200)
+        # Dulu di-cap to_list(200) TANPA sort -- begitu jumlah order di DB
+        # lewat 200, order yang paling baru dibuat bisa gak kebawa di batch
+        # 200 pertama itu (urutan natural MongoDB gak dijamin insertion-order),
+        # jadi kelihatan "hilang sendiri" pas frontend refetch abis create
+        # (lihat broadcast "orders_updated"). Sort _id descending + cap jauh
+        # lebih longgar biar order terbaru selalu ke-include.
+        records = await db.orders.find().sort("_id", -1).to_list(5000)
         return {"orders": [redact_order_for_role(format_order(record), role) for record in records]}
     except Exception:
         return {"orders": [redact_order_for_role(o, role) for o in mock_orders]}
