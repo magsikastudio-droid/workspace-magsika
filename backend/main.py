@@ -4029,6 +4029,7 @@ class AdminTaskCreate(BaseModel):
     title: str
     category: str = "lainnya"
     date: Optional[str] = None  # default hari ini kalau kosong
+    assignee_username: Optional[str] = None  # kosong = buat diri sendiri
 
 
 class AdminTaskUpdate(BaseModel):
@@ -4049,6 +4050,8 @@ def format_admin_task(record: dict) -> dict:
         "carried_from": record.get("carried_from"),
         "owner_username": record.get("owner_username"),
         "owner_full_name": record.get("owner_full_name"),
+        "assigned_by_username": record.get("assigned_by_username"),
+        "assigned_by_full_name": record.get("assigned_by_full_name"),
     }
 
 
@@ -4057,6 +4060,23 @@ async def create_admin_task(data: AdminTaskCreate, current_user: dict = Depends(
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden")
     jkt_now = datetime.now(timezone.utc) + timedelta(hours=7)
+
+    # Bisa titip tugas ke admin lain -- otomatis nongol di checklist HARIAN
+    # orangnya, bukan punya si pemberi tugas. Target-nya wajib akun admin
+    # juga (bukan pm/talent), sama-sama pemilik "Timeline Admin".
+    owner_username = current_user["username"]
+    owner_full_name = current_user.get("full_name", current_user["username"])
+    assigned_by_username = None
+    assigned_by_full_name = None
+    if data.assignee_username and data.assignee_username != current_user["username"]:
+        target = await db.users.find_one({"username": data.assignee_username})
+        if not target or target.get("role") != "admin":
+            raise HTTPException(status_code=400, detail="Admin tujuan tidak ditemukan")
+        owner_username = target["username"]
+        owner_full_name = target.get("full_name", target["username"])
+        assigned_by_username = current_user["username"]
+        assigned_by_full_name = current_user.get("full_name", current_user["username"])
+
     doc = {
         "title": data.title.strip(),
         "category": data.category or "lainnya",
@@ -4065,8 +4085,10 @@ async def create_admin_task(data: AdminTaskCreate, current_user: dict = Depends(
         "done_at": None,
         "created_at": jkt_now.isoformat(),
         "carried_from": None,
-        "owner_username": current_user["username"],
-        "owner_full_name": current_user.get("full_name", current_user["username"]),
+        "owner_username": owner_username,
+        "owner_full_name": owner_full_name,
+        "assigned_by_username": assigned_by_username,
+        "assigned_by_full_name": assigned_by_full_name,
     }
     result = await db.admin_tasks.insert_one(doc)
     return {"task": format_admin_task({**doc, "_id": result.inserted_id})}
@@ -4160,6 +4182,8 @@ async def carry_forward_admin_tasks():
                 "carried_from": yesterday_str,
                 "owner_username": t.get("owner_username"),
                 "owner_full_name": t.get("owner_full_name"),
+                "assigned_by_username": t.get("assigned_by_username"),
+                "assigned_by_full_name": t.get("assigned_by_full_name"),
             })
             carried += 1
         print(f"[carry_forward_admin_tasks] {carried} checklist item dibawa ke {today_str}")
