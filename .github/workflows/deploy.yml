@@ -356,18 +356,18 @@ jobs:
           echo "=== Order count + 5 most recent (python/motor, same venv as app) ==="
           cd /root/admin-dashboard/backend
           .venv/bin/python3 -c "
-import asyncio, os
-from motor.motor_asyncio import AsyncIOMotorClient
-from dotenv import load_dotenv
-load_dotenv()
-async def main():
-    client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017'))
-    db = client[os.getenv('DB_NAME', 'admin_dashboard')]
-    print('total orders:', await db.orders.count_documents({}))
-    async for o in db.orders.find().sort('_id', -1).limit(5):
-        print({'id': str(o.get('_id')), 'project': o.get('project'), 'order_date': o.get('order_date'), 'created_at': o.get('created_at'), 'is_draft': o.get('is_draft')})
-asyncio.run(main())
-"
+          import asyncio, os
+          from motor.motor_asyncio import AsyncIOMotorClient
+          from dotenv import load_dotenv
+          load_dotenv()
+          async def main():
+              client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017'))
+              db = client[os.getenv('DB_NAME', 'admin_dashboard')]
+              print('total orders:', await db.orders.count_documents({}))
+              async for o in db.orders.find().sort('_id', -1).limit(5):
+                  print({'id': str(o.get('_id')), 'project': o.get('project'), 'order_date': o.get('order_date'), 'created_at': o.get('created_at'), 'is_draft': o.get('is_draft')})
+          asyncio.run(main())
+          "
 
           echo ""
           echo "=== Recent backend logs (last 60 lines) ==="
