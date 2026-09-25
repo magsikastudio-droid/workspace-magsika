@@ -353,11 +353,11 @@ jobs:
           grep -n "sort(\"_id\", -1)" /root/admin-dashboard/backend/main.py || echo "FIX NOT FOUND IN DEPLOYED FILE"
 
           echo ""
-          echo "=== Order count + 5 most recent (mongosh) ==="
-          mongosh admin_dashboard --quiet --eval '
+          echo "=== Order count + 5 most recent (mongo shell) ==="
+          mongo admin_dashboard --quiet --eval '
             print("total orders:", db.orders.countDocuments({}));
-            db.orders.find().sort({_id:-1}).limit(5).forEach(o => printjson({id: o._id, project: o.project, order_date: o.order_date, created_at: o.created_at, is_draft: o.is_draft}));
-          ' || echo "mongosh failed"
+            db.orders.find().sort({_id:-1}).limit(5).forEach(function(o) { printjson({id: o._id, project: o.project, order_date: o.order_date, created_at: o.created_at, is_draft: o.is_draft}); });
+          ' || echo "mongo shell failed too"
 
           echo ""
           echo "=== Recent backend logs (last 60 lines) ==="
