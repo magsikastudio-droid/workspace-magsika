@@ -562,22 +562,40 @@ class ConnectionManager:
     def __init__(self):
         self.active: list[WebSocket] = []
         self.usernames: Dict[WebSocket, str] = {}  # ws -> username, buat cek "orang ini online/connect gak"
+        self.client_types: Dict[WebSocket, str] = {}  # ws -> "desktop" | "web"
 
-    async def connect(self, ws: WebSocket, username: str = ""):
+    async def connect(self, ws: WebSocket, username: str = "", client_type: str = "web"):
         await ws.accept()
         self.active.append(ws)
         if username:
             self.usernames[ws] = username
+            self.client_types[ws] = client_type
 
     def disconnect(self, ws: WebSocket):
         if ws in self.active:
             self.active.remove(ws)
         self.usernames.pop(ws, None)
+        self.client_types.pop(ws, None)
 
     def is_username_connected(self, username: str) -> bool:
-        """Dipakai buat cek apakah desktop app / tab web orang ini beneran
-        terhubung ke server sekarang — biar 'Ingatkan' tidak kirim buta."""
+        """ADA koneksi WS aktif buat username ini -- bisa dari tab web ATAU
+        desktop app, gak dibedain. Talent wajib punya tab To Do kebuka buat
+        bisa klik apa-apa sama sekali, jadi ini SELALU true begitu mereka
+        lagi make website -- gak berguna buat ngecek 'app desktop-nya
+        beneran nyala apa nggak'. Buat itu pakai is_desktop_connected."""
         return bool(username) and username in self.usernames.values()
+
+    def is_desktop_connected(self, username: str) -> bool:
+        """Khusus ngecek koneksi dari Magsika Reminder (desktop app) --
+        dibedain dari tab browser lewat query param ?client=desktop yang
+        dikirim main.js pas connectWS(). Ini yang beneran dipakai buat
+        gerbang 'wajib login desktop dulu', bukan is_username_connected."""
+        if not username:
+            return False
+        return any(
+            u == username and self.client_types.get(ws) == "desktop"
+            for ws, u in self.usernames.items()
+        )
 
     async def broadcast(self, message: dict):
         import json
@@ -758,7 +776,7 @@ async def check_not_started_tasks():
         # (yang sekarang cuma kejadian abis dia login manual hari itu, lihat
         # desktop-app/main.js). Belum konek sama sekali → jangan hitung idle
         # dulu, tunggu dia login duluan baru mulai hitung dari situ.
-        if user_doc and not manager.is_username_connected(user_doc.get("username", "")):
+        if user_doc and not manager.is_desktop_connected(user_doc.get("username", "")):
             continue
 
         still_idle.add(assignee)
@@ -1180,7 +1198,7 @@ async def on_shutdown():
 
 
 @app.websocket("/ws")
-async def ws_endpoint(websocket: WebSocket, token: str = Query(None)):
+async def ws_endpoint(websocket: WebSocket, token: str = Query(None), client: str = Query("web")):
     if not token:
         await websocket.close(code=4001)
         return
@@ -1192,7 +1210,11 @@ async def ws_endpoint(websocket: WebSocket, token: str = Query(None)):
     except Exception:
         await websocket.close(code=4001)
         return
-    await manager.connect(websocket, payload.get("sub", ""))
+    # client=desktop dikirim main.js (desktop app) -- dipakai buat bedain
+    # "beneran Magsika Reminder nyala" dari sekadar tab web kebuka, lihat
+    # ConnectionManager.is_desktop_connected.
+    client_type = "desktop" if client == "desktop" else "web"
+    await manager.connect(websocket, payload.get("sub", ""), client_type=client_type)
     try:
         while True:
             await websocket.receive_text()
@@ -1942,7 +1964,7 @@ async def get_team_presence(current_user: dict = Depends(get_current_user)):
                 "full_name": u.get("full_name", u.get("username", "")),
                 "work_status": u.get("work_status", "online"),
                 "work_status_since": u.get("work_status_since"),
-                "desktop_connected": manager.is_username_connected(u.get("username", "")),
+                "desktop_connected": manager.is_desktop_connected(u.get("username", "")),
             }
             for u in users
         ]
@@ -2670,7 +2692,7 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
     # nyala dulu (login = connect WS, lihat main.js). Admin/PM dikecualikan
     # karena kadang perlu start/pause manual buat orang lain.
     if payload.get("timer_started") and current_user.get("role") not in ("admin", "pm"):
-        if not manager.is_username_connected(current_user["username"]):
+        if not manager.is_desktop_connected(current_user["username"]):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reminder_app_offline")
 
     # Assignee-nya ganti (mis. PM re-assign task ke orang lain) -> resolve
@@ -2930,7 +2952,7 @@ async def remind_task(task_id: str, current_user: dict = Depends(get_current_use
     # Reminder ini cuma sampai kalau desktop app orangnya beneran nyala &
     # terhubung — kasih tau admin secara jujur kalau ternyata tidak ada
     # koneksi aktif sama sekali, biar tidak salah kira "sudah pasti sampai".
-    connected = manager.is_username_connected(user_doc.get("username", ""))
+    connected = manager.is_desktop_connected(user_doc.get("username", ""))
     warning = None if connected else (
         f"⚠️ Reminder dikirim, tapi {display_name} sepertinya TIDAK terhubung "
         f"ke server sama sekali sekarang (desktop app kemungkinan tidak jalan/login). "
