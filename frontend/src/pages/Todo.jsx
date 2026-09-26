@@ -528,7 +528,15 @@ export default function Todo() {
         /* Sudah streaming, langsung start timer saja */
         const payload = { timer_started: new Date().toISOString() };
         if (task.status === "pending") payload.status = "in progress";
-        await updateTask(task.id, payload);
+        try {
+          await updateTask(task.id, payload);
+        } catch (err) {
+          if (err?.response?.data?.detail === "reminder_app_offline") {
+            toast.error("⚠️ Buka aplikasi Magsika Reminder dulu di laptop kamu sebelum mulai kerja.", { duration: 6000 });
+          } else {
+            toast.error("Gagal mulai timer, coba lagi.");
+          }
+        }
         return;
       }
 
@@ -551,7 +559,20 @@ export default function Todo() {
 
       const payload = { timer_started: new Date().toISOString() };
       if (task.status === "pending") payload.status = "in progress";
-      await updateTask(task.id, payload);
+      try {
+        await updateTask(task.id, payload);
+      } catch (err) {
+        // PATCH ditolak (mis. Magsika Reminder belum kebuka) -- matiin lagi
+        // capture layar yang sudah kelanjur diminta, biar gak ada indikator
+        // "sharing your screen" nyangkut walau timer-nya gagal mulai.
+        capturedMedia.getTracks().forEach((t) => t.stop());
+        if (err?.response?.data?.detail === "reminder_app_offline") {
+          toast.error("⚠️ Buka aplikasi Magsika Reminder dulu di laptop kamu sebelum mulai kerja.", { duration: 6000 });
+        } else {
+          toast.error("Gagal mulai timer, coba lagi.");
+        }
+        return;
+      }
       connectStreamWithMedia(capturedMedia, task.title, task.order_id);
     }
   }, [updateTask, streaming, connectStreamWithMedia, sendBRB]);

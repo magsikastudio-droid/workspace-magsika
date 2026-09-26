@@ -2664,6 +2664,15 @@ async def update_task(task_id: str, task: TaskUpdate, current_user: dict = Depen
     if not payload:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided")
 
+    # Talent kadang sengaja gak buka Magsika Reminder (desktop app) biar gak
+    # kena reminder/pelacakan "belum mulai kerja" -- kalau gitu, jangan biarin
+    # mereka mulai/lanjut timer sama sekali dari web, wajib desktop app-nya
+    # nyala dulu (login = connect WS, lihat main.js). Admin/PM dikecualikan
+    # karena kadang perlu start/pause manual buat orang lain.
+    if payload.get("timer_started") and current_user.get("role") not in ("admin", "pm"):
+        if not manager.is_username_connected(current_user["username"]):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reminder_app_offline")
+
     # Assignee-nya ganti (mis. PM re-assign task ke orang lain) -> resolve
     # ulang kode akunnya juga, biar assignee_username gak nyangkut ke akun
     # LAMA -- sama kayak create_task, lihat _resolve_task_assignee_user.
