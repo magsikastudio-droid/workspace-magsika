@@ -346,7 +346,10 @@ function connectWS() {
   if (!session) return;
   clearTimeout(wsReconnectTimer);
   try {
-    ws = new WebSocket(`${WS_URL}?token=${session.token}`);
+    // client=desktop -- backend pakai ini buat bedain "Magsika Reminder
+    // beneran nyala" dari sekadar tab web kebuka (keduanya connect ke /ws
+    // yang sama), dipakai buat gerbang reminder & wajib-login-sebelum-mulai.
+    ws = new WebSocket(`${WS_URL}?token=${session.token}&client=desktop`);
     ws.on("open", () => syncActiveTask()); // jaring pengaman: sinkron begitu (re)connect
     ws.on("message", (data) => {
       try { handleWSMessage(JSON.parse(data.toString())); } catch {}
