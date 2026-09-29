@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   CheckCircle2, ClipboardList, GripVertical, Kanban, Loader2, Pause, Pencil, Play,
   Plus, Search, Send, X, Zap, Clock, CheckCheck, AlarmClock, Target, Bell, Monitor,
-  Copy, Check, ClipboardPaste, Trash2, Link2, Unlink,
+  Copy, Check, ClipboardPaste, Trash2, Link2, Unlink, RefreshCw,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTasks } from "../context/TasksContext";
@@ -320,7 +320,7 @@ const getElapsed = (task, now) => {
 export default function Todo() {
   const { user } = useAuth();
   const { tasks, initialLoading, fetchTasks, createTask, updateTask, deleteTask } = useTasks();
-  const { orders, updateOrder, deleteOrder } = useOrders();
+  const { orders, fetchOrders, updateOrder, deleteOrder } = useOrders();
   const now = useNow();
   const ordersOnDay = (date) => orders.filter((o) => (o.order_date || o.created_at?.slice(0, 10)) === date).length;
 
@@ -372,6 +372,7 @@ export default function Todo() {
 
   const [date, setDate] = useState(todayStr());
   const [viewMode, setViewMode] = useState("list");
+  const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editTask, setEditTask] = useState(null);
@@ -474,6 +475,22 @@ export default function Todo() {
   }), [visibleTasks]);
 
   /* ── auto generate ─────── */
+  /* ── refresh manual — kadang WS broadcast telat/kelewat (koneksi sempat
+     putus dll), jadi tampilan gak update sendiri walau datanya di server
+     udah berubah. Tombol ini cuma re-fetch tasks+orders buat tanggal yang
+     lagi dibuka, tanpa reload seluruh halaman. ── */
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([fetchTasks(date), fetchOrders()]);
+      toast.success("Tampilan diperbarui");
+    } catch {
+      toast.error("Gagal refresh, coba lagi");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleAutoGenerate = async () => {
     setShowGenerateConfirm(false);
     setGenerating(true);
@@ -783,6 +800,14 @@ export default function Todo() {
             <p className="mt-0.5 text-[13px] text-slate-500">{fmtDateLabel(date)}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              title="Refresh tampilan To Do"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition"
+            >
+              <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refresh
+            </button>
             {isAdminOrPM && (
               <button onClick={() => setShowGenerateConfirm(true)} disabled={generating} className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-60 transition">
                 <Zap size={14} /> {generating ? "Generating..." : "Auto Generate"}
