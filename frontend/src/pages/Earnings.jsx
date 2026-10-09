@@ -308,6 +308,16 @@ export default function Earnings() {
     [entries]
   );
 
+  const handleDeleteLegacy = useCallback(async (accountKey) => {
+    try {
+      await api.delete("/earnings/weekly", { params: { year: viewYear, month: viewMonth, account: accountKey } });
+      toast.success("Data lama dibuang");
+      loadData(viewYear, viewMonth);
+    } catch {
+      toast.error("Gagal membuang data lama");
+    }
+  }, [viewYear, viewMonth, loadData]);
+
   const sumAccounts = (keys) => {
     let sum = 0;
     keys.forEach((key) => {
@@ -318,9 +328,14 @@ export default function Earnings() {
     });
     return sum;
   };
+  // Sengaja TIDAK ikutin legacyAccounts ke total resmi -- begitu admin
+  // mindahin angkanya manual ke market yang benar, data lama itu jadi
+  // DUPLIKAT dari yang baru diketik (bukan data tambahan beneran), ikut
+  // jumlahin bakal nge-dobelin total. Total resmi cuma dari market yang
+  // dikenal; data lama cuma ditampilin di panel referensi sampai dibuang.
   const mainGrandTotal = useMemo(
-    () => sumAccounts([...MAIN_ACCOUNTS.map((a) => a.key), ...legacyAccounts]),
-    [entries, legacyAccounts]
+    () => sumAccounts(MAIN_ACCOUNTS.map((a) => a.key)),
+    [entries]
   );
   const jogloGrandTotal = useMemo(() => sumAccounts([JOGLO_ACCOUNT.key]), [entries]);
 
@@ -376,34 +391,42 @@ export default function Earnings() {
               <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-5 shadow-sm">
                 <p className="text-sm font-bold text-amber-800">⚠️ Data lama belum di-assign ke market</p>
                 <p className="mt-1 text-xs text-amber-700">
-                  Bulan ini masih ada total mingguan yang belum jelas masuk market mana (sisa dari penggabungan data yang salah kemarin).
-                  Angka di bawah apa adanya dari database — tinggal masukkan manual ke kartu market yang benar di bawah, lalu baris ini otomatis hilang.
+                  Sisa dari penggabungan data yang salah kemarin — angka di bawah ini <strong>TIDAK ikut dihitung</strong> di Total Mingguan/Grand Total manapun, murni referensi.
+                  Kalau sudah kamu masukkan manual ke kartu market yang benar di bawah, klik "Sudah dipindah, buang" biar gak nyangkut lagi.
                 </p>
-                <div className="mt-3 space-y-2">
+                <div className="mt-3 space-y-3">
                   {legacyAccounts.map((accKey) => (
-                    <div key={accKey} className="overflow-x-auto rounded-2xl bg-white/70 p-3">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr>
-                            <th className="px-2 py-1 text-left font-bold text-amber-700">Minggu</th>
-                            {PLATFORMS.map((p) => (
-                              <th key={p} className="px-2 py-1 text-right font-bold text-amber-700">{PLATFORM_LABELS[p]}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {WEEKS.filter((w) => entries[accKey]?.[w] && Object.values(entries[accKey][w]).some((v) => v > 0)).map((w) => (
-                            <tr key={w}>
-                              <td className="px-2 py-1 font-semibold text-slate-700">MG {w}</td>
+                    <div key={accKey} className="rounded-2xl bg-white/70 p-3">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr>
+                              <th className="px-2 py-1 text-left font-bold text-amber-700">Minggu</th>
                               {PLATFORMS.map((p) => (
-                                <td key={p} className="px-2 py-1 text-right font-mono text-slate-700">
-                                  {entries[accKey][w][p] > 0 ? entries[accKey][w][p] : <span className="text-slate-300">—</span>}
-                                </td>
+                                <th key={p} className="px-2 py-1 text-right font-bold text-amber-700">{PLATFORM_LABELS[p]}</th>
                               ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {WEEKS.filter((w) => entries[accKey]?.[w] && Object.values(entries[accKey][w]).some((v) => v > 0)).map((w) => (
+                              <tr key={w}>
+                                <td className="px-2 py-1 font-semibold text-slate-700">MG {w}</td>
+                                {PLATFORMS.map((p) => (
+                                  <td key={p} className="px-2 py-1 text-right font-mono text-slate-700">
+                                    {entries[accKey][w][p] > 0 ? entries[accKey][w][p] : <span className="text-slate-300">—</span>}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteLegacy(accKey)}
+                        className="mt-2 rounded-full bg-amber-100 px-3 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-amber-200"
+                      >
+                        🗑️ Sudah dipindah, buang
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -423,17 +446,12 @@ export default function Earnings() {
               ))}
             </div>
 
-            <TotalMingguanTable
-              sources={[
-                ...MAIN_ACCOUNTS.map((a) => entries[a.key] || {}),
-                ...legacyAccounts.map((k) => entries[k] || {}),
-              ]}
-            />
+            <TotalMingguanTable sources={MAIN_ACCOUNTS.map((a) => entries[a.key] || {})} />
 
             <div className="rounded-[28px] border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
               <p className="text-sm font-medium text-slate-300">Grand Total {MONTHS_ID[viewMonth - 1]} {viewYear}</p>
               <p className="mt-2 font-mono text-4xl font-bold">${mainGrandTotal.toFixed(2)}</p>
-              <p className="mt-1 text-xs text-slate-400">Magsika + Eirene + Lolicharm &amp; Komunitas{legacyAccounts.length > 0 ? " (termasuk data lama yang belum di-assign)" : ""}</p>
+              <p className="mt-1 text-xs text-slate-400">Magsika + Eirene + Lolicharm &amp; Komunitas</p>
             </div>
 
             {/* Joglo Optimasi -- manajemennya beda sendiri, sengaja dipisah
