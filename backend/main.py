@@ -1158,6 +1158,16 @@ async def on_startup():
     except Exception as _e:
         print(f"[Migration] Backfill assignee_username error: {_e}", flush=True)
 
+    # Earnings dulu dipecah per akun (Magsika/Eirene/Lolicharm) -- tapi
+    # laporan mingguan beneran cuma satu angka gabungan per platform (mis.
+    # Fiverr dari dua akun digabung), jadi UI-nya disederhanain jadi satu
+    # tabel. Gabungkan data lama yang masih kepecah per akun ke satu
+    # account "all" (idempotent -- cuma jalan kalau masih ada entry lama).
+    try:
+        await _consolidate_earnings_accounts()
+    except Exception as _e:
+        print(f"[Migration] Earnings consolidation error: {_e}", flush=True)
+
     await _load_work_hours_cache()
     await _load_reminder_interval_cache()
     await _setup_telegram_webhook()
@@ -5231,6 +5241,71 @@ async def seed_team(current_user: dict = Depends(get_current_user)):
 
 
 # ─── Earnings Weekly Tracking ─────────────────────────────────────────────────
+# Dulu input per-akun (magsika/eirene/lolicharm) x platform x minggu -- tapi
+# laporan sumbernya cuma satu angka gabungan per platform per minggu (lihat
+# _consolidate_earnings_accounts di bawah buat migrasi data lama). Sekarang
+# semua entry/target disimpan di bawah account="all" satu-satunya.
+EARNINGS_ACCOUNT = "all"
+_EARNINGS_PLATFORM_FIELDS = ["fiverr", "etsy", "upwork", "vgen", "komunitas", "lain_lain"]
+
+
+async def _consolidate_earnings_accounts():
+    """Sekali jalan pas startup -- gabungkan entry/target lama yang masih
+    kepecah per akun jadi satu account EARNINGS_ACCOUNT, per (year, month,
+    week) buat weekly entries dan per (year, month) buat target. Idempotent:
+    begitu semua entry sudah di bawah EARNINGS_ACCOUNT, gak ada lagi yang
+    "account != all" buat digabung, jadi aman dijalanin tiap restart."""
+    try:
+        weekly_docs = await db.earnings_weekly.find({"account": {"$ne": EARNINGS_ACCOUNT}}).to_list(5000)
+    except Exception:
+        weekly_docs = []
+    if weekly_docs:
+        groups: Dict[tuple, list] = {}
+        for d in weekly_docs:
+            key = (d.get("year"), d.get("month"), d.get("week"))
+            groups.setdefault(key, []).append(d)
+        for (year, month, week), items in groups.items():
+            merged = {p: 0 for p in _EARNINGS_PLATFORM_FIELDS}
+            for d in items:
+                for p in _EARNINGS_PLATFORM_FIELDS:
+                    merged[p] += d.get(p, 0) or 0
+            existing = await db.earnings_weekly.find_one({"year": year, "month": month, "week": week, "account": EARNINGS_ACCOUNT})
+            if existing:
+                for p in _EARNINGS_PLATFORM_FIELDS:
+                    merged[p] += existing.get(p, 0) or 0
+            await db.earnings_weekly.update_one(
+                {"year": year, "month": month, "week": week, "account": EARNINGS_ACCOUNT},
+                {"$set": {
+                    "year": year, "month": month, "week": week, "account": EARNINGS_ACCOUNT,
+                    **merged, "updated_at": datetime.now(timezone.utc).isoformat(),
+                }},
+                upsert=True,
+            )
+        await db.earnings_weekly.delete_many({"account": {"$ne": EARNINGS_ACCOUNT}})
+        print(f"[Migration] Earnings weekly: {len(weekly_docs)} entry lama digabung ke '{EARNINGS_ACCOUNT}'", flush=True)
+
+    try:
+        target_docs = await db.earnings_targets.find({"account": {"$ne": EARNINGS_ACCOUNT}}).to_list(500)
+    except Exception:
+        target_docs = []
+    if target_docs:
+        groups_t: Dict[tuple, list] = {}
+        for d in target_docs:
+            key = (d.get("year"), d.get("month"))
+            groups_t.setdefault(key, []).append(d)
+        for (year, month), items in groups_t.items():
+            total_target = sum(d.get("target", 0) or 0 for d in items)
+            existing = await db.earnings_targets.find_one({"year": year, "month": month, "account": EARNINGS_ACCOUNT})
+            if existing:
+                total_target += existing.get("target", 0) or 0
+            await db.earnings_targets.update_one(
+                {"year": year, "month": month, "account": EARNINGS_ACCOUNT},
+                {"$set": {"year": year, "month": month, "account": EARNINGS_ACCOUNT, "target": total_target}},
+                upsert=True,
+            )
+        await db.earnings_targets.delete_many({"account": {"$ne": EARNINGS_ACCOUNT}})
+        print(f"[Migration] Earnings targets: {len(target_docs)} entry lama digabung ke '{EARNINGS_ACCOUNT}'", flush=True)
+
 
 class EarningsWeeklyEntry(BaseModel):
     year: int
