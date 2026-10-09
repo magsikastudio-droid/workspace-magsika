@@ -137,6 +137,81 @@ function AccountSection({ account, entries, target, onCellChange, onTargetChange
   );
 }
 
+/* Rekap OTOMATIS (bukan input manual) -- jumlahin tabel-tabel sumber yang
+   dikasih per minggu per platform. Ini "akumulasi mingguan" yang beneran
+   dimaksud: admin tetep isi tiap market terpisah di atas, baris ini yang
+   nge-total-in buat dibaca pas laporan (gak usah njumlahin manual sendiri). */
+function TotalMingguanTable({ label, sources }) {
+  const totals = useMemo(() => {
+    const byWeekPlatform = {};
+    const byWeek = {};
+    const byPlatform = {};
+    let grand = 0;
+    WEEKS.forEach((w) => {
+      byWeekPlatform[w] = {};
+      let rowSum = 0;
+      PLATFORMS.forEach((p) => {
+        let v = 0;
+        sources.forEach((entries) => { v += Number(entries[w]?.[p] || 0); });
+        byWeekPlatform[w][p] = v;
+        rowSum += v;
+        byPlatform[p] = (byPlatform[p] || 0) + v;
+        grand += v;
+      });
+      byWeek[w] = rowSum;
+    });
+    return { byWeekPlatform, byWeek, byPlatform, grand };
+  }, [sources]);
+
+  return (
+    <div className="overflow-hidden rounded-[28px] border border-indigo-100 bg-indigo-50/40 shadow-sm">
+      <div className="border-b border-indigo-100 px-6 py-4">
+        <p className="font-semibold text-indigo-900">Total Mingguan{label ? ` — ${label}` : ""}</p>
+        <p className="text-xs text-indigo-400">Otomatis dijumlah dari tabel-tabel di atas, bukan input manual.</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-indigo-100">
+              <th className="px-6 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-indigo-400 w-16">Minggu</th>
+              {PLATFORMS.map((p) => (
+                <th key={p} className="px-2 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-indigo-400">{PLATFORM_LABELS[p]}</th>
+              ))}
+              <th className="px-6 py-2.5 text-right text-[11px] font-bold uppercase tracking-wide text-indigo-700">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {WEEKS.map((w) => (
+              <tr key={w} className="border-b border-indigo-50">
+                <td className="px-6 py-1.5">
+                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-700">MG {w}</span>
+                </td>
+                {PLATFORMS.map((p) => (
+                  <td key={p} className="px-2 py-1.5 text-right font-mono text-xs text-slate-700">
+                    {totals.byWeekPlatform[w][p] > 0 ? `$${totals.byWeekPlatform[w][p].toFixed(2)}` : <span className="text-slate-300">—</span>}
+                  </td>
+                ))}
+                <td className="px-6 py-1.5 text-right font-mono text-xs font-bold text-indigo-700">
+                  {totals.byWeek[w] > 0 ? `$${totals.byWeek[w].toFixed(2)}` : <span className="text-slate-300">—</span>}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-indigo-200 bg-indigo-50">
+              <td className="px-6 py-2 text-[10.5px] font-bold uppercase tracking-wide text-indigo-500">Total</td>
+              {PLATFORMS.map((p) => (
+                <td key={p} className="px-2 py-2 text-right font-mono text-xs font-semibold text-indigo-700">
+                  {(totals.byPlatform[p] || 0) > 0 ? `$${(totals.byPlatform[p] || 0).toFixed(2)}` : <span className="text-slate-300">—</span>}
+                </td>
+              ))}
+              <td className="px-6 py-2 text-right font-mono text-sm font-bold text-indigo-700">${totals.grand.toFixed(2)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function Earnings() {
   const { orders } = useOrders();
   const { formatMoney } = useCurrency();
@@ -233,16 +308,21 @@ export default function Earnings() {
     [entries]
   );
 
-  const grandTotal = useMemo(() => {
+  const sumAccounts = (keys) => {
     let sum = 0;
-    Object.keys(entries).forEach((key) => {
+    keys.forEach((key) => {
       WEEKS.forEach((w) => {
         const row = entries[key]?.[w] || {};
         PLATFORMS.forEach((p) => { sum += Number(row[p] || 0); });
       });
     });
     return sum;
-  }, [entries]);
+  };
+  const mainGrandTotal = useMemo(
+    () => sumAccounts([...MAIN_ACCOUNTS.map((a) => a.key), ...legacyAccounts]),
+    [entries, legacyAccounts]
+  );
+  const jogloGrandTotal = useMemo(() => sumAccounts([JOGLO_ACCOUNT.key]), [entries]);
 
   /* ── Orders-based monthly summary ── */
   const selectedMonthKey = `${viewYear}-${String(viewMonth).padStart(2, "0")}`;
@@ -330,22 +410,6 @@ export default function Earnings() {
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-3">
-              {MAIN_ACCOUNTS.map(({ key, label }) => {
-                let acctTotal = 0;
-                WEEKS.forEach((w) => {
-                  const row = entries[key]?.[w] || {};
-                  PLATFORMS.forEach((p) => { acctTotal += Number(row[p] || 0); });
-                });
-                return (
-                  <div key={key} className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-                    <p className="mt-1 font-mono text-xl font-bold text-slate-900">${acctTotal.toFixed(2)}</p>
-                  </div>
-                );
-              })}
-            </div>
-
             <div className="space-y-4">
               {MAIN_ACCOUNTS.map((account) => (
                 <AccountSection
@@ -359,9 +423,22 @@ export default function Earnings() {
               ))}
             </div>
 
+            <TotalMingguanTable
+              sources={[
+                ...MAIN_ACCOUNTS.map((a) => entries[a.key] || {}),
+                ...legacyAccounts.map((k) => entries[k] || {}),
+              ]}
+            />
+
+            <div className="rounded-[28px] border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
+              <p className="text-sm font-medium text-slate-300">Grand Total {MONTHS_ID[viewMonth - 1]} {viewYear}</p>
+              <p className="mt-2 font-mono text-4xl font-bold">${mainGrandTotal.toFixed(2)}</p>
+              <p className="mt-1 text-xs text-slate-400">Magsika + Eirene + Lolicharm &amp; Komunitas{legacyAccounts.length > 0 ? " (termasuk data lama yang belum di-assign)" : ""}</p>
+            </div>
+
             {/* Joglo Optimasi -- manajemennya beda sendiri, sengaja dipisah
-                section-nya (pembatas + label sendiri), bukan nyampur di grid
-                3 market di atas. */}
+                section-nya (pembatas + label sendiri + total sendiri),
+                bukan nyampur sama 3 market & Grand Total di atas. */}
             <div className="flex items-center gap-3 pt-2">
               <div className="h-px flex-1 bg-slate-200" />
               <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Manajemen Terpisah</p>
@@ -374,11 +451,10 @@ export default function Earnings() {
               onCellChange={(w, p, v) => handleCellChange(JOGLO_ACCOUNT.key, w, p, v)}
               onTargetChange={(v, save) => handleTargetChange(JOGLO_ACCOUNT.key, v, save)}
             />
-
+            <TotalMingguanTable label={JOGLO_ACCOUNT.label} sources={[entries[JOGLO_ACCOUNT.key] || {}]} />
             <div className="rounded-[28px] border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
-              <p className="text-sm font-medium text-slate-300">Grand Total {MONTHS_ID[viewMonth - 1]} {viewYear}</p>
-              <p className="mt-2 font-mono text-4xl font-bold">${grandTotal.toFixed(2)}</p>
-              <p className="mt-1 text-xs text-slate-400">Dari input manual per market &amp; minggu (termasuk data lama yang belum di-assign kalau masih ada)</p>
+              <p className="text-sm font-medium text-slate-300">Grand Total {JOGLO_ACCOUNT.label} {MONTHS_ID[viewMonth - 1]} {viewYear}</p>
+              <p className="mt-2 font-mono text-4xl font-bold">${jogloGrandTotal.toFixed(2)}</p>
             </div>
           </>
         )
