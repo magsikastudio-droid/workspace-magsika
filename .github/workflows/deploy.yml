@@ -346,24 +346,3 @@ jobs:
             2>&1 | head -15
           ENDSSH
 
-      - name: TEMP - check earnings_weekly data scope before repair
-        run: |
-          ssh vps bash << 'ENDSSH'
-          cd /root/admin-dashboard/backend
-          .venv/bin/python3 -c "
-          import asyncio, os
-          from motor.motor_asyncio import AsyncIOMotorClient
-          from dotenv import load_dotenv
-          load_dotenv()
-          async def main():
-              client = AsyncIOMotorClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017'))
-              db = client[os.getenv('DB_NAME', 'admin_dashboard')]
-              print('--- earnings_weekly (all docs) ---')
-              async for d in db.earnings_weekly.find().sort([('year',1),('month',1),('week',1)]):
-                  print({k: v for k, v in d.items() if k != '_id'})
-              print('--- earnings_targets (all docs) ---')
-              async for d in db.earnings_targets.find().sort([('year',1),('month',1)]):
-                  print({k: v for k, v in d.items() if k != '_id'})
-          asyncio.run(main())
-          "
-          ENDSSH
