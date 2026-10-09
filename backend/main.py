@@ -5295,6 +5295,22 @@ async def upsert_earnings_weekly(data: EarningsWeeklyEntry, current_user: dict =
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.delete("/earnings/weekly")
+async def delete_earnings_weekly_account(year: int, month: int, account: str, current_user: dict = Depends(get_current_user)):
+    """Admin-only -- buang semua entry satu account buat satu bulan. Dipakai
+    tombol 'Buang data lama' di panel data yatim-piatu (account gak kenal,
+    sisa dari migrasi yang salah) SETELAH admin sendiri yang mindahin
+    angkanya manual ke market yang benar -- tindakan destruktif ini sengaja
+    dipicu dari klik admin di UI, bukan dijalanin otomatis/dari luar app."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        result = await db.earnings_weekly.delete_many({"year": year, "month": month, "account": account})
+        return {"ok": True, "deleted": result.deleted_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/earnings/targets")
 async def get_earnings_targets(year: int, month: int, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") not in ["admin", "pm"]:
