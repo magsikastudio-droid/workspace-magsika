@@ -12,12 +12,15 @@ const WEEKS = [1, 2, 3, 4, 5];
 // Tiap market/admin diisi terpisah (penanggung jawabnya beda-beda) -- tapi
 // SATU angka di satu sel (mis. Fiverr) tetap boleh berupa akumulasi dari
 // beberapa sub-akun di market itu, itu urusan masing-masing pas input.
-const ACCOUNTS = [
-  { key: "magsika",        label: "Magsika" },
-  { key: "eirene",         label: "Eirene" },
-  { key: "lolicharm",      label: "Lolicharm & Komunitas" },
-  { key: "joglo_optimasi", label: "Joglo Optimasi" },
+const MAIN_ACCOUNTS = [
+  { key: "magsika",   label: "Magsika" },
+  { key: "eirene",    label: "Eirene" },
+  { key: "lolicharm", label: "Lolicharm & Komunitas" },
 ];
+// Manajemennya beda sendiri dari 3 market di atas -- sengaja section
+// terpisah (bukan nyampur di grid yang sama), bukan cuma kartu ke-4.
+const JOGLO_ACCOUNT = { key: "joglo_optimasi", label: "Joglo Optimasi" };
+const ACCOUNTS = [...MAIN_ACCOUNTS, JOGLO_ACCOUNT];
 
 function fmt(val) {
   if (!val && val !== 0) return "";
@@ -221,9 +224,18 @@ export default function Earnings() {
     }
   }, [viewYear, viewMonth]);
 
+  // Account yang kebalik dari DB tapi bukan salah satu dari 4 market yang
+  // dikenal -- sisa dari penggabungan data yang salah kemarin (key "all"),
+  // ditampilin apa adanya di panel referensi biar gak hilang begitu aja
+  // dari pandangan, tinggal dipindah manual ke market yang benar.
+  const legacyAccounts = useMemo(
+    () => Object.keys(entries).filter((k) => !ACCOUNTS.some((a) => a.key === k)),
+    [entries]
+  );
+
   const grandTotal = useMemo(() => {
     let sum = 0;
-    ACCOUNTS.forEach(({ key }) => {
+    Object.keys(entries).forEach((key) => {
       WEEKS.forEach((w) => {
         const row = entries[key]?.[w] || {};
         PLATFORMS.forEach((p) => { sum += Number(row[p] || 0); });
@@ -280,8 +292,46 @@ export default function Earnings() {
           <div className="py-16 text-center text-sm text-slate-400">Memuat data...</div>
         ) : (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {ACCOUNTS.map(({ key, label }) => {
+            {legacyAccounts.length > 0 && (
+              <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-5 shadow-sm">
+                <p className="text-sm font-bold text-amber-800">⚠️ Data lama belum di-assign ke market</p>
+                <p className="mt-1 text-xs text-amber-700">
+                  Bulan ini masih ada total mingguan yang belum jelas masuk market mana (sisa dari penggabungan data yang salah kemarin).
+                  Angka di bawah apa adanya dari database — tinggal masukkan manual ke kartu market yang benar di bawah, lalu baris ini otomatis hilang.
+                </p>
+                <div className="mt-3 space-y-2">
+                  {legacyAccounts.map((accKey) => (
+                    <div key={accKey} className="overflow-x-auto rounded-2xl bg-white/70 p-3">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr>
+                            <th className="px-2 py-1 text-left font-bold text-amber-700">Minggu</th>
+                            {PLATFORMS.map((p) => (
+                              <th key={p} className="px-2 py-1 text-right font-bold text-amber-700">{PLATFORM_LABELS[p]}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {WEEKS.filter((w) => entries[accKey]?.[w] && Object.values(entries[accKey][w]).some((v) => v > 0)).map((w) => (
+                            <tr key={w}>
+                              <td className="px-2 py-1 font-semibold text-slate-700">MG {w}</td>
+                              {PLATFORMS.map((p) => (
+                                <td key={p} className="px-2 py-1 text-right font-mono text-slate-700">
+                                  {entries[accKey][w][p] > 0 ? entries[accKey][w][p] : <span className="text-slate-300">—</span>}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              {MAIN_ACCOUNTS.map(({ key, label }) => {
                 let acctTotal = 0;
                 WEEKS.forEach((w) => {
                   const row = entries[key]?.[w] || {};
@@ -297,7 +347,7 @@ export default function Earnings() {
             </div>
 
             <div className="space-y-4">
-              {ACCOUNTS.map((account) => (
+              {MAIN_ACCOUNTS.map((account) => (
                 <AccountSection
                   key={account.key}
                   account={account}
@@ -309,10 +359,26 @@ export default function Earnings() {
               ))}
             </div>
 
+            {/* Joglo Optimasi -- manajemennya beda sendiri, sengaja dipisah
+                section-nya (pembatas + label sendiri), bukan nyampur di grid
+                3 market di atas. */}
+            <div className="flex items-center gap-3 pt-2">
+              <div className="h-px flex-1 bg-slate-200" />
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Manajemen Terpisah</p>
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
+            <AccountSection
+              account={JOGLO_ACCOUNT}
+              entries={entries[JOGLO_ACCOUNT.key] || {}}
+              target={targets[JOGLO_ACCOUNT.key] ?? ""}
+              onCellChange={(w, p, v) => handleCellChange(JOGLO_ACCOUNT.key, w, p, v)}
+              onTargetChange={(v, save) => handleTargetChange(JOGLO_ACCOUNT.key, v, save)}
+            />
+
             <div className="rounded-[28px] border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
               <p className="text-sm font-medium text-slate-300">Grand Total {MONTHS_ID[viewMonth - 1]} {viewYear}</p>
               <p className="mt-2 font-mono text-4xl font-bold">${grandTotal.toFixed(2)}</p>
-              <p className="mt-1 text-xs text-slate-400">Dari input manual per market &amp; minggu</p>
+              <p className="mt-1 text-xs text-slate-400">Dari input manual per market &amp; minggu (termasuk data lama yang belum di-assign kalau masih ada)</p>
             </div>
           </>
         )
