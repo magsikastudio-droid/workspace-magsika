@@ -194,14 +194,6 @@ mock_orders = [
     {"id": "ord-006", "client": "Studio Magsika", "project": "Ecommerce Design", "status": "Rigging", "total": 15000, "deadline": "2025-06-30", "created_at": "2025-06-18", "artists": ["Bob"], "platform": "Fiverr Magsika", "market": "Magsika", "order_id": "FVR-8826", "work_type": "Rigging", "payment_status": "DP", "folder_code": "250618-MGSK01-BOB-RIG", "marketer": "Ivo", "notes": ""},
 ]
 
-DEFAULT_USER = {
-    "username": "admin",
-    "full_name": "Studio Admin",
-    "email": "admin@magsika.local",
-    "role": "admin",
-    "status": "active",
-}
-
 # bcrypt jadi scheme utama buat hash baru; sha256_crypt tetap bisa diverifikasi
 # biar password lama (hash lama di database) tidak langsung invalid — begitu
 # user itu login lagi, hash-nya di-upgrade otomatis ke bcrypt (lihat
@@ -1392,10 +1384,7 @@ async def screen_relay(websocket: WebSocket, token: str = Query(None)):
         payload  = decode_token(token)
         username = payload.get("sub")
         if not username: raise ValueError("no sub")
-        if username == "admin":
-            user = {"username": "admin", "full_name": "Studio Admin", "role": "admin", "avatar": ""}
-        else:
-            user = await db.users.find_one({"username": username})
+        user = await db.users.find_one({"username": username})
         if not user: raise ValueError("user not found")
     except Exception as e:
         await websocket.close(code=4001); return
@@ -1597,11 +1586,7 @@ async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
         print(f"[WS/RTC] token valid, username={username}", flush=True)
         if not username:
             raise ValueError("sub kosong di payload")
-        # Fast path: default admin tidak ada di MongoDB
-        if username == "admin":
-            user = {"username": "admin", "name": "Admin", "role": "admin", "avatar": ""}
-        else:
-            user = await db.users.find_one({"username": username})
+        user = await db.users.find_one({"username": username})
         if not user:
             raise ValueError(f"user '{username}' tidak ada di DB")
     except Exception as e:
@@ -1849,26 +1834,8 @@ async def verify_otp_record(email: str, otp: str, purpose: str) -> bool:
     return True
 
 
-def verify_default_admin(username: str, password: str) -> Optional[dict]:
-    if username in ("admin", "admin@magsika.local") and password == "password":
-        return {
-            "username": "admin",
-            "full_name": "Studio Admin",
-            "email": "admin@magsika.local",
-            "role": "admin",
-            "status": "active",
-            "hashed_password": hash_password("password"),
-        }
-    return None
-
-
 async def authenticate_user(login: str, password: str) -> Optional[dict]:
-    """Cari user by email atau username (fallback). Admin hardcoded."""
-    # Cek default admin (username "admin" atau email lokal)
-    default_user = verify_default_admin(login, password)
-    if default_user:
-        return default_user
-
+    """Cari user by email atau username."""
     try:
         # Cari by email dulu, lalu by username sebagai fallback
         user = await db.users.find_one({"email": login})
@@ -1890,9 +1857,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     username = payload.get("sub")
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    # Fast path: default admin never touches the database
-    if username == "admin":
-        return {"username": DEFAULT_USER["username"], "full_name": DEFAULT_USER["full_name"], "email": DEFAULT_USER["email"], "role": DEFAULT_USER["role"], "status": DEFAULT_USER["status"]}
     try:
         user = await db.users.find_one({"username": username})
     except Exception:
