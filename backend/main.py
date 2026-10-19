@@ -4,8 +4,10 @@ import re
 import json
 import base64
 import uuid
-import random
+import time
+import secrets
 import hashlib
+import hmac
 import smtplib
 import httpx
 from email.mime.multipart import MIMEMultipart
@@ -166,7 +168,6 @@ def _call_ai(prompt: str, max_tokens: int = 800) -> str:
     return data["content"][0]["text"]
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "admin_dashboard")
-SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "43200"))
 
@@ -201,7 +202,11 @@ DEFAULT_USER = {
     "status": "active",
 }
 
-pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+# bcrypt jadi scheme utama buat hash baru; sha256_crypt tetap bisa diverifikasi
+# biar password lama (hash lama di database) tidak langsung invalid — begitu
+# user itu login lagi, hash-nya di-upgrade otomatis ke bcrypt (lihat
+# authenticate_user, cek pwd_context.needs_update()).
+pwd_context = CryptContext(schemes=["bcrypt", "sha256_crypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -628,6 +633,34 @@ app.add_middleware(
 )
 
 scheduler = AsyncIOScheduler() if SCHEDULER_AVAILABLE else None
+
+# Rate limiter sederhana in-memory (sliding window per IP) — cukup buat single
+# process app internal ini, gak perlu Redis dkk. Dipakai buat endpoint login/OTP
+# biar gak bisa ditebak paksa (brute-force).
+_rate_limit_buckets: Dict[str, List[float]] = {}
+
+
+def _client_ip(request: Request) -> str:
+    # Backend cuma nerima koneksi dari nginx di 127.0.0.1 (lihat nginx/workspace.conf),
+    # jadi X-Forwarded-For yang di-set nginx (bukan dari klien langsung) aman dipercaya.
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def rate_limit(request: Request, bucket: str, max_calls: int, window_seconds: int):
+    ip = _client_ip(request)
+    key = f"{bucket}:{ip}"
+    now = time.time()
+    hits = _rate_limit_buckets.setdefault(key, [])
+    cutoff = now - window_seconds
+    while hits and hits[0] < cutoff:
+        hits.pop(0)
+    if len(hits) >= max_calls:
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan, coba lagi dalam beberapa menit")
+    hits.append(now)
+
 
 # In-memory tracker: kapan tiap assignee mulai idle (task pending tapi timer belum
 # jalan). Direset begitu mereka pencet Mulai atau task pending-nya habis. Cukup di
@@ -1669,10 +1702,10 @@ async def rtc_signaling(websocket: WebSocket, token: str = Query(None)):
 # ═══════════════════════════════════════════════════════════════
 
 def _gen_otp() -> str:
-    return str(random.randint(100000, 999999))
+    return str(secrets.randbelow(900000) + 100000)
 
-def _hash_otp(otp: str) -> str:
-    return hashlib.sha256(otp.encode()).hexdigest()
+def _hash_otp(otp: str, salt: str) -> str:
+    return hashlib.sha256((salt + otp).encode()).hexdigest()
 
 def _mask_email(email: str) -> str:
     try:
@@ -1774,37 +1807,43 @@ async def send_otp_email(to_email: str, otp: str, purpose: str = "login"):
 
 
 async def create_otp_record(email: str, purpose: str, username: str = "") -> str:
-    """Generate OTP, store hashed in DB, return plain OTP."""
+    """Generate OTP, store hashed+salted in DB, return plain OTP."""
     otp = _gen_otp()
+    salt = secrets.token_hex(16)
     # Hapus OTP lama untuk email+purpose yang sama
     await db.otps.delete_many({"email": email, "purpose": purpose})
     await db.otps.insert_one({
         "email": email,
         "username": username,
         "purpose": purpose,
-        "otp_hash": _hash_otp(otp),
+        "otp_salt": salt,
+        "otp_hash": _hash_otp(otp, salt),
         "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
         "used": False,
+        "attempts": 0,
         "created_at": datetime.now(timezone.utc),
     })
     return otp
 
 
 async def verify_otp_record(email: str, otp: str, purpose: str) -> bool:
-    """Verify OTP. Marks as used if valid."""
-    record = await db.otps.find_one({
-        "email": email,
-        "purpose": purpose,
-        "otp_hash": _hash_otp(otp),
-        "used": False,
-    })
+    """Verify OTP (constant-time hash compare). Marks as used if valid,
+    counts failed attempts, and locks the record out after 5 tries so a
+    5-menit window can't be brute-forced digit by digit."""
+    record = await db.otps.find_one({"email": email, "purpose": purpose, "used": False})
     if not record:
+        return False
+    if record.get("attempts", 0) >= 5:
         return False
     # Pastikan expires_at timezone-aware sebelum dibandingkan
     exp = record["expires_at"]
     if exp.tzinfo is None:
         exp = exp.replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > exp:
+        return False
+    candidate_hash = _hash_otp(otp, record.get("otp_salt", ""))
+    if not hmac.compare_digest(candidate_hash, record["otp_hash"]):
+        await db.otps.update_one({"_id": record["_id"]}, {"$inc": {"attempts": 1}})
         return False
     await db.otps.update_one({"_id": record["_id"]}, {"$set": {"used": True}})
     return True
@@ -1836,6 +1875,9 @@ async def authenticate_user(login: str, password: str) -> Optional[dict]:
         if not user:
             user = await db.users.find_one({"username": login})
         if user and verify_password(password, user.get("hashed_password", "")):
+            if pwd_context.needs_update(user.get("hashed_password", "")):
+                new_hash = hash_password(password)
+                await db.users.update_one({"_id": user["_id"]}, {"$set": {"hashed_password": new_hash}})
             return user
     except Exception:
         pass
@@ -1863,7 +1905,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 
 @app.post("/auth/login")
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
+    rate_limit(request, "login", max_calls=10, window_seconds=60)
     user = await authenticate_user(req.email, req.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email atau password salah")
@@ -1892,8 +1935,9 @@ class VerifyLoginRequest(BaseModel):
 
 
 @app.post("/auth/verify-login")
-async def verify_login(req: VerifyLoginRequest):
+async def verify_login(req: VerifyLoginRequest, request: Request):
     """Step 2 login: verifikasi OTP → return token."""
+    rate_limit(request, "verify-login", max_calls=10, window_seconds=60)
     # Cari user untuk mendapatkan email-nya
     user = await db.users.find_one({"username": req.username})
     if not user:
@@ -2003,8 +2047,9 @@ async def update_my_email(req: UpdateMyEmailRequest, current_user: dict = Depend
 # ── Email Verification Endpoints ─────────────────────────────────────────────
 
 @app.post("/auth/request-email-verify")
-async def request_email_verify(current_user: dict = Depends(get_current_user)):
+async def request_email_verify(request: Request, current_user: dict = Depends(get_current_user)):
     """Kirim OTP ke email terdaftar untuk verifikasi kepemilikan."""
+    rate_limit(request, "otp-send", max_calls=3, window_seconds=60)
     email = current_user.get("email", "")
     if not email or email.endswith("@magsika.local"):
         raise HTTPException(status_code=400, detail="Email tidak valid untuk diverifikasi")
@@ -2018,8 +2063,9 @@ class ConfirmEmailVerifyRequest(BaseModel):
 
 
 @app.post("/auth/confirm-email-verify")
-async def confirm_email_verify(req: ConfirmEmailVerifyRequest, current_user: dict = Depends(get_current_user)):
+async def confirm_email_verify(req: ConfirmEmailVerifyRequest, request: Request, current_user: dict = Depends(get_current_user)):
     """Verifikasi OTP → tandai email_verified = True."""
+    rate_limit(request, "otp-verify", max_calls=10, window_seconds=60)
     email = current_user.get("email", "")
     valid = await verify_otp_record(email, req.otp, "verify_email")
     if not valid:
@@ -2036,8 +2082,9 @@ class RequestEmailChangeRequest(BaseModel):
 
 
 @app.post("/auth/request-email-change")
-async def request_email_change(req: RequestEmailChangeRequest, current_user: dict = Depends(get_current_user)):
+async def request_email_change(req: RequestEmailChangeRequest, request: Request, current_user: dict = Depends(get_current_user)):
     """Kirim OTP ke email BARU sebelum ganti alamat email."""
+    rate_limit(request, "otp-send", max_calls=3, window_seconds=60)
     new_email = str(req.new_email).lower().strip()
     existing = await db.users.find_one({"email": new_email, "username": {"$ne": current_user["username"]}})
     if existing:
@@ -2053,8 +2100,9 @@ class ConfirmEmailChangeRequest(BaseModel):
 
 
 @app.post("/auth/confirm-email-change")
-async def confirm_email_change(req: ConfirmEmailChangeRequest, current_user: dict = Depends(get_current_user)):
+async def confirm_email_change(req: ConfirmEmailChangeRequest, request: Request, current_user: dict = Depends(get_current_user)):
     """Verifikasi OTP → update email + set email_verified = True."""
+    rate_limit(request, "otp-verify", max_calls=10, window_seconds=60)
     new_email = str(req.new_email).lower().strip()
     valid = await verify_otp_record(new_email, req.otp, "change_email")
     if not valid:
@@ -3335,8 +3383,9 @@ async def send_register_otp(req: SendRegisterOTPRequest):
 
 
 @app.post("/auth/register")
-async def register(req: RegisterRequest):
+async def register(req: RegisterRequest, request: Request):
     """Daftar akun langsung — tanpa OTP."""
+    rate_limit(request, "register", max_calls=5, window_seconds=60)
     try:
         whitelist_doc = await db.settings.find_one({"key": "email_whitelist"})
         whitelist = whitelist_doc.get("emails", []) if whitelist_doc else []
