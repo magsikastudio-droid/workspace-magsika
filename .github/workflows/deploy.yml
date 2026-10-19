@@ -183,10 +183,11 @@ jobs:
           ssh vps bash << 'ENVSSH'
           ENV=/root/admin-dashboard/backend/.env
           touch "$ENV"
-          for KEY in ANTHROPIC_API_KEY GMAIL_USER GMAIL_APP_PASSWORD GMAIL_FROM SMTP_USER SMTP_PASS SMTP_HOST SMTP_PORT SMTP_FROM TELEGRAM_BOT_TOKEN; do
+          for KEY in ANTHROPIC_API_KEY GMAIL_USER GMAIL_APP_PASSWORD GMAIL_FROM SMTP_USER SMTP_PASS SMTP_HOST SMTP_PORT SMTP_FROM TELEGRAM_BOT_TOKEN MONGODB_URI; do
             sed -i "/^${KEY}=/d" "$ENV"
           done
           ENVSSH
+          ssh vps "echo 'MONGODB_URI=${{ secrets.MONGODB_URI }}' >> /root/admin-dashboard/backend/.env"
           ssh vps "echo 'ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}' >> /root/admin-dashboard/backend/.env"
           ssh vps "echo 'GMAIL_USER=${{ secrets.GMAIL_USER }}' >> /root/admin-dashboard/backend/.env"
           ssh vps "echo 'GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}' >> /root/admin-dashboard/backend/.env"
