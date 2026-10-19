@@ -35,8 +35,7 @@ admin-dashboard/
 │   └── package.json
 ├── backend/
 │   └── main.py             ← SEMUA endpoint FastAPI ada di sini (1 file)
-├── .github/workflows/      ← GitHub Actions auto-deploy ke VPS
-└── deploy.sh               ← script deploy di VPS
+└── .github/workflows/      ← GitHub Actions auto-deploy ke VPS
 ```
 
 ---
