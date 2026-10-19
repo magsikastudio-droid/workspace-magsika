@@ -1135,20 +1135,13 @@ async def on_startup():
         print(f"[Migration] Email update error: {_e}", flush=True)
     # ────────────────────────────────────────────────────────────────
 
-    # ── One-time password reset (ivo) ────────────────────────────────
-    _pw_reset_flag = "migration_ivo_pw_reset_v2"
-    try:
-        await db.settings.delete_many({"key": {"$regex": "^migration_ivo_pw_reset_"}})
-        _new_hash = hash_password("***REMOVED-LEAKED-PASSWORD***")
-        result = await db.users.update_one(
-            {"username": "ivo"},
-            {"$set": {"hashed_password": _new_hash}},
-        )
-        await db.settings.insert_one({"key": _pw_reset_flag, "done": True})
-        print(f"[Migration] Password ivo reset: matched={result.matched_count} modified={result.modified_count}", flush=True)
-    except Exception as _e:
-        print(f"[Migration] Password reset error: {_e}", flush=True)
-    # ────────────────────────────────────────────────────────────────
+    # ── One-time password reset (ivo) -- DIHAPUS (insiden keamanan). Blok
+    # ini dulu mereset password akun "ivo" ke string hardcoded di SETIAP
+    # restart backend (bukan beneran "one-time" -- flag penandanya dihapus
+    # lagi sebelum dicek ulang tiap startup), dan string password itu
+    # sendiri nongol di riwayat Git repo publik. ivo WAJIB ganti password
+    # sendiri lewat halaman Settings setelah deploy ini, jangan pakai
+    # password lama lagi. ──────────────────────────────────────────────
 
     # Backfill assignee_username buat task lama yang dibuat sebelum field
     # ini ada (lihat _resolve_task_assignee_user) -- idempotent, cuma isi
